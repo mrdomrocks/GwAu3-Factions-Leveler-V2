@@ -3,6 +3,7 @@
 Func Leveler_ExecuteStep($a_i_Step)
 	If $g_b_LevelerPaused Then Return False
 	If Leveler_IsWiped() Then
+		Out("[Step] Wipe detected before '" & $g_as_StepNames[$a_i_Step] & "'. Recovering.")
 		Leveler_RecoverWipe()
 		Return False
 	EndIf
@@ -103,6 +104,17 @@ Func Leveler_ExecuteStep($a_i_Step)
 	EndIf
 
 	If $l_b_Ok Then
+		If $a_i_Step = $LEVELER_STEP_SECONDARY And Not Leveler_SecondaryStepReadyToLeave() Then
+			Leveler_LogQuestState($QUEST_SECONDARY, "Choose Secondary")
+			Out("[Step] #317 reward or Formal Introduction still missing. Staying on '" & $g_as_StepNames[$a_i_Step] & "'.")
+			Return False
+		EndIf
+		Local $l_i_QuestID = Leveler_StepQuestID($a_i_Step)
+		If $l_i_QuestID <> 0 And Leveler_QuestLogActive($l_i_QuestID) Then
+			Leveler_LogQuestState($l_i_QuestID, $g_as_StepNames[$a_i_Step])
+			Out("[Step] Quest #" & $l_i_QuestID & " is still active. Staying on '" & $g_as_StepNames[$a_i_Step] & "'.")
+			Return False
+		EndIf
 		$g_i_Step = $a_i_Step + 1
 		Leveler_UpdateStepCombo()
 		Return True
@@ -127,9 +139,15 @@ EndFunc
 Func Leveler_Step_FormingAParty()
 	$g_s_CurrentHeader = "Quest: Forming A Party"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_SkipIfQuestDone($QUEST_FORMING_A_PARTY, "Forming A Party") Then Return True
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_PrepareForBattle()
-	If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, -14063.00, 10044.00, $DIALOG_FORMING_ACCEPT, "accept") Then Return False
+	If Not Leveler_HasQuest($QUEST_FORMING_A_PARTY) Then
+		If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, -14063.00, 10044.00, $DIALOG_FORMING_ACCEPT, "accept", Leveler_TogoModel()) Then Return False
+	Else
+		Out("[Step] Forming A Party already in the log")
+	EndIf
+	If Leveler_SkipIfQuestDone($QUEST_FORMING_A_PARTY, "Forming A Party") Then Return True
 	If Not Leveler_MoveAndExit(-14961, 11453, $MAP_SUNQUA_VALE, True) Then Return False
 	If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, 19673.00, -6982.00, $DIALOG_FORMING_COMPLETE, "complete") Then Return False
 	Return True
@@ -138,17 +156,54 @@ EndFunc
 Func Leveler_Step_UnlockSecondary()
 	$g_s_CurrentHeader = "Unlock Secondary Profession"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	Out("[Step] Profession " & Leveler_PrimaryProfession() & "/" & Leveler_SecondaryProfession() & "  Gold " & Leveler_CharacterGold())
+	Leveler_LogQuestState($QUEST_SECONDARY, "Choose Secondary")
+	Leveler_LogQuestState($QUEST_FORMAL_INTRO, "Formal Introduction")
+	If Leveler_SecondaryStepReadyToLeave() Then
+		Out("[Step] #317 turned in and Formal Introduction is ready")
+		Return True
+	EndIf
+	Out("[Step] Talking to Togo in Linnok for #317 complete and #318 accept.")
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_SetPacifist()
-	If Not Leveler_MoveAndExit(-3480, 9460, $MAP_LINNOK, False) Then Return False
+	If Map_GetMapID() <> $MAP_LINNOK Then
+		If Not Leveler_MoveAndExit(-3480, 9460, $MAP_LINNOK, False) Then Return False
+	EndIf
 	Leveler_MoveTo(-159, 9174, False)
 
 	Local $l_i_AcceptDialog = $DIALOG_SECONDARY_OTHER
 	If Leveler_IsMesmer() Then $l_i_AcceptDialog = $DIALOG_SECONDARY_MESMER
-	If Not Leveler_QuestLoop($QUEST_SECONDARY, -92, 9217, $l_i_AcceptDialog, "accept") Then Return False
-	If Not Leveler_QuestLoop($QUEST_SECONDARY, -92, 9217, $DIALOG_SECONDARY_COMPLETE, "complete") Then Return False
-	Sleep(3000)
-	If Not Leveler_QuestLoop($QUEST_FORMAL_INTRO, -92, 9217, $DIALOG_FORMAL_ACCEPT, "accept") Then Return False
+	Local $l_i_Togo = Leveler_TogoModel()
+	If Not Leveler_HasQuest($QUEST_SECONDARY) And Not Leveler_SecondaryRewardTaken() Then
+		If Not Leveler_QuestLoop($QUEST_SECONDARY, -92, 9217, $l_i_AcceptDialog, "accept", $l_i_Togo) Then Return False
+	EndIf
+	If Leveler_QuestInLog($QUEST_SECONDARY) Or Not Leveler_SecondaryRewardTaken() Then
+		Out("[Step] Sending Togo complete dialog 0x813D07 for the #317 gold reward.")
+		If Not Leveler_QuestLoop($QUEST_SECONDARY, -92, 9217, $DIALOG_SECONDARY_COMPLETE, "complete", $l_i_Togo) Then Return False
+	EndIf
+	Sleep(1500)
+	Leveler_LogQuestState($QUEST_SECONDARY, "Choose Secondary")
+	If Leveler_QuestInLog($QUEST_SECONDARY) Then
+		Out("[Step] Quest #317 is still in the log after Togo. Staying on this step.")
+		Return False
+	EndIf
+	If Not Leveler_HasSecondaryProfession() Then
+		Out("[Step] Togo dialog sent but secondary is still unset. Retrying.")
+		Return False
+	EndIf
+	If Not Leveler_SecondaryRewardTaken() Then
+		Out("[Step] #317 reward not taken yet (gold " & Leveler_CharacterGold() & "). Retrying Togo complete.")
+		Return False
+	EndIf
+	Leveler_MarkQuestDone($QUEST_SECONDARY)
+	Sleep(1500)
+	If Not Leveler_HasQuest($QUEST_FORMAL_INTRO) And Not Leveler_QuestFinished($QUEST_FORMAL_INTRO) Then
+		If Not Leveler_QuestLoop($QUEST_FORMAL_INTRO, -92, 9217, $DIALOG_FORMAL_ACCEPT, "accept", $l_i_Togo) Then Return False
+	EndIf
+	If Not Leveler_HasFormalOrLater() Then
+		Out("[Step] Formal Introduction #318 is not in the log. Staying on this step.")
+		Return False
+	EndIf
 	If Not Leveler_MoveAndExit(-3762, 9471, $MAP_SHING_JEA, False) Then Return False
 	Return True
 EndFunc
@@ -156,10 +211,18 @@ EndFunc
 Func Leveler_Step_UnlockXunlai()
 	$g_s_CurrentHeader = "Unlock Xunlai Storage"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	Local $l_i_Gold = Leveler_CharacterGold()
+	If Not Leveler_SecondaryStepReadyToLeave() Or $l_i_Gold < $XUNLAI_GOLD_COST Then
+		Leveler_LogQuestState($QUEST_SECONDARY, "Choose Secondary")
+		Out("[Step] Need Togo's #317 reward before Xunlai (gold " & $l_i_Gold & "). Returning to Unlock Secondary.")
+		$g_i_Step = $LEVELER_STEP_SECONDARY
+		Return False
+	EndIf
 	If Map_GetMapID() <> $MAP_SHING_JEA Then
 		If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	EndIf
 	Leveler_SetPacifist()
+	Out("[Step] Character gold: " & $l_i_Gold)
 	If Not Leveler_MoveTo(-4958, 9472, False) Then Return False
 	If Not Leveler_MoveTo(-5465, 9727, False) Then Return False
 	If Not Leveler_MoveTo(-4791, 10140, False) Then Return False
@@ -169,9 +232,14 @@ Func Leveler_Step_UnlockXunlai()
 	If $l_i_Xunlai <> 0 Then Agent_GoNPC($l_i_Xunlai)
 	Sleep(600)
 	Ui_Dialog($DIALOG_XUNLAI_1)
-	Sleep(500)
+	Sleep(800)
 	Ui_Dialog($DIALOG_XUNLAI_2)
-	Sleep(500)
+	Sleep(800)
+	Local $l_i_GoldAfter = Item_GetInventoryInfo("GoldCharacter")
+	If $l_i_GoldAfter > $l_i_Gold - $XUNLAI_GOLD_COST + 5 Then
+		Out("[Step] Xunlai unlock did not take " & $XUNLAI_GOLD_COST & " gold (now " & $l_i_GoldAfter & "). Not advancing.")
+		Return False
+	EndIf
 	Out("[Step] Xunlai storage unlocked")
 	Return True
 EndFunc
@@ -239,6 +307,7 @@ EndFunc
 Func Leveler_Step_ToChosEstate()
 	$g_s_CurrentHeader = "To Minister Cho's Estate"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_SkipIfQuestDone($QUEST_FORMAL_INTRO, "A Formal Introduction") Then Return True
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	If Not Leveler_MoveAndExit(-14961, 11453, $MAP_SUNQUA_VALE, False) Then Return False
 	Leveler_SetPacifist()
@@ -306,6 +375,7 @@ EndFunc
 Func Leveler_Step_LostTreasure()
 	$g_s_CurrentHeader = "Quest: Lost Treasure"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_SkipIfQuestDone($QUEST_LOST_TREASURE, "Lost Treasure") Then Return True
 
 	If Map_GetMapID() <> $MAP_CHO_EXPLORABLE Then
 		If Not Leveler_Travel($MAP_RAN_MUSU) Then Return False
@@ -336,6 +406,7 @@ EndFunc
 Func Leveler_Step_WarningTheTengu()
 	$g_s_CurrentHeader = "Quest: Warning the Tengu"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_SkipIfQuestDone($QUEST_WARNING_TENGU, "Warning the Tengu") Then Return True
 	Leveler_HandleBonusBow()
 
 	If Map_GetMapID() <> $MAP_KINYA Then
@@ -361,6 +432,10 @@ EndFunc
 Func Leveler_Step_TheThreatGrows()
 	$g_s_CurrentHeader = "Quest: The Threat Grows"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_IsQuestDone($QUEST_THREAT_GROWS) And (Leveler_IsQuestDone($QUEST_JOURNEY_MASTER) Or Leveler_HasQuest($QUEST_JOURNEY_MASTER)) Then
+		Out("[Step] The Threat Grows already completed")
+		Return True
+	EndIf
 
 	If Not Leveler_HasQuest($QUEST_THREAT_GROWS) And Not Leveler_HasQuest($QUEST_JOURNEY_MASTER) Then
 		If Map_GetMapID() <> $MAP_KINYA Then
@@ -397,6 +472,7 @@ EndFunc
 Func Leveler_Step_TheRoadLessTraveled()
 	$g_s_CurrentHeader = "Quest: The Road Less Traveled"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_SkipIfQuestDone($QUEST_ROAD_LESS, "The Road Less Traveled") Then Return True
 
 	Local $l_i_Map = Map_GetMapID()
 	If $l_i_Map <> $MAP_SAOSHANG And $l_i_Map <> $MAP_SEITUNG And $l_i_Map <> $MAP_LINNOK Then
@@ -409,11 +485,12 @@ Func Leveler_Step_TheRoadLessTraveled()
 		If Map_GetMapID() <> $MAP_LINNOK Then
 			If Not Leveler_MoveAndExit(-3480, 9460, $MAP_LINNOK, False) Then Return False
 		EndIf
+		Local $l_i_Togo = Leveler_TogoModel()
 		If Leveler_HasQuest($QUEST_JOURNEY_MASTER) Then
-			If Not Leveler_QuestLoop($QUEST_JOURNEY_MASTER, -92, 9217, $DIALOG_JOURNEY_COMPLETE, "complete") Then Return False
+			If Not Leveler_QuestLoop($QUEST_JOURNEY_MASTER, -92, 9217, $DIALOG_JOURNEY_COMPLETE, "complete", $l_i_Togo) Then Return False
 		EndIf
 		If Not Leveler_HasQuest($QUEST_ROAD_LESS) Then
-			If Not Leveler_QuestLoop($QUEST_ROAD_LESS, -92, 9217, $DIALOG_ROAD_ACCEPT, "accept") Then Return False
+			If Not Leveler_QuestLoop($QUEST_ROAD_LESS, -92, 9217, $DIALOG_ROAD_ACCEPT, "accept", $l_i_Togo) Then Return False
 		EndIf
 		If Not Leveler_QuestLoop($QUEST_ROAD_LESS, 538, 10125, $DIALOG_ROAD_STEP1, "step") Then
 			If Map_GetMapID() <> $MAP_SAOSHANG Then Map_WaitMapLoading($MAP_SAOSHANG)
@@ -755,6 +832,7 @@ EndFunc
 Func Leveler_Step_SearchForACure()
 	$g_s_CurrentHeader = "Quest: The Search For A Cure"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_SkipIfQuestDone($QUEST_SEARCH_CURE, "The Search For A Cure") Then Return True
 
 	If Not Leveler_HasQuest($QUEST_SEARCH_CURE) Then
 		If Not Leveler_Travel($MAP_KAINENG) Then Return False
@@ -784,6 +862,7 @@ EndFunc
 Func Leveler_Step_AMastersBurden()
 	$g_s_CurrentHeader = "Quest: A Master's Burden"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_SkipIfQuestDone($QUEST_MASTERS_BURDEN, "A Master's Burden") Then Return True
 
 	If Not Leveler_Travel($MAP_KAINENG) Then Return False
 	If Not Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
@@ -1034,10 +1113,7 @@ Func Leveler_Step_AnUnwelcomeGuest()
 	$g_b_FarmMode = False
 	$g_b_KilroyMode = False
 
-	If Leveler_QuestFinished($QUEST_UNWELCOME) And Not Leveler_HasQuest($QUEST_UNWELCOME) Then
-		Out("[Step] An Unwelcome Guest already complete")
-		Return True
-	EndIf
+	If Leveler_SkipIfQuestDone($QUEST_UNWELCOME, "An Unwelcome Guest") Then Return True
 
 	If Map_GetMapID() <> $MAP_ZEN_EXP Then
 		If Not Leveler_Travel($MAP_SEITUNG) Then Return False
@@ -1205,10 +1281,7 @@ EndFunc
 Func Leveler_Step_UnlockKilroy()
 	$g_s_CurrentHeader = "Unlock Kilroy Stonekin"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_QuestFinished($QUEST_PUNCH_CLOWN) And Not Leveler_HasQuest($QUEST_PUNCH_CLOWN) Then
-		Out("[Step] Punch the Clown already complete")
-		Return True
-	EndIf
+	If Leveler_SkipIfQuestDone($QUEST_PUNCH_CLOWN, "Punch the Clown") Then Return True
 
 	If Not Leveler_Travel($MAP_GUNNAR) Then Return False
 	$g_b_KilroyMode = True
@@ -1261,7 +1334,7 @@ EndFunc
 Func Leveler_Step_ToLionsArch()
 	$g_s_CurrentHeader = "To Lion's Arch"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Map_GetMapID() = $MAP_LIONS_ARCH And Map_GetInstanceInfo("IsOutpost") And Leveler_QuestFinished($QUEST_CHAOS_KRYTA) Then
+	If Map_GetMapID() = $MAP_LIONS_ARCH And Map_GetInstanceInfo("IsOutpost") And Leveler_IsQuestDone($QUEST_CHAOS_KRYTA) Then
 		Out("[Step] Already in Lion's Arch")
 		Return True
 	EndIf
@@ -1322,7 +1395,7 @@ EndFunc
 Func Leveler_Step_ToKamadan()
 	$g_s_CurrentHeader = "To Kamadan"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If (Map_GetMapID() = $MAP_KAMADAN Or Map_GetMapID() = $MAP_SUN_DOCKS) And Leveler_QuestFinished($QUEST_SUNSPEARS_CANTHA) Then
+	If (Map_GetMapID() = $MAP_KAMADAN Or Map_GetMapID() = $MAP_SUN_DOCKS) And Leveler_IsQuestDone($QUEST_SUNSPEARS_CANTHA) Then
 		Out("[Step] Sunspears in Cantha already complete")
 		Return True
 	EndIf
@@ -1423,10 +1496,7 @@ EndFunc
 Func Leveler_Step_UnlockOlias()
 	$g_s_CurrentHeader = "Unlock Olias"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_QuestFinished($QUEST_OLIAS) And Not Leveler_HasQuest($QUEST_OLIAS) Then
-		Out("[Step] All for One and One for Justice already complete")
-		Return True
-	EndIf
+	If Leveler_SkipIfQuestDone($QUEST_OLIAS, "All for One and One for Justice") Then Return True
 
 	If Map_GetMapID() <> $MAP_BLOODSTONE_FEN And Map_GetMapID() <> $MAP_LIONS_ARCH And Map_GetMapID() <> $MAP_KAMADAN Then
 		If Not Leveler_Travel($MAP_DOCKS) Then Return False

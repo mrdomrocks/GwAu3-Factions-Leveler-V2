@@ -238,6 +238,10 @@ Global Const $DIALOG_PROF_PARA = 0x984
 Global Const $DIALOG_PROF_DERV = 0xA84
 
 ; NPC models
+Global Const $MODEL_TOGO_1 = 3078
+Global Const $MODEL_TOGO_2 = 3081
+Global Const $MODEL_TOGO_3 = 3120
+Global Const $MODEL_TOGO_4 = 3215
 Global Const $MODEL_XUNLAI = 283
 Global Const $MODEL_LOST_TREASURE_GUARD = 3093
 Global Const $MODEL_SISTER_TAI = 3367
@@ -274,6 +278,8 @@ Global Const $SKILL_SPIRIT_RIFT = 910
 
 ; Weapon / armor gold
 Global Const $MODEL_CLAIRVOYANT_STAFF = 11647
+; Paid from the Choose Your Secondary Profession (#317) complete reward, not storage.
+Global Const $XUNLAI_GOLD_COST = 50
 Global Const $WEAPON_GOLD_COST = 100
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
@@ -287,8 +293,18 @@ Global Const $LEVELER_FIGHT_RANGE_OUT = 3500
 Global Const $LEVELER_AREA_RANGE = 322
 Global Const $LEVELER_SPIRIT_RANGE = 2500
 
+; Quest completion flag indices. Sticky during a run; rebuilt on Refresh.
+Global Enum $LEVELER_Q_FORMING, $LEVELER_Q_SECONDARY, $LEVELER_Q_FORMAL, $LEVELER_Q_LOST, _
+		$LEVELER_Q_TENGU, $LEVELER_Q_THREAT, $LEVELER_Q_JOURNEY, $LEVELER_Q_ROAD, _
+		$LEVELER_Q_CURE, $LEVELER_Q_TOSAI, $LEVELER_Q_BURDEN, $LEVELER_Q_EARTH, _
+		$LEVELER_Q_DESTROYERS, $LEVELER_Q_VANGUARD, $LEVELER_Q_ALLIES, $LEVELER_Q_ASURA, _
+		$LEVELER_Q_UNWELCOME, $LEVELER_Q_NORNBEAR, $LEVELER_Q_PUNCH, $LEVELER_Q_CHAOS, _
+		$LEVELER_Q_SUNSPEARS, $LEVELER_Q_OLIAS, $LEVELER_Q_COUNT
+Global $g_ab_QuestDone[$LEVELER_Q_COUNT]
+
 ; Shared runtime state
 Global $g_i_Step = $LEVELER_STEP_OVERLOOK
+Global $g_b_NeedStatusCheck = False
 Global $g_b_LevelerPaused = False
 Global $g_b_LevelerFailed = False
 Global $g_b_CombatMode = False

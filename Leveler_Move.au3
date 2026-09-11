@@ -1,18 +1,34 @@
 #include-once
 
+; Load the Pathfinder DLL only. Skip Pathfinder_Initialize() so we do not block
+; on the GitHub maps.rar check / download during Start.
 Func Leveler_EnsurePathfinder()
 	If $DLL_PATH = "" Then
 		$DLL_PATH = @ScriptDir & "\..\..\API\Plugins\Pathfinder\GWPathfinder.dll"
 	EndIf
-	If $g_hPathfinderDLL = 0 Or $g_hPathfinderDLL = -1 Then
-		Local $l_i_Init = Pathfinder_Initialize()
-		If $l_i_Init = 0 Then
-			Out("[Move] Pathfinder DLL failed to load; using direct Map_Move fallback.")
-			Return False
-		EndIf
-		If $l_i_Init = 2 Then
-			Out("[Move] Pathfinder maps.rar not found yet; first MoveTo will try again.")
-		EndIf
+	If $g_hPathfinderDLL <> 0 And $g_hPathfinderDLL <> -1 Then Return True
+
+	If Not FileExists($DLL_PATH) Then
+		Out("[Move] Pathfinder DLL missing; using direct Map_Move fallback.")
+		Return False
+	EndIf
+
+	$g_hPathfinderDLL = DllOpen($DLL_PATH)
+	If $g_hPathfinderDLL = -1 Then
+		Out("[Move] Pathfinder DLL failed to load; using direct Map_Move fallback.")
+		Return False
+	EndIf
+
+	Local $l_av_Init = DllCall($g_hPathfinderDLL, "int:cdecl", "Initialize")
+	If @error Or Not IsArray($l_av_Init) Then
+		Out("[Move] Pathfinder Initialize call failed; using direct Map_Move fallback.")
+		Return False
+	EndIf
+	If $l_av_Init[0] = 2 Then
+		Out("[Move] Pathfinder maps.rar not found yet; using direct Map_Move until maps are present.")
+	ElseIf $l_av_Init[0] = 0 Then
+		Out("[Move] Pathfinder Initialize returned 0; using direct Map_Move fallback.")
+		Return False
 	EndIf
 	Return True
 EndFunc
@@ -67,18 +83,33 @@ Func Leveler_MoveAndDialog($a_f_X, $a_f_Y, $a_i_Dialog, $a_b_Combat = False, $a_
 	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) And Map_GetMapID() = $l_i_StartMap Then Return False
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
 
-	Local $l_i_Npc = 0
-	If $a_i_NpcModel <> 0 Then
-		$l_i_Npc = Leveler_GetAgentByModel($a_i_NpcModel)
-	EndIf
-	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetNearestNPC($LEVELER_NPC_RANGE)
+	Local $l_i_Npc = Leveler_ResolveTalkNpc($a_f_X, $a_f_Y, $a_i_NpcModel)
 	If $l_i_Npc = 0 Then
 		Out("[Move] No NPC near " & Round($a_f_X) & ", " & Round($a_f_Y))
 		Return False
 	EndIf
 
-	Agent_GoNPC($l_i_Npc)
-	Sleep(800)
+	Return Leveler_TalkAndDialog($l_i_Npc, $a_i_Dialog)
+EndFunc
+
+; Target the living NPC, walk into talk range, then send the dialog.
+Func Leveler_TalkAndDialog($a_i_Npc, $a_i_Dialog)
+	If $a_i_Npc = 0 Then Return False
+	Agent_ChangeTarget($a_i_Npc)
+	Sleep(150)
+	Agent_GoNPC($a_i_Npc)
+
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 5000
+		If Agent_GetDistance($a_i_Npc) < $LEVELER_ARRIVE_RANGE Then ExitLoop
+		Sleep(100)
+	WEnd
+	If Agent_GetDistance($a_i_Npc) >= $LEVELER_ARRIVE_RANGE Then
+		Out("[Move] Could not reach NPC model " & Agent_GetAgentInfo($a_i_Npc, "PlayerNumber"))
+		Return False
+	EndIf
+
+	Sleep(500)
 	Ui_Dialog($a_i_Dialog)
 	Sleep(600)
 	Return True
@@ -100,16 +131,29 @@ Func Leveler_Travel($a_i_MapID)
 	Return Map_TravelTo($a_i_MapID)
 EndFunc
 
+; Town NPCs only. Skip party henchmen/heroes, who are also IsNPC.
+Func Leveler_IsTalkNpc($a_i_Agent)
+	If $a_i_Agent = 0 Then Return False
+	If Agent_GetAgentPtr($a_i_Agent) = 0 Then Return False
+	If Agent_GetAgentInfo($a_i_Agent, "IsDead") Then Return False
+	If Not Agent_GetAgentInfo($a_i_Agent, "IsNPC") Then Return False
+	If Agent_GetAgentInfo($a_i_Agent, "Allegiance") <> $GC_I_ALLEGIANCE_NPC Then Return False
+	Return True
+EndFunc
+
+; NPC nearest to the player. Prefer Leveler_GetNearestNPCAt for dialogs.
 Func Leveler_GetNearestNPC($a_f_Range = 250)
-	Local $l_i_MyID = Agent_GetMyID()
+	Return Leveler_GetNearestNPCAt(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $a_f_Range)
+EndFunc
+
+; NPC nearest to a map coordinate, not to the player.
+Func Leveler_GetNearestNPCAt($a_f_X, $a_f_Y, $a_f_Range = 250)
 	Local $l_i_Best = 0
 	Local $l_f_Best = $a_f_Range
 	Local $l_i_Max = Agent_GetMaxAgents()
 	For $i = 1 To $l_i_Max - 1
-		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
-		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
-		If Not Agent_GetAgentInfo($i, "IsNPC") Then ContinueLoop
-		Local $l_f_Dist = Agent_GetDistance($i, $l_i_MyID)
+		If Not Leveler_IsTalkNpc($i) Then ContinueLoop
+		Local $l_f_Dist = Agent_GetDistanceToXY($a_f_X, $a_f_Y, $i)
 		If $l_f_Dist < $l_f_Best Then
 			$l_f_Best = $l_f_Dist
 			$l_i_Best = $i
@@ -119,18 +163,45 @@ Func Leveler_GetNearestNPC($a_f_Range = 250)
 EndFunc
 
 Func Leveler_GetAgentByModel($a_i_Model)
+	If $a_i_Model = 0 Then Return 0
 	Local $l_i_Max = Agent_GetMaxAgents()
 	For $i = 1 To $l_i_Max - 1
 		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
 		If Agent_GetAgentInfo($i, "PlayerNumber") = $a_i_Model Then Return $i
 	Next
 	Return 0
 EndFunc
 
+Func Leveler_GetTogo()
+	Local $l_i_Npc = Leveler_GetAgentByModel($MODEL_TOGO_1)
+	If $l_i_Npc <> 0 Then Return $l_i_Npc
+	$l_i_Npc = Leveler_GetAgentByModel($MODEL_TOGO_2)
+	If $l_i_Npc <> 0 Then Return $l_i_Npc
+	$l_i_Npc = Leveler_GetAgentByModel($MODEL_TOGO_3)
+	If $l_i_Npc <> 0 Then Return $l_i_Npc
+	Return Leveler_GetAgentByModel($MODEL_TOGO_4)
+EndFunc
+
+Func Leveler_TogoModel()
+	Local $l_i_Togo = Leveler_GetTogo()
+	If $l_i_Togo = 0 Then Return 0
+	Return Agent_GetAgentInfo($l_i_Togo, "PlayerNumber")
+EndFunc
+
+Func Leveler_ResolveTalkNpc($a_f_X, $a_f_Y, $a_i_NpcModel = 0)
+	Local $l_i_Npc = 0
+	If $a_i_NpcModel <> 0 Then $l_i_Npc = Leveler_GetAgentByModel($a_i_NpcModel)
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetNearestNPCAt($a_f_X, $a_f_Y, 400)
+	Return $l_i_Npc
+EndFunc
+
 Func Leveler_InteractNpcAt($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) Then Return False
-	Local $l_i_Npc = Leveler_GetNearestNPC($LEVELER_NPC_RANGE)
+	Local $l_i_Npc = Leveler_ResolveTalkNpc($a_f_X, $a_f_Y)
 	If $l_i_Npc = 0 Then Return False
+	Agent_ChangeTarget($l_i_Npc)
+	Sleep(150)
 	Agent_GoNPC($l_i_Npc)
 	Sleep(800)
 	Return True

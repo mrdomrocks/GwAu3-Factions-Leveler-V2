@@ -6,6 +6,22 @@ Func Leveler_PrimaryProfession()
 	Return $l_i_Prof
 EndFunc
 
+Func Leveler_SecondaryProfession()
+	Local $l_i_Prof = Agent_GetAgentInfo(-2, "Secondary")
+	If $l_i_Prof >= 1 And $l_i_Prof <= 10 Then Return $l_i_Prof
+	If $l_i_Prof = 0 Then Return 0
+	Local $l_i_PartyProf = Party_GetPartyProfessionInfo(-2, "Secondary")
+	If $l_i_PartyProf >= 1 And $l_i_PartyProf <= 10 Then Return $l_i_PartyProf
+	Return 0
+EndFunc
+
+; A secondary ID of 1-10 means the profession was assigned. It does not mean
+; Choose Your Secondary Profession (#317) has been turned in for the gold reward.
+Func Leveler_HasSecondaryProfession()
+	Local $l_i_Prof = Leveler_SecondaryProfession()
+	Return $l_i_Prof >= 1 And $l_i_Prof <= 10
+EndFunc
+
 Func Leveler_IsMesmer()
 	Return Leveler_PrimaryProfession() = $GC_I_PROFESSION_MESMER
 EndFunc

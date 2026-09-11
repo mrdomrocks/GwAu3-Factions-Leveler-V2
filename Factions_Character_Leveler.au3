@@ -1,4 +1,8 @@
 #RequireAdmin
+Opt("GUIOnEventMode", True)
+Opt("GUICloseOnESC", False)
+Opt("ExpandVarStrings", 1)
+
 #include "../../API/_GwAu3.au3"
 #include "Leveler_Const.au3"
 #include "Leveler_Move.au3"
@@ -9,9 +13,6 @@
 #include "Leveler_Steps.au3"
 
 Global Const $GC_B_LOAD_LOGGED_CHARS = True
-Opt("GUIOnEventMode", True)
-Opt("GUICloseOnESC", False)
-Opt("ExpandVarStrings", 1)
 
 $DLL_PATH = @ScriptDir & "\..\..\API\Plugins\Pathfinder\GWPathfinder.dll"
 
@@ -99,7 +100,11 @@ Core_AutoStart()
 While 1
 	Sleep(80)
 	If $g_b_BotCoreInitialized And $g_b_BotRunning And Not $g_b_LevelerPaused Then
-		If $g_i_Step >= $LEVELER_STEP_DONE Then
+		If $g_b_NeedStatusCheck Then
+			$g_i_Step = Leveler_StatusCheck()
+			$g_b_NeedStatusCheck = False
+			Out("Starting at step: " & $g_i_Step & " — " & $g_as_StepNames[$g_i_Step])
+		ElseIf $g_i_Step >= $LEVELER_STEP_DONE Then
 			Out("Phase 1-5 complete. Post-20 unlocks finished (Kilroy, Olias, GToB, Vaettir NPC if A/Me).")
 			$g_b_BotRunning = False
 			GUICtrlSetData($g_h_StartButton, "Start")
@@ -141,12 +146,12 @@ Func StartBot()
 	$g_b_BotCoreInitialized = True
 	$g_b_LevelerPaused = False
 	$g_b_LevelerFailed = False
+	$g_b_NeedStatusCheck = True
+	Leveler_RefreshQuestFlags(True)
 
-	Leveler_EnsurePathfinder()
 	Out("Initialized for: " & Player_GetCharName())
 	Out("Map: " & Map_GetMapID() & "  Pos: " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")))
-	$g_i_Step = Leveler_StatusCheck()
-	Out("Starting at step: " & $g_i_Step)
+	Out("Core ready. Returning to the run loop.")
 EndFunc
 
 Func TogglePause()
@@ -160,11 +165,11 @@ Func TogglePause()
 		Out("Paused. Use Resume from to pick a step, then Start.")
 	Else
 		$g_b_BotRunning = True
-		$g_i_Step = Leveler_StatusCheck()
+		$g_b_NeedStatusCheck = True
 		GUICtrlSetData($g_h_PauseButton, "Pause")
 		GUICtrlSetData($g_h_StartButton, "Running")
 		GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
-		Out("Resumed at step: " & $g_i_Step)
+		Out("Resuming. Status check will run on the next loop tick.")
 	EndIf
 EndFunc
 
@@ -219,12 +224,12 @@ Func GuiButtonHandler()
 			If $g_b_BotCoreInitialized Then
 				$g_b_LevelerPaused = False
 				$g_b_BotRunning = True
-				$g_i_Step = Leveler_StatusCheck()
+				$g_b_NeedStatusCheck = True
 				GUICtrlSetData($g_h_StartButton, "Running")
 				GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
 				GUICtrlSetData($g_h_PauseButton, "Pause")
 				GUICtrlSetState($g_h_PauseButton, $GUI_ENABLE)
-				Out("Starting at step: " & $g_i_Step)
+				Out("Start pressed. Status check will run on the next loop tick.")
 			Else
 				StartBot()
 			EndIf
