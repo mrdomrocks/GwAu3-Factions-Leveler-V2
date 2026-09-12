@@ -317,8 +317,8 @@ Func Leveler_StatusCheck()
 	Leveler_LogQuestState($QUEST_FORMAL_INTRO, "Formal Introduction")
 	Out("[Status] Profession " & Leveler_PrimaryProfession() & "/" & Leveler_SecondaryProfession() & "  Gold " & Leveler_CharacterGold() & "  Secondary step done=" & $g_ab_StepDone[$LEVELER_STEP_SECONDARY])
 	$g_ab_StepDone[$LEVELER_STEP_XUNLAI] = Leveler_QuestProgress($QUEST_LOST_TREASURE) Or Leveler_HasLaterQuest()
-	$g_ab_StepDone[$LEVELER_STEP_WEAPON] = Leveler_HasCraftedWeapon()
-	$g_ab_StepDone[$LEVELER_STEP_ARMOR] = Leveler_HasMonasteryArmor() Or $l_b_SeitungArmor
+	$g_ab_StepDone[$LEVELER_STEP_WEAPON] = Leveler_HasCraftedWeapon() And Leveler_IsModelEquipped($MODEL_CLAIRVOYANT_STAFF)
+	$g_ab_StepDone[$LEVELER_STEP_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMonasteryPieces()) Or $l_b_SeitungArmor
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY] = Not Leveler_HasStarterArmor() And (Leveler_HasMonasteryArmor() Or $l_b_SeitungArmor)
 	$g_ab_StepDone[$LEVELER_STEP_BAGS] = Leveler_HasExtendedBags()
 	$g_ab_StepDone[$LEVELER_STEP_SKILLS] = Leveler_QuestProgress($QUEST_LOST_TREASURE) Or Leveler_HasLaterQuest()
@@ -329,14 +329,14 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_TENGU] = Leveler_IsQuestDone($QUEST_WARNING_TENGU) Or (Not Leveler_HasIncompleteQuest($QUEST_WARNING_TENGU) And (Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Or $l_b_Seitung Or $l_b_TsumeiPath))
 	$g_ab_StepDone[$LEVELER_STEP_THREAT] = (Leveler_IsQuestDone($QUEST_THREAT_GROWS) Or (Not Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) And (Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Or $l_b_Seitung))) And $l_i_Map <> $MAP_TSUMEI And $l_i_Map <> $MAP_PANJIANG
 	$g_ab_StepDone[$LEVELER_STEP_ROAD] = Leveler_IsQuestDone($QUEST_ROAD_LESS) Or $l_b_SeitungArmor Or (($l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU Or $l_i_Map = $MAP_ZEN_OP) And Not Leveler_HasIncompleteQuest($QUEST_ROAD_LESS))
-	$g_ab_StepDone[$LEVELER_STEP_SEITUNG] = $l_b_SeitungArmor
+	$g_ab_StepDone[$LEVELER_STEP_SEITUNG] = Leveler_ArmorSetEquipped(Leveler_GetSeitungPieces()) Or $l_b_MaxArmor
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_MON] = $l_b_SeitungArmor And (Not Leveler_HasMonasteryArmor() Or $l_b_ZenOp Or $l_b_ToZenPath)
 	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp Or $l_b_ToZenPath
 	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = $l_b_Skill61
 	$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or ($l_b_Skill61 And $l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost"))
 	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = (Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) And $l_i_Map <> $MAP_KAINENG_DOCKS
 	$g_ab_StepDone[$LEVELER_STEP_TO_KC] = $l_b_Kaineng
-	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = $l_b_MaxArmor
+	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $l_b_MaxArmor And (Not $l_b_SeitungArmor Or Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_SEARCH_CURE) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN))
 	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_BROTHER_TOSAI) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN)
 	$g_ab_StepDone[$LEVELER_STEP_BURDEN] = Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) And Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN)

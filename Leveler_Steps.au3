@@ -247,6 +247,10 @@ EndFunc
 Func Leveler_Step_CraftWeapon()
 	$g_s_CurrentHeader = "Craft Weapon"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_HasCraftedWeapon() Then
+		Out("[Step] Staff already crafted. Equipping it.")
+		Return Leveler_EquipModel($MODEL_CLAIRVOYANT_STAFF)
+	EndIf
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_SetPacifist()
 	Item_WithdrawGold(5000)
@@ -266,6 +270,10 @@ EndFunc
 Func Leveler_Step_CraftMonasteryArmor()
 	$g_s_CurrentHeader = "Craft Monastery Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_HasMonasteryArmor() Then
+		Out("[Step] Monastery armor already crafted. Equipping it.")
+		Return Leveler_EquipArmorPieces(Leveler_GetMonasteryPieces())
+	EndIf
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_SetPacifist()
 	If Not Leveler_InteractNpcAt(-7115.00, 12636.00, False) Then Return False
@@ -520,8 +528,8 @@ Func Leveler_Step_CraftSeitungArmor()
 	$g_s_CurrentHeader = "Craft Seitung Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_HasSeitungArmor() Then
-		Out("[Step] Seitung armor already crafted")
-		Return True
+		Out("[Step] Seitung armor already crafted. Equipping it.")
+		Return Leveler_EquipArmorPieces(Leveler_GetSeitungPieces())
 	EndIf
 
 	; Buy the larger Seitung material counts at the known Shing Jea merchant first.
@@ -793,8 +801,8 @@ Func Leveler_Step_CraftMaxArmor()
 	$g_s_CurrentHeader = "Craft Max Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_HasMaxArmor() Then
-		Out("[Step] Max armor already crafted")
-		Return True
+		Out("[Step] Max armor already crafted. Equipping it.")
+		Return Leveler_EquipArmorPieces(Leveler_GetMaxArmorPieces())
 	EndIf
 
 	If Not Leveler_Travel($MAP_KAINENG) Then Return False

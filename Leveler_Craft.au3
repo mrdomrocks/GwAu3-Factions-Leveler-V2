@@ -23,6 +23,62 @@ Func Leveler_CountModel($a_i_Model, $a_b_IncludeStorage = True)
 	Return $l_i_Count
 EndFunc
 
+Func Leveler_FindInvItem($a_i_Model)
+	Local $l_i_Item = Item_FindItemByModelID($a_i_Model)
+	If $l_i_Item = 0 Then $l_i_Item = Item_GetBagsItembyModelID($a_i_Model)
+	Return $l_i_Item
+EndFunc
+
+Func Leveler_IsModelEquipped($a_i_Model)
+	If $a_i_Model = 0 Then Return False
+	If Item_GetInventoryInfo("WeaponSet0WeaponModelID") = $a_i_Model Then Return True
+	If Item_GetInventoryInfo("WeaponSet1WeaponModelID") = $a_i_Model Then Return True
+	Local $l_i_Item = Leveler_FindInvItem($a_i_Model)
+	If $l_i_Item = 0 Then Return False
+	If Item_GetItemInfoByModelID($a_i_Model, "Equipped") <> 0 Then Return True
+	If Item_GetItemInfoByModelID($a_i_Model, "BagEquipped") <> 0 Then Return True
+	Return False
+EndFunc
+
+; Find the crafted item and put it on. Crafting alone leaves it in the bag.
+Func Leveler_EquipModel($a_i_Model)
+	If Leveler_IsModelEquipped($a_i_Model) Then Return True
+	Local $i
+	For $i = 1 To 6
+		Local $l_i_Item = Leveler_FindInvItem($a_i_Model)
+		If $l_i_Item = 0 Then
+			Sleep(350)
+			ContinueLoop
+		EndIf
+		Item_EquipItem($l_i_Item)
+		Sleep(250)
+		Ui_EquipItem($l_i_Item)
+		Sleep(400)
+		If Leveler_IsModelEquipped($a_i_Model) Then
+			Out("[Craft] Equipped model " & $a_i_Model)
+			Return True
+		EndIf
+	Next
+	Out("[Craft] Failed to equip model " & $a_i_Model)
+	Return False
+EndFunc
+
+Func Leveler_EquipArmorPieces($a_ai_Pieces)
+	Local $i
+	For $i = 0 To UBound($a_ai_Pieces) - 1
+		If Not Leveler_EquipModel($a_ai_Pieces[$i][0]) Then Return False
+	Next
+	Return True
+EndFunc
+
+Func Leveler_ArmorSetEquipped($a_ai_Pieces)
+	Local $i
+	For $i = 0 To UBound($a_ai_Pieces) - 1
+		If Not Leveler_IsModelEquipped($a_ai_Pieces[$i][0]) Then Return False
+	Next
+	Return True
+EndFunc
+
 Func Leveler_BuyMaterialShortfall($a_i_Model, $a_i_Need)
 	Local $l_i_Have = Leveler_CountModel($a_i_Model, True)
 	Local $l_i_Short = $a_i_Need - $l_i_Have
@@ -238,19 +294,20 @@ Func Leveler_BuyWeaponMaterials()
 EndFunc
 
 Func Leveler_CraftWeapon()
-	Local $l_ai_Mats[2][2]
-	$l_ai_Mats[0][0] = $GC_I_MODELID_WOOD
-	$l_ai_Mats[0][1] = 4
-	$l_ai_Mats[1][0] = $GC_I_MODELID_DUST
-	$l_ai_Mats[1][1] = 1
-	If Not Merchant_CraftItem($MODEL_CLAIRVOYANT_STAFF, $WEAPON_GOLD_COST, $l_ai_Mats) Then
-		Out("[Craft] Failed to craft Clairvoyant Staff")
-		Return False
+	If Leveler_FindInvItem($MODEL_CLAIRVOYANT_STAFF) = 0 Then
+		Local $l_ai_Mats[2][2]
+		$l_ai_Mats[0][0] = $GC_I_MODELID_WOOD
+		$l_ai_Mats[0][1] = 4
+		$l_ai_Mats[1][0] = $GC_I_MODELID_DUST
+		$l_ai_Mats[1][1] = 1
+		If Not Merchant_CraftItem($MODEL_CLAIRVOYANT_STAFF, $WEAPON_GOLD_COST, $l_ai_Mats) Then
+			Out("[Craft] Failed to craft Clairvoyant Staff")
+			Return False
+		EndIf
+		Sleep(800)
 	EndIf
-	Sleep(500)
-	Local $l_i_Item = Item_FindItemByModelID($MODEL_CLAIRVOYANT_STAFF)
-	If $l_i_Item <> 0 Then Item_EquipItem($l_i_Item)
-	Out("[Craft] Crafted and equipped starter staff")
+	If Not Leveler_EquipModel($MODEL_CLAIRVOYANT_STAFF) Then Return False
+	Out("[Craft] Starter staff equipped")
 	Return True
 EndFunc
 
@@ -258,19 +315,19 @@ Func Leveler_CraftMonasteryArmor()
 	Local $l_ai_Pieces = Leveler_GetMonasteryPieces()
 	For $i = 0 To UBound($l_ai_Pieces) - 1
 		Local $l_i_ItemID = $l_ai_Pieces[$i][0]
-		Local $l_ai_Mats[1][2]
-		$l_ai_Mats[0][0] = $l_ai_Pieces[$i][1]
-		$l_ai_Mats[0][1] = $l_ai_Pieces[$i][2]
-		If Not Merchant_CraftItem($l_i_ItemID, $MONASTERY_ARMOR_GOLD, $l_ai_Mats) Then
-			Out("[Craft] Failed to craft armor piece " & $l_i_ItemID)
-			Return False
+		If Leveler_FindInvItem($l_i_ItemID) = 0 Then
+			Local $l_ai_Mats[1][2]
+			$l_ai_Mats[0][0] = $l_ai_Pieces[$i][1]
+			$l_ai_Mats[0][1] = $l_ai_Pieces[$i][2]
+			If Not Merchant_CraftItem($l_i_ItemID, $MONASTERY_ARMOR_GOLD, $l_ai_Mats) Then
+				Out("[Craft] Failed to craft armor piece " & $l_i_ItemID)
+				Return False
+			EndIf
+			Sleep(800)
 		EndIf
-		Sleep(400)
-		Local $l_i_Inv = Item_FindItemByModelID($l_i_ItemID)
-		If $l_i_Inv <> 0 Then Item_EquipItem($l_i_Inv)
-		Sleep(250)
+		If Not Leveler_EquipModel($l_i_ItemID) Then Return False
 	Next
-	Out("[Craft] Monastery armor set crafted")
+	Out("[Craft] Monastery armor set crafted and equipped")
 	Return True
 EndFunc
 
@@ -562,19 +619,19 @@ Func Leveler_CraftSeitungArmor()
 	Local $l_ai_Pieces = Leveler_GetSeitungPieces()
 	For $i = 0 To UBound($l_ai_Pieces) - 1
 		Local $l_i_ItemID = $l_ai_Pieces[$i][0]
-		Local $l_ai_Mats[1][2]
-		$l_ai_Mats[0][0] = $l_ai_Pieces[$i][1]
-		$l_ai_Mats[0][1] = $l_ai_Pieces[$i][2]
-		If Not Merchant_CraftItem($l_i_ItemID, $SEITUNG_ARMOR_GOLD, $l_ai_Mats) Then
-			Out("[Craft] Failed to craft Seitung armor piece " & $l_i_ItemID)
-			Return False
+		If Leveler_FindInvItem($l_i_ItemID) = 0 Then
+			Local $l_ai_Mats[1][2]
+			$l_ai_Mats[0][0] = $l_ai_Pieces[$i][1]
+			$l_ai_Mats[0][1] = $l_ai_Pieces[$i][2]
+			If Not Merchant_CraftItem($l_i_ItemID, $SEITUNG_ARMOR_GOLD, $l_ai_Mats) Then
+				Out("[Craft] Failed to craft Seitung armor piece " & $l_i_ItemID)
+				Return False
+			EndIf
+			Sleep(800)
 		EndIf
-		Sleep(400)
-		Local $l_i_Inv = Item_FindItemByModelID($l_i_ItemID)
-		If $l_i_Inv <> 0 Then Item_EquipItem($l_i_Inv)
-		Sleep(250)
+		If Not Leveler_EquipModel($l_i_ItemID) Then Return False
 	Next
-	Out("[Craft] Seitung armor set crafted")
+	Out("[Craft] Seitung armor set crafted and equipped")
 	Return True
 EndFunc
 
@@ -766,21 +823,21 @@ EndFunc
 Func Leveler_CraftMaxArmor()
 	Local $l_ai_Pieces = Leveler_GetMaxArmorPieces()
 	For $i = 0 To UBound($l_ai_Pieces) - 1
-		Local $l_ai_Mats[2][2]
-		$l_ai_Mats[0][0] = $l_ai_Pieces[$i][1]
-		$l_ai_Mats[0][1] = $l_ai_Pieces[$i][2]
-		$l_ai_Mats[1][0] = $l_ai_Pieces[$i][3]
-		$l_ai_Mats[1][1] = $l_ai_Pieces[$i][4]
-		If Not Merchant_CraftItem($l_ai_Pieces[$i][0], $MAX_ARMOR_GOLD, $l_ai_Mats) Then
-			Out("[Craft] Failed to craft max armor piece " & $l_ai_Pieces[$i][0])
-			Return False
+		If Leveler_FindInvItem($l_ai_Pieces[$i][0]) = 0 Then
+			Local $l_ai_Mats[2][2]
+			$l_ai_Mats[0][0] = $l_ai_Pieces[$i][1]
+			$l_ai_Mats[0][1] = $l_ai_Pieces[$i][2]
+			$l_ai_Mats[1][0] = $l_ai_Pieces[$i][3]
+			$l_ai_Mats[1][1] = $l_ai_Pieces[$i][4]
+			If Not Merchant_CraftItem($l_ai_Pieces[$i][0], $MAX_ARMOR_GOLD, $l_ai_Mats) Then
+				Out("[Craft] Failed to craft max armor piece " & $l_ai_Pieces[$i][0])
+				Return False
+			EndIf
+			Sleep(800)
 		EndIf
-		Sleep(500)
-		Local $l_i_Inv = Item_FindItemByModelID($l_ai_Pieces[$i][0])
-		If $l_i_Inv <> 0 Then Item_EquipItem($l_i_Inv)
-		Sleep(250)
+		If Not Leveler_EquipModel($l_ai_Pieces[$i][0]) Then Return False
 	Next
-	Out("[Craft] Max armor set crafted")
+	Out("[Craft] Max armor set crafted and equipped")
 	Return True
 EndFunc
 
