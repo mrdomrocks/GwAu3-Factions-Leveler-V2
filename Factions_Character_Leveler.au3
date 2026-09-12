@@ -7,6 +7,7 @@ Opt("ExpandVarStrings", 1)
 #include "Leveler_Const.au3"
 #include "Leveler_Move.au3"
 #include "Leveler_Quest.au3"
+#include "Leveler_Prof.au3"
 #include "Leveler_Party.au3"
 #include "Leveler_Craft.au3"
 #include "Leveler_Status.au3"

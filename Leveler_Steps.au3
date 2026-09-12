@@ -211,11 +211,19 @@ EndFunc
 Func Leveler_Step_UnlockXunlai()
 	$g_s_CurrentHeader = "Unlock Xunlai Storage"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_XunlaiUnlocked() Then
+		Out("[Step] Xunlai storage already unlocked")
+		Return True
+	EndIf
 	Local $l_i_Gold = Leveler_CharacterGold()
-	If Not Leveler_SecondaryStepReadyToLeave() Or $l_i_Gold < $XUNLAI_GOLD_COST Then
+	If Not Leveler_SecondaryStepReadyToLeave() Then
 		Leveler_LogQuestState($QUEST_SECONDARY, "Choose Secondary")
 		Out("[Step] Need Togo's #317 reward before Xunlai (gold " & $l_i_Gold & "). Returning to Unlock Secondary.")
 		$g_i_Step = $LEVELER_STEP_SECONDARY
+		Return False
+	EndIf
+	If $l_i_Gold < $XUNLAI_GOLD_COST Then
+		Out("[Step] Xunlai needs " & $XUNLAI_GOLD_COST & " gold. Not advancing.")
 		Return False
 	EndIf
 	If Map_GetMapID() <> $MAP_SHING_JEA Then
@@ -235,6 +243,10 @@ Func Leveler_Step_UnlockXunlai()
 	Sleep(800)
 	Ui_Dialog($DIALOG_XUNLAI_2)
 	Sleep(800)
+	If Leveler_XunlaiUnlocked() Then
+		Out("[Step] Xunlai storage unlocked")
+		Return True
+	EndIf
 	Local $l_i_GoldAfter = Item_GetInventoryInfo("GoldCharacter")
 	If $l_i_GoldAfter > $l_i_Gold - $XUNLAI_GOLD_COST + 5 Then
 		Out("[Step] Xunlai unlock did not take " & $XUNLAI_GOLD_COST & " gold (now " & $l_i_GoldAfter & "). Not advancing.")
@@ -290,6 +302,10 @@ EndFunc
 Func Leveler_Step_ExtendInventory()
 	$g_s_CurrentHeader = "Extend Inventory"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_HasExtendedBags() Then
+		Out("[Step] Belt Pouch is equipped; inventory already extended")
+		Return True
+	EndIf
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_SetPacifist()
 	Return Leveler_ExtendInventory()
@@ -298,32 +314,102 @@ EndFunc
 Func Leveler_Step_UnlockSkills()
 	$g_s_CurrentHeader = "Unlock Skills Trainer"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
+	If Leveler_ZhaoDiSkillsUnlocked() Then
+		Out("[Step] Signet of Disruption and Leech Signet already acquired; skipping trainer")
+		Leveler_EquipTrainerSkills()
+		Return True
+	EndIf
+	; Rezone so we do not path from the bag merchant around courtyard objects.
+	If Not Leveler_Travel($MAP_SHING_JEA, True) Then Return False
 	Leveler_SetPacifist()
+	If Agent_GetDistanceToXY(-11866, 11444) < 1200 Then
+		Out("[Step] Still near the bag merchant; taking the courtyard around the obstacle")
+		If Not Leveler_MoveTo(-10896.94, 10807.54, False) Then Return False
+	EndIf
 	If Not Leveler_MoveAndDialog(-8790.00, 10366.00, $DIALOG_GENERIC_TALK, False) Then Return False
 	Sleep(3000)
-	Skill_BuySkillByID($SKILL_CRY_OF_PAIN)
-	Sleep(250)
-	Skill_BuySkillByID($SKILL_POWER_DRAIN)
-	Sleep(250)
-	Skill_BuySkillByID($SKILL_SIGNET_OF_DISRUPTION)
-	Sleep(250)
-	Out("[Step] Bought trainer skills 57 / 25 / 860")
+	Leveler_BuySkillIfNeeded($SKILL_SIGNET_OF_DISRUPTION)
+	Sleep(400)
+	Leveler_BuySkillIfNeeded($SKILL_LEECH_SIGNET)
+	Sleep(400)
+	Leveler_BuySkillIfNeeded($SKILL_ENERGY_BURN)
+	Sleep(400)
+	Leveler_CloseTrainerWindow()
+	Out("[Step] Zhao Di buy done. Learnt 860=" & World_IsSkillLearnt($SKILL_SIGNET_OF_DISRUPTION) & " 61=" & World_IsSkillLearnt($SKILL_LEECH_SIGNET) & " 42=" & World_IsSkillLearnt($SKILL_ENERGY_BURN))
+	If Not World_IsSkillLearnt($SKILL_SIGNET_OF_DISRUPTION) Then
+		Out("[Step] Signet of Disruption was not learnt. Staying on the trainer.")
+		Return False
+	EndIf
+	If Not World_IsSkillLearnt($SKILL_LEECH_SIGNET) Then
+		Out("[Step] Leech Signet was not learnt. Staying on the trainer.")
+		Return False
+	EndIf
+	If Not Leveler_EquipTrainerSkills() Then Return False
 	Return True
 EndFunc
 
-Func Leveler_Step_ToChosEstate()
-	$g_s_CurrentHeader = "To Minister Cho's Estate"
-	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_SkipIfQuestDone($QUEST_FORMAL_INTRO, "A Formal Introduction") Then Return True
-	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
-	If Not Leveler_MoveAndExit(-14961, 11453, $MAP_SUNQUA_VALE, False) Then Return False
-	Leveler_SetPacifist()
-	If Not Leveler_MoveTo(16182.62, -7841.86, False) Then Return False
-	If Not Leveler_MoveTo(6611.58, 15847.51, False) Then Return False
-	If Not Leveler_QuestLoop($QUEST_FORMAL_INTRO, 6637, 16147, $DIALOG_FORMAL_SKIP, "skip") Then
-		If Map_GetMapID() <> $MAP_CHO_OUTPOST Then Map_WaitMapLoading($MAP_CHO_OUTPOST)
+; Michiko in Kaineng sells Cry of Frustration and Power Drain.
+Func Leveler_BuyKainengInterrupts()
+	If Leveler_InterruptSkillsUnlocked() Then
+		Return Leveler_EquipTrainerSkills()
 	EndIf
+	If Map_GetMapID() <> $MAP_KAINENG Then Return False
+	Local $l_i_Npc = Leveler_GetAgentByName("Michiko")
+	If $l_i_Npc = 0 Then
+		Out("[Step] Michiko not found in Kaineng")
+		Return False
+	EndIf
+	Local $l_f_X = Agent_GetAgentInfo($l_i_Npc, "X")
+	Local $l_f_Y = Agent_GetAgentInfo($l_i_Npc, "Y")
+	If Not Leveler_MoveAndDialog($l_f_X, $l_f_Y, $DIALOG_GENERIC_TALK, False, Agent_GetAgentInfo($l_i_Npc, "PlayerNumber")) Then Return False
+	Sleep(3000)
+	If Not Leveler_BuySkillIfNeeded($SKILL_CRY_OF_FRUSTRATION) Then Return False
+	Sleep(400)
+	If Not Leveler_BuySkillIfNeeded($SKILL_POWER_DRAIN) Then Return False
+	Sleep(400)
+	Out("[Step] Bought Cry of Frustration and Power Drain from Michiko")
+	Return Leveler_EquipTrainerSkills()
+EndFunc
+
+Func Leveler_NearGuardsmanZui()
+	If Map_GetMapID() <> $MAP_SUNQUA_VALE Then Return False
+	Return Agent_GetDistanceToXY($ZUI_SUNQUA_X, $ZUI_SUNQUA_Y) < 600
+EndFunc
+
+Func Leveler_NearSunquaTogoStart()
+	If Map_GetMapID() <> $MAP_SUNQUA_VALE Then Return False
+	Return Agent_GetDistanceToXY($TOGO_SUNQUA_X, $TOGO_SUNQUA_Y) < 800
+EndFunc
+
+Func Leveler_TalkToGuardsmanZui()
+	If Not Leveler_MoveTo($ZUI_SUNQUA_X, $ZUI_SUNQUA_Y, False) Then Return False
+	Local $l_i_Zui = Leveler_GetAgentByName("Zui")
+	If $l_i_Zui = 0 Then $l_i_Zui = Leveler_GetNearestNPCAt($ZUI_SUNQUA_X, $ZUI_SUNQUA_Y, 400)
+	If $l_i_Zui = 0 Then
+		Out("[Step] Guardsman Zui not found")
+		Return False
+	EndIf
+	Out("[Step] Guardsman Zui: 0x15+0x813E04, 0x18+0x800008, 0x800009+0x19, 0x80000B+0x19")
+	If Not Leveler_TalkAndDialog($l_i_Zui, $DIALOG_FORMAL_TOGO_TALK) Then Return False
+	If Map_GetMapID() <> $MAP_SUNQUA_VALE Then Return True
+	Sleep(500)
+	Ui_Dialog($DIALOG_FORMAL_STEP)
+	Sleep(800)
+	If Map_GetMapID() <> $MAP_SUNQUA_VALE Then Return True
+	Ui_Dialog($DIALOG_FORMAL_TOGO_DONE)
+	Sleep(500)
+	Ui_Dialog($DIALOG_FORMAL_ZUI)
+	Sleep(800)
+	If Map_GetMapID() <> $MAP_SUNQUA_VALE Then Return True
+	Ui_Dialog($DIALOG_FORMAL_ZUI_2)
+	Sleep(500)
+	Ui_Dialog($DIALOG_FORMAL_ZUI_2_TALK)
+	Sleep(800)
+	If Map_GetMapID() <> $MAP_SUNQUA_VALE Then Return True
+	Ui_Dialog($DIALOG_FORMAL_SKIP)
+	Sleep(500)
+	Ui_Dialog($DIALOG_FORMAL_ZUI_2_TALK)
+	Sleep(1500)
 	If Map_GetMapID() <> $MAP_CHO_OUTPOST Then
 		If Not Map_WaitMapLoading($MAP_CHO_OUTPOST) Then Return False
 	EndIf
@@ -331,16 +417,82 @@ Func Leveler_Step_ToChosEstate()
 	Return True
 EndFunc
 
+Func Leveler_TalkToSunquaTogo()
+	If Not Leveler_NearSunquaTogoStart() Then
+		Out("[Step] Togo start talk already done; going to Guardsman Zui")
+		Return Leveler_TalkToGuardsmanZui()
+	EndIf
+	Out("[Step] Talking to Master Togo in Sunqua Vale at " & Round($TOGO_SUNQUA_X) & ", " & Round($TOGO_SUNQUA_Y))
+	If Not Leveler_MoveTo($TOGO_SUNQUA_X, $TOGO_SUNQUA_Y, False) Then Return False
+	Local $l_i_Togo = Leveler_GetTogo($TOGO_SUNQUA_X, $TOGO_SUNQUA_Y)
+	If $l_i_Togo = 0 Then
+		Out("[Step] Master Togo not found in Sunqua Vale")
+		Return False
+	EndIf
+	Out("[Step] Sending Togo dialogs 0x15 and 0x813E04")
+	If Not Leveler_TalkAndDialog($l_i_Togo, $DIALOG_FORMAL_TOGO_TALK) Then Return False
+	Sleep(400)
+	Ui_Dialog($DIALOG_FORMAL_STEP)
+	Sleep(1500)
+	If Map_GetMapID() = $MAP_SUNQUA_VALE Then
+		If Not Leveler_FollowTogo() Then Return False
+	EndIf
+	If Map_GetMapID() = $MAP_SUNQUA_VALE Then Return Leveler_TalkToGuardsmanZui()
+	If Map_GetMapID() <> $MAP_CHO_OUTPOST Then
+		If Not Map_WaitMapLoading($MAP_CHO_OUTPOST) Then Return False
+	EndIf
+	If Not Leveler_QuestLoop($QUEST_FORMAL_INTRO, 7884, -10029, $DIALOG_FORMAL_COMPLETE, "complete") Then Return False
+	Return True
+EndFunc
+
+Func Leveler_Step_ToChosEstate()
+	$g_s_CurrentHeader = "To Minister Cho's Estate"
+	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Map_GetMapID() = $MAP_CHO_OUTPOST And Map_GetInstanceInfo("IsOutpost") Then
+		If Not Leveler_QuestLoop($QUEST_FORMAL_INTRO, 7884, -10029, $DIALOG_FORMAL_COMPLETE, "complete") Then Return False
+		Return True
+	EndIf
+	If Map_GetMapID() = $MAP_SUNQUA_VALE Then
+		Leveler_SetPacifist()
+		If Not Leveler_NearSunquaTogoStart() Then
+			Out("[Step] Not at Togo start; skipping Togo and going to Guardsman Zui")
+			Return Leveler_TalkToGuardsmanZui()
+		EndIf
+		Return Leveler_TalkToSunquaTogo()
+	EndIf
+
+	If Map_GetMapID() <> $MAP_SHING_JEA Then
+		If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
+	EndIf
+	Leveler_SetPacifist()
+	If Not Leveler_EnsureFormingPartyHenchmen() Then Return False
+	If Not Leveler_MoveAndExit(-14961, 11453, $MAP_SUNQUA_VALE, False) Then Return False
+	Leveler_SetPacifist()
+	Return Leveler_TalkToSunquaTogo()
+EndFunc
+
 Func Leveler_Step_ChosMission()
 	$g_s_CurrentHeader = "Minister Cho's Estate Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Map_GetMapID() <> $MAP_CHO_OUTPOST Or Not Map_GetInstanceInfo("IsOutpost") Then
-		If Not Leveler_Travel($MAP_CHO_OUTPOST) Then Return False
+	If Map_GetMapID() = $MAP_CHO_OUTPOST And Not Map_GetInstanceInfo("IsOutpost") Then
+		Out("[Step] Already inside Minister Cho's Estate")
+	Else
+		If Map_GetMapID() <> $MAP_CHO_OUTPOST Or Not Map_GetInstanceInfo("IsOutpost") Then
+			If Not Leveler_Travel($MAP_CHO_OUTPOST) Then Return False
+		EndIf
+		Leveler_PrepareForBattle()
+		Sleep(800)
+		; Python: EnterChallenge() then wait 4500 then wait for map 214.
+		Map_EnterChallenge(True)
+		Sleep(4500)
+		If Map_GetMapID() = $MAP_CHO_OUTPOST And Map_GetInstanceInfo("IsOutpost") Then
+			If Not Map_WaitMapLoading() Then Return False
+		EndIf
+		If Map_GetMapID() = $MAP_CHO_OUTPOST And Map_GetInstanceInfo("IsOutpost") Then
+			Out("[Step] Still in the Cho outpost after Enter Challenge")
+			Return False
+		EndIf
 	EndIf
-	Leveler_PrepareForBattle()
-	Map_EnterChallenge(True)
-	Sleep(1500)
-	Map_WaitMapLoading()
 	If Leveler_IsWiped() Then Return False
 
 	If Not Leveler_MoveTo(6220.76, -7360.73, True) Then Return False
@@ -590,6 +742,10 @@ EndFunc
 Func Leveler_Step_CompleteSkillsTraining()
 	$g_s_CurrentHeader = "Complete Skills Training"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Map_IsMapUnlocked($MAP_MARKETPLACE) Then
+		Out("[Step] Marketplace already unlocked; later trainer already done")
+		Return True
+	EndIf
 	Party_LeaveGroup(True)
 	Sleep(400)
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
@@ -597,16 +753,19 @@ Func Leveler_Step_CompleteSkillsTraining()
 	If Not Leveler_MoveAndDialog(-8790.00, 10366.00, $DIALOG_GENERIC_TALK, False) Then Return False
 	Sleep(3000)
 	Skill_BuySkillByID($SKILL_POWER_SPIKE)
-	Sleep(250)
+	Leveler_WaitSkillLearnt($SKILL_POWER_SPIKE)
+	Sleep(400)
 	If Leveler_IsMesmer() Then
 		Skill_BuySkillByID($SKILL_BACKFIRE)
-		Sleep(250)
+		Leveler_WaitSkillLearnt($SKILL_BACKFIRE)
+		Sleep(400)
 	EndIf
 	If Leveler_IsMesmer() Then
 		Out("[Step] Bought skills 61 and 54")
 	Else
 		Out("[Step] Bought skill 61")
 	EndIf
+	Leveler_EquipTrainerSkills()
 	Return True
 EndFunc
 
@@ -794,6 +953,7 @@ Func Leveler_Step_ToKainengCenter()
 	If Not Leveler_MoveTo(-6857.17, 19098.28, True) Then Return False
 	If Not Leveler_MoveAndExit(-6706, 20388, $MAP_KAINENG, True) Then Return False
 	Out("[Step] Arrived in Kaineng Center")
+	Leveler_BuyKainengInterrupts()
 	Return True
 EndFunc
 
@@ -807,6 +967,7 @@ Func Leveler_Step_CraftMaxArmor()
 
 	If Not Leveler_Travel($MAP_KAINENG) Then Return False
 	Leveler_SetPacifist()
+	If Not Leveler_InterruptSkillsUnlocked() Then Leveler_BuyKainengInterrupts()
 	If Not Leveler_MoveTo(1592.00, -796.00, False) Then Return False
 	Item_WithdrawGold(20000)
 	Sleep(400)

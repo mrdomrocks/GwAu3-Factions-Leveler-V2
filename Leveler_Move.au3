@@ -125,10 +125,27 @@ Func Leveler_MoveAndExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False)
 	Return Map_WaitMapLoading($a_i_MapID)
 EndFunc
 
-Func Leveler_Travel($a_i_MapID)
-	If Map_GetMapID() = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then Return True
+; $a_b_Rezone True = leave and re-enter the outpost so we spawn at the portal
+; instead of pathing across town from the last NPC (bag merchant, crafter, ...).
+Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
+	If Map_GetMapID() = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
+		If Not $a_b_Rezone Then Return True
+		Out("[Move] Rezoning map " & $a_i_MapID & " to reset position")
+		If Map_RndTravel($a_i_MapID, True, True) Then Return True
+		Out("[Move] Rezone failed; walking from the current position")
+		Return True
+	EndIf
 	Out("[Move] Travel to map " & $a_i_MapID)
 	Return Map_TravelTo($a_i_MapID)
+EndFunc
+
+Func Leveler_GetAgentByName($a_s_Name)
+	Local $l_i_Max = Agent_GetMaxAgents()
+	For $i = 1 To $l_i_Max - 1
+		If Not Leveler_IsTalkNpc($i) Then ContinueLoop
+		If StringInStr(Agent_GetAgentInfo($i, "Name"), $a_s_Name) Then Return $i
+	Next
+	Return 0
 EndFunc
 
 ; Town NPCs only. Skip party henchmen/heroes, who are also IsNPC.
@@ -173,20 +190,99 @@ Func Leveler_GetAgentByModel($a_i_Model)
 	Return 0
 EndFunc
 
-Func Leveler_GetTogo()
-	Local $l_i_Npc = Leveler_GetAgentByModel($MODEL_TOGO_1)
-	If $l_i_Npc <> 0 Then Return $l_i_Npc
-	$l_i_Npc = Leveler_GetAgentByModel($MODEL_TOGO_2)
-	If $l_i_Npc <> 0 Then Return $l_i_Npc
-	$l_i_Npc = Leveler_GetAgentByModel($MODEL_TOGO_3)
-	If $l_i_Npc <> 0 Then Return $l_i_Npc
-	Return Leveler_GetAgentByModel($MODEL_TOGO_4)
+Func Leveler_IsTogoModel($a_i_Model)
+	If $a_i_Model = $MODEL_TOGO_1 Then Return True
+	If $a_i_Model = $MODEL_TOGO_2 Then Return True
+	If $a_i_Model = $MODEL_TOGO_3 Then Return True
+	If $a_i_Model = $MODEL_TOGO_4 Then Return True
+	Return False
+EndFunc
+
+; Escort Togo can change allegiance after the dialog. Do not require town-NPC flags.
+Func Leveler_GetTogo($a_f_NearX = 0, $a_f_NearY = 0)
+	Local $l_i_Best = 0
+	Local $l_f_Best = 999999
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
+		Local $l_s_Name = Agent_GetAgentInfo($i, "Name")
+		Local $l_i_Model = Agent_GetAgentInfo($i, "PlayerNumber")
+		If Not Leveler_IsTogoModel($l_i_Model) And StringInStr($l_s_Name, "Togo") = 0 Then ContinueLoop
+		If $a_f_NearX = 0 And $a_f_NearY = 0 Then Return $i
+		Local $l_f_Dist = Agent_GetDistanceToXY($a_f_NearX, $a_f_NearY, $i)
+		If $l_f_Dist < $l_f_Best Then
+			$l_f_Best = $l_f_Dist
+			$l_i_Best = $i
+		EndIf
+	Next
+	If $l_i_Best <> 0 Then Return $l_i_Best
+	If $a_f_NearX <> 0 Or $a_f_NearY <> 0 Then Return Leveler_GetNearestNPCAt($a_f_NearX, $a_f_NearY, 700)
+	Return 0
 EndFunc
 
 Func Leveler_TogoModel()
 	Local $l_i_Togo = Leveler_GetTogo()
 	If $l_i_Togo = 0 Then Return 0
 	Return Agent_GetAgentInfo($l_i_Togo, "PlayerNumber")
+EndFunc
+
+; Stay on Master Togo until he stops near Guardsman Zui.
+Func Leveler_FollowTogo($a_i_Timeout = 180000)
+	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_h_Timer = TimerInit()
+	Local $l_f_LastX = $TOGO_SUNQUA_X
+	Local $l_f_LastY = $TOGO_SUNQUA_Y
+	Local $l_h_Moved = TimerInit()
+	Local $l_i_Togo = Leveler_GetTogo($l_f_LastX, $l_f_LastY)
+	If $l_i_Togo <> 0 Then
+		$l_f_LastX = Agent_GetAgentInfo($l_i_Togo, "X")
+		$l_f_LastY = Agent_GetAgentInfo($l_i_Togo, "Y")
+	EndIf
+	Out("[Move] Following Master Togo from " & Round($l_f_LastX) & ", " & Round($l_f_LastY))
+
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_IsWiped() Then Return False
+		If Map_GetMapID() <> $l_i_StartMap Or Map_GetMapID() = $MAP_CHO_OUTPOST Then
+			Out("[Move] Followed Togo to map " & Map_GetMapID())
+			Return True
+		EndIf
+
+		$l_i_Togo = Leveler_GetTogo($l_f_LastX, $l_f_LastY)
+		If $l_i_Togo = 0 Then
+			Map_Move($l_f_LastX, $l_f_LastY, 0)
+			Sleep(400)
+			ContinueLoop
+		EndIf
+
+		Local $l_f_X = Agent_GetAgentInfo($l_i_Togo, "X")
+		Local $l_f_Y = Agent_GetAgentInfo($l_i_Togo, "Y")
+		Local $l_f_Dist = Agent_GetDistance($l_i_Togo)
+		$l_f_LastX = $l_f_X
+		$l_f_LastY = $l_f_Y
+
+		If $l_f_Dist > 180 Then
+			Map_Move($l_f_X, $l_f_Y, 0)
+			If $l_f_Dist > 450 Then Agent_GoNPC($l_i_Togo)
+		EndIf
+
+		Local $l_f_Zui = Agent_GetDistanceToXY($ZUI_SUNQUA_X, $ZUI_SUNQUA_Y, $l_i_Togo)
+		If $l_f_Zui < 400 And $l_f_Dist < 350 Then
+			Out("[Move] Togo reached Guardsman Zui")
+			Return True
+		EndIf
+
+		If TimerDiff($l_h_Moved) > 4000 Then
+			Out("[Move] Togo at " & Round($l_f_X) & ", " & Round($l_f_Y) & " dist " & Round($l_f_Dist))
+			$l_h_Moved = TimerInit()
+		EndIf
+		Sleep(250)
+	WEnd
+
+	Out("[Move] Follow Togo timed out on map " & Map_GetMapID())
+	Return Agent_GetDistanceToXY($ZUI_SUNQUA_X, $ZUI_SUNQUA_Y) < 500 Or Map_GetMapID() <> $l_i_StartMap
 EndFunc
 
 Func Leveler_ResolveTalkNpc($a_f_X, $a_f_Y, $a_i_NpcModel = 0)
@@ -362,8 +458,8 @@ Func Leveler_InterruptSpiritRifts()
 		If Agent_GetAgentInfo($i, "Allegiance") <> $GC_I_ALLEGIANCE_ENEMY Then ContinueLoop
 		If Agent_GetAgentInfo($i, "Skill") <> $SKILL_SPIRIT_RIFT Then ContinueLoop
 
-		Local $l_ai_Skills[3] = [$SKILL_CRY_OF_PAIN, $SKILL_POWER_DRAIN, $SKILL_SIGNET_OF_DISRUPTION]
-		For $s = 0 To 2
+		Local $l_ai_Skills[4] = [$SKILL_CRY_OF_FRUSTRATION, $SKILL_POWER_DRAIN, $SKILL_SIGNET_OF_DISRUPTION, $SKILL_LEECH_SIGNET]
+		For $s = 0 To 3
 			Local $l_i_Slot = Skill_GetSlotByID($l_ai_Skills[$s])
 			If $l_i_Slot > 0 Then
 				Agent_ChangeTarget($i)

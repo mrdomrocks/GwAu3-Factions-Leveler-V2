@@ -171,8 +171,18 @@ Global Const $DIALOG_SECONDARY_MESMER = 0x813D08
 Global Const $DIALOG_SECONDARY_OTHER = 0x813D0E
 Global Const $DIALOG_SECONDARY_COMPLETE = 0x813D07
 Global Const $DIALOG_FORMAL_ACCEPT = 0x813E01
+Global Const $DIALOG_FORMAL_STEP = 0x813E04
+Global Const $DIALOG_FORMAL_TOGO_TALK = 0x15
+Global Const $DIALOG_FORMAL_TOGO_DONE = 0x18
+Global Const $DIALOG_FORMAL_ZUI = 0x800008
+Global Const $DIALOG_FORMAL_ZUI_2 = 0x800009
+Global Const $DIALOG_FORMAL_ZUI_2_TALK = 0x19
 Global Const $DIALOG_FORMAL_SKIP = 0x80000B
 Global Const $DIALOG_FORMAL_COMPLETE = 0x813E07
+Global Const $TOGO_SUNQUA_X = 20007.00
+Global Const $TOGO_SUNQUA_Y = -7747.00
+Global Const $ZUI_SUNQUA_X = 6637.00
+Global Const $ZUI_SUNQUA_Y = 16147.00
 Global Const $DIALOG_XUNLAI_1 = 0x800001
 Global Const $DIALOG_XUNLAI_2 = 0x800002
 Global Const $DIALOG_LOST_TREASURE_ACCEPT = 0x815A01
@@ -268,10 +278,15 @@ Global Const $MODEL_BRASS_KNUCKLES = 24897
 Global Const $MODEL_BAG = 16
 Global Const $MODEL_BELT_POUCH = 34
 
-; Skills bought at the Shing Jea trainer
+; Zhao Di (Shing Jea Monastery) Mesmer skills. Cry of Frustration is NOT here.
+Global Const $SKILL_ENERGY_BURN = 42
+Global Const $SKILL_LEECH_SIGNET = 61
+Global Const $SKILL_SIGNET_OF_DISRUPTION = 860
+; Xu Fengxia / Michiko (Ran Musu, then Kaineng). Python labeled 57 as Cry of Pain.
+Global Const $SKILL_CRY_OF_FRUSTRATION = 57
 Global Const $SKILL_CRY_OF_PAIN = 57
 Global Const $SKILL_POWER_DRAIN = 25
-Global Const $SKILL_SIGNET_OF_DISRUPTION = 860
+; Python Complete Skills Training IDs (61 is Leech Signet, not Power Spike)
 Global Const $SKILL_POWER_SPIKE = 61
 Global Const $SKILL_BACKFIRE = 54
 Global Const $SKILL_SPIRIT_RIFT = 910

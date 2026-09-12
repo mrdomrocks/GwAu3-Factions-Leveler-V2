@@ -248,11 +248,34 @@ Func Leveler_HasStorageAccess()
 	Return False
 EndFunc
 
-Func Leveler_SkillsUnlocked()
-	If Not Account_IsSkillUnlocked($SKILL_CRY_OF_PAIN) Then Return False
-	If Not Account_IsSkillUnlocked($SKILL_POWER_DRAIN) Then Return False
-	If Not Account_IsSkillUnlocked($SKILL_SIGNET_OF_DISRUPTION) Then Return False
+; Chest already opened, or this character already used storage for later monastery crafts.
+Func Leveler_XunlaiUnlocked()
+	If Leveler_HasStorageAccess() Then Return True
+	If Leveler_HasCraftedWeapon() Then Return True
+	If Leveler_HasMonasteryArmor() Then Return True
+	If Leveler_HasSeitungArmor() Then Return True
+	If Leveler_HasPostXunlaiProgress() Then Return True
+	Return False
+EndFunc
+
+; Zhao Di in Shing Jea. Energy Burn is optional if a skill point was already spent.
+Func Leveler_ZhaoDiSkillsUnlocked()
+	If Not World_IsSkillLearnt($SKILL_SIGNET_OF_DISRUPTION) Then Return False
+	If Not World_IsSkillLearnt($SKILL_LEECH_SIGNET) Then Return False
 	Return True
+EndFunc
+
+; Cry of Frustration + Power Drain are sold at Xu Fengxia / Michiko, not Zhao Di.
+Func Leveler_InterruptSkillsUnlocked()
+	If Not World_IsSkillLearnt($SKILL_CRY_OF_FRUSTRATION) Then Return False
+	If Not World_IsSkillLearnt($SKILL_POWER_DRAIN) Then Return False
+	If Not World_IsSkillLearnt($SKILL_SIGNET_OF_DISRUPTION) Then Return False
+	Return True
+EndFunc
+
+; Early trainer done. Used by status / PrepareForBattle. Not Cry of Frustration.
+Func Leveler_SkillsUnlocked()
+	Return Leveler_ZhaoDiSkillsUnlocked()
 EndFunc
 
 Func Leveler_Skills2Unlocked()
@@ -316,12 +339,12 @@ Func Leveler_StatusCheck()
 	Leveler_LogQuestState($QUEST_SECONDARY, "Choose Secondary")
 	Leveler_LogQuestState($QUEST_FORMAL_INTRO, "Formal Introduction")
 	Out("[Status] Profession " & Leveler_PrimaryProfession() & "/" & Leveler_SecondaryProfession() & "  Gold " & Leveler_CharacterGold() & "  Secondary step done=" & $g_ab_StepDone[$LEVELER_STEP_SECONDARY])
-	$g_ab_StepDone[$LEVELER_STEP_XUNLAI] = Leveler_QuestProgress($QUEST_LOST_TREASURE) Or Leveler_HasLaterQuest()
+	$g_ab_StepDone[$LEVELER_STEP_XUNLAI] = Leveler_XunlaiUnlocked()
 	$g_ab_StepDone[$LEVELER_STEP_WEAPON] = Leveler_HasCraftedWeapon() And Leveler_IsModelEquipped($MODEL_CLAIRVOYANT_STAFF)
 	$g_ab_StepDone[$LEVELER_STEP_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMonasteryPieces()) Or $l_b_SeitungArmor
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY] = Not Leveler_HasStarterArmor() And (Leveler_HasMonasteryArmor() Or $l_b_SeitungArmor)
 	$g_ab_StepDone[$LEVELER_STEP_BAGS] = Leveler_HasExtendedBags()
-	$g_ab_StepDone[$LEVELER_STEP_SKILLS] = Leveler_QuestProgress($QUEST_LOST_TREASURE) Or Leveler_HasLaterQuest()
+	$g_ab_StepDone[$LEVELER_STEP_SKILLS] = Leveler_ZhaoDiSkillsUnlocked() Or Leveler_QuestProgress($QUEST_LOST_TREASURE) Or Leveler_HasLaterQuest()
 	$g_ab_StepDone[$LEVELER_STEP_TO_CHO] = $l_b_Cho Or $l_b_RanMusu Or $l_b_Seitung
 	$g_ab_StepDone[$LEVELER_STEP_CHO_MISSION] = $l_b_RanMusu Or $l_b_Seitung Or $l_b_TsumeiPath
 
@@ -332,8 +355,9 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_SEITUNG] = Leveler_ArmorSetEquipped(Leveler_GetSeitungPieces()) Or $l_b_MaxArmor
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_MON] = $l_b_SeitungArmor And (Not Leveler_HasMonasteryArmor() Or $l_b_ZenOp Or $l_b_ToZenPath)
 	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp Or $l_b_ToZenPath
-	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = $l_b_Skill61
-	$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or ($l_b_Skill61 And $l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost"))
+	; Skill 61 is Leech Signet from Zhao Di. Do not mark this later trainer done from that.
+	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = $l_b_Marketplace
+	$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or ($l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Not $l_b_ToZenPath)
 	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = (Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) And $l_i_Map <> $MAP_KAINENG_DOCKS
 	$g_ab_StepDone[$LEVELER_STEP_TO_KC] = $l_b_Kaineng
 	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())

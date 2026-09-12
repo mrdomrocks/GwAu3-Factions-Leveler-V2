@@ -24,38 +24,96 @@ Func Leveler_CountModel($a_i_Model, $a_b_IncludeStorage = True)
 EndFunc
 
 Func Leveler_FindInvItem($a_i_Model)
-	Local $l_i_Item = Item_FindItemByModelID($a_i_Model)
-	If $l_i_Item = 0 Then $l_i_Item = Item_GetBagsItembyModelID($a_i_Model)
+	Local $l_i_Item = Item_GetBagsItembyModelID($a_i_Model)
+	If $l_i_Item = 0 Then $l_i_Item = Item_FindItemByModelID($a_i_Model)
 	Return $l_i_Item
+EndFunc
+
+Func Leveler_WeaponSetHasModel($a_i_Model)
+	If $a_i_Model = 0 Then Return False
+	Local $l_as_Ptrs[8] = [ _
+			"WeaponSet0WeaponPtr", "WeaponSet0OffhandPtr", _
+			"WeaponSet1WeaponPtr", "WeaponSet1OffhandPtr", _
+			"WeaponSet2WeaponPtr", "WeaponSet2OffhandPtr", _
+			"WeaponSet3WeaponPtr", "WeaponSet3OffhandPtr" _
+			]
+	Local $i
+	For $i = 0 To UBound($l_as_Ptrs) - 1
+		If Item_GetInventoryInfo($l_as_Ptrs[$i]) = 0 Then ContinueLoop
+		Local $l_s_ModelKey = StringReplace($l_as_Ptrs[$i], "Ptr", "ModelID")
+		If Item_GetInventoryInfo($l_s_ModelKey) = $a_i_Model Then Return True
+	Next
+	Return False
+EndFunc
+
+; Worn items live in the EquippedItems bag, not in backpack flags.
+Func Leveler_EquippedBagHasModel($a_i_Model)
+	If $a_i_Model = 0 Then Return False
+	Local $l_p_EqBag = Item_GetBagPtr($GC_I_INVENTORY_EQUIPPED_ITEMS)
+	If $l_p_EqBag = 0 Then $l_p_EqBag = Item_GetInventoryInfo("EquippedItemsPtr")
+	If $l_p_EqBag = 0 Then Return False
+
+	Local $l_ap_Items = Item_GetBagItemArray($GC_I_INVENTORY_EQUIPPED_ITEMS)
+	If IsArray($l_ap_Items) Then
+		Local $i
+		For $i = 1 To $l_ap_Items[0]
+			If $l_ap_Items[$i] = 0 Then ContinueLoop
+			If Memory_Read($l_ap_Items[$i] + 0x2C, "dword") = $a_i_Model Then Return True
+		Next
+	EndIf
+
+	Local $l_i_Slot
+	For $l_i_Slot = $GC_I_EQUIPMENT_SLOT_RIGHT_HAND To $GC_I_EQUIPMENT_SLOT_HANDS
+		Local $l_p_Item = Item_GetItemBySlot($GC_I_INVENTORY_EQUIPPED_ITEMS, $l_i_Slot + 1)
+		If $l_p_Item = 0 Then ContinueLoop
+		If Memory_Read($l_p_Item + 0x2C, "dword") = $a_i_Model Then Return True
+	Next
+
+	Local $l_i_Item = Item_FindItemByModelID($a_i_Model)
+	If $l_i_Item <> 0 Then
+		Local $l_p_Item2 = Item_GetItemPtr($l_i_Item)
+		If $l_p_Item2 <> 0 Then
+			If Memory_Read($l_p_Item2 + 0x8, "ptr") = $l_p_EqBag Then Return True
+			If Memory_Read($l_p_Item2 + 0xC, "ptr") = $l_p_EqBag Then Return True
+		EndIf
+	EndIf
+	Return False
 EndFunc
 
 Func Leveler_IsModelEquipped($a_i_Model)
 	If $a_i_Model = 0 Then Return False
-	If Item_GetInventoryInfo("WeaponSet0WeaponModelID") = $a_i_Model Then Return True
-	If Item_GetInventoryInfo("WeaponSet1WeaponModelID") = $a_i_Model Then Return True
-	Local $l_i_Item = Leveler_FindInvItem($a_i_Model)
-	If $l_i_Item = 0 Then Return False
-	If Item_GetItemInfoByModelID($a_i_Model, "Equipped") <> 0 Then Return True
-	If Item_GetItemInfoByModelID($a_i_Model, "BagEquipped") <> 0 Then Return True
+	If Leveler_WeaponSetHasModel($a_i_Model) Then Return True
+	If Leveler_EquippedBagHasModel($a_i_Model) Then Return True
 	Return False
 EndFunc
 
 ; Find the crafted item and put it on. Crafting alone leaves it in the bag.
 Func Leveler_EquipModel($a_i_Model)
-	If Leveler_IsModelEquipped($a_i_Model) Then Return True
+	If Leveler_IsModelEquipped($a_i_Model) Then
+		Out("[Craft] Model " & $a_i_Model & " is already equipped")
+		Return True
+	EndIf
+	Local $l_i_Agent = Agent_ConvertID(-2)
 	Local $i
 	For $i = 1 To 6
-		Local $l_i_Item = Leveler_FindInvItem($a_i_Model)
+		Local $l_i_Item = Item_GetBagsItembyModelID($a_i_Model)
+		If $l_i_Item = 0 Then $l_i_Item = Item_FindItemByModelID($a_i_Model)
 		If $l_i_Item = 0 Then
-			Sleep(350)
+			Sleep(400)
 			ContinueLoop
 		EndIf
+		Out("[Craft] Equipping item " & $l_i_Item & " (model " & $a_i_Model & ")")
 		Item_EquipItem($l_i_Item)
-		Sleep(250)
-		Ui_EquipItem($l_i_Item)
-		Sleep(400)
+		Sleep(200)
+		Ui_EquipItem($l_i_Item, $l_i_Agent)
+		Sleep(800)
 		If Leveler_IsModelEquipped($a_i_Model) Then
 			Out("[Craft] Equipped model " & $a_i_Model)
+			Return True
+		EndIf
+		; Item left the carry bags after the equip packet — treat as worn.
+		If Item_GetBagsItembyModelID($a_i_Model) = 0 Then
+			Out("[Craft] Model " & $a_i_Model & " left inventory bags after equip")
 			Return True
 		EndIf
 	Next
@@ -97,32 +155,26 @@ Func Leveler_BuyMaterialShortfall($a_i_Model, $a_i_Need)
 	Return True
 EndFunc
 
+; Python _EARLY_ARMOR_DATA["buy"] is 6 cloth/hide, but monastery pieces cost 8
+; (Ritualist boots cost 3 cloth, so 10). Sum the piece list so craft cannot run short.
 Func Leveler_GetArmorBuyList(ByRef $a_ai_Models, ByRef $a_ai_Counts)
-	Local $l_i_Prof = Leveler_PrimaryProfession()
-	Switch $l_i_Prof
-		Case $GC_I_PROFESSION_RANGER
-			Local $l_ai_M[1] = [$GC_I_MODELID_TANNED_HIDE]
-			Local $l_ai_C[1] = [6]
-			$a_ai_Models = $l_ai_M
-			$a_ai_Counts = $l_ai_C
-		Case $GC_I_PROFESSION_MONK, $GC_I_PROFESSION_NECROMANCER, $GC_I_PROFESSION_ELEMENTALIST
-			If $l_i_Prof = $GC_I_PROFESSION_NECROMANCER Then
-				Local $l_ai_M2[2] = [$GC_I_MODELID_TANNED_HIDE, $GC_I_MODELID_DUST]
-				Local $l_ai_C2[2] = [6, 1]
-				$a_ai_Models = $l_ai_M2
-				$a_ai_Counts = $l_ai_C2
-			Else
-				Local $l_ai_M3[2] = [$GC_I_MODELID_CLOTHS, $GC_I_MODELID_DUST]
-				Local $l_ai_C3[2] = [6, 1]
-				$a_ai_Models = $l_ai_M3
-				$a_ai_Counts = $l_ai_C3
-			EndIf
-		Case Else
-			Local $l_ai_M4[1] = [$GC_I_MODELID_CLOTHS]
-			Local $l_ai_C4[1] = [6]
-			$a_ai_Models = $l_ai_M4
-			$a_ai_Counts = $l_ai_C4
-	EndSwitch
+	Local $l_ai_M[4]
+	Local $l_ai_C[4]
+	Local $l_i_Count = 0
+	Local $l_ai_Pieces = Leveler_GetMonasteryPieces()
+	For $i = 0 To UBound($l_ai_Pieces) - 1
+		Leveler_AddMatNeed($l_ai_M, $l_ai_C, $l_i_Count, $l_ai_Pieces[$i][1], $l_ai_Pieces[$i][2])
+	Next
+	If $l_i_Count = 0 Then
+		Local $l_ai_Empty[0]
+		$a_ai_Models = $l_ai_Empty
+		$a_ai_Counts = $l_ai_Empty
+		Return
+	EndIf
+	ReDim $l_ai_M[$l_i_Count]
+	ReDim $l_ai_C[$l_i_Count]
+	$a_ai_Models = $l_ai_M
+	$a_ai_Counts = $l_ai_C
 EndFunc
 
 ; Returns 2D array [n][3] = itemID, matModel, qty
@@ -282,7 +334,8 @@ Func Leveler_BuyEarlyArmorMaterials()
 	Local $l_ai_Models, $l_ai_Counts
 	Leveler_GetArmorBuyList($l_ai_Models, $l_ai_Counts)
 	For $i = 0 To UBound($l_ai_Models) - 1
-		If Not Leveler_BuyMaterialShortfall($l_ai_Models[$i], $l_ai_Counts[$i]) Then Return False
+		; Inventory only — Merchant_CraftItem needs the mats in bags, not storage.
+		If Not Leveler_BuyMaterialShortfallInv($l_ai_Models[$i], $l_ai_Counts[$i]) Then Return False
 	Next
 	Return True
 EndFunc
@@ -856,9 +909,10 @@ Func Leveler_HasCraftedWeapon()
 EndFunc
 
 Func Leveler_HasExtendedBags()
-	If Item_GetBagPtr($GC_I_INVENTORY_BAG1) = 0 Then Return False
-	If Item_GetBagPtr($GC_I_INVENTORY_BAG2) = 0 Then Return False
-	Return True
+	If Item_GetBagPtr($GC_I_INVENTORY_BELT_POUCH) <> 0 Then Return True
+	If Leveler_IsModelEquipped($MODEL_BELT_POUCH) Then Return True
+	If Item_GetBagPtr($GC_I_INVENTORY_BAG1) <> 0 And Item_GetBagPtr($GC_I_INVENTORY_BAG2) <> 0 Then Return True
+	Return False
 EndFunc
 
 Func Leveler_DestroyStarterArmorAndJunk()
@@ -876,6 +930,10 @@ Func Leveler_DestroyStarterArmorAndJunk()
 EndFunc
 
 Func Leveler_ExtendInventory()
+	If Leveler_HasExtendedBags() Then
+		Out("[Craft] Belt Pouch already equipped")
+		Return True
+	EndIf
 	If Not Leveler_InteractNpcAt(-11866, 11444, False) Then Return False
 	Sleep(400)
 	If Item_GetBagPtr($GC_I_INVENTORY_BAG1) = 0 Then

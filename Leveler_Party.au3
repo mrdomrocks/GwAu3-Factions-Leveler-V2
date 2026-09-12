@@ -147,60 +147,192 @@ Func Leveler_AddHenchmen()
 	Return True
 EndFunc
 
+; Same trio Forming A Party uses in Shing Jea (party size 4).
+Func Leveler_FormingPartyHenchIDs()
+	Local $l_ai_Hench[3] = [2, 5, 1]
+	Return $l_ai_Hench
+EndFunc
+
+Func Leveler_HenchmanCount()
+	Return Party_GetMyPartyInfo("ArrayHenchmanPartyMemberSize")
+EndFunc
+
+Func Leveler_HasFormingPartyHenchmen()
+	Return Leveler_HenchmanCount() >= 3
+EndFunc
+
+Func Leveler_EnsureFormingPartyHenchmen()
+	If Leveler_HasFormingPartyHenchmen() Then
+		Out("[Party] Forming A Party henchmen are already in the party")
+		Return True
+	EndIf
+	Local $l_ai_Hench = Leveler_FormingPartyHenchIDs()
+	Local $i
+	For $i = 0 To UBound($l_ai_Hench) - 1
+		Party_AddNpc($l_ai_Hench[$i])
+		Sleep(300)
+	Next
+	Sleep(1000)
+	If Not Leveler_HasFormingPartyHenchmen() Then
+		Out("[Party] Need henchmen 2, 5, 1 before leaving for Cho's Estate (have " & Leveler_HenchmanCount() & ")")
+		Return False
+	EndIf
+	Out("[Party] Added Forming A Party henchmen 2, 5, 1")
+	Return True
+EndFunc
+
+Func Leveler_SkillIsLearnt($a_i_SkillID)
+	If World_IsSkillLearnt($a_i_SkillID) Then Return True
+	If Account_IsSkillUnlocked($a_i_SkillID) Then Return True
+	Return False
+EndFunc
+
+Func Leveler_WaitSkillLearnt($a_i_SkillID)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 8000
+		If Leveler_SkillIsLearnt($a_i_SkillID) Then Return True
+		Sleep(250)
+	WEnd
+	Return Leveler_SkillIsLearnt($a_i_SkillID)
+EndFunc
+
+Func Leveler_BarHasSkill($a_i_SkillID)
+	Return Skill_GetSkillbarInfo($a_i_SkillID, "HasSkillID") = True
+EndFunc
+
+; One slot at a time. GW drops later SetSkillbar packets if they are sent together.
+Func Leveler_PutSkillOnBar($a_i_Slot, $a_i_SkillID)
+	If $a_i_SkillID = 0 Then Return True
+	If Skill_GetSkillbarInfo($a_i_Slot, "SkillID") = $a_i_SkillID Then Return True
+	If Not Leveler_WaitSkillLearnt($a_i_SkillID) Then
+		Out("[Step] Skill " & $a_i_SkillID & " is not learnt yet; cannot put it on the bar")
+		Return False
+	EndIf
+	Local $i
+	For $i = 1 To 6
+		If Skill_GetSkillbarInfo($a_i_Slot, "SkillID") = $a_i_SkillID Then
+			Out("[Step] Slot " & $a_i_Slot & " already has skill " & $a_i_SkillID)
+			Return True
+		EndIf
+		Skill_SetSkillbarSkill($a_i_Slot, $a_i_SkillID)
+		Local $l_h_Timer = TimerInit()
+		While TimerDiff($l_h_Timer) < 2000
+			Sleep(200)
+			If Skill_GetSkillbarInfo($a_i_Slot, "SkillID") = $a_i_SkillID Then
+				Out("[Step] Slot " & $a_i_Slot & " = skill " & $a_i_SkillID)
+				Return True
+			EndIf
+		WEnd
+	Next
+	Out("[Step] Slot " & $a_i_Slot & " is " & Skill_GetSkillbarInfo($a_i_Slot, "SkillID") & ", wanted " & $a_i_SkillID)
+	Return False
+EndFunc
+
+Func Leveler_CloseTrainerWindow()
+	Agent_CancelAction()
+	Sleep(300)
+	Local $l_f_X = Agent_GetAgentInfo(-2, "X")
+	Local $l_f_Y = Agent_GetAgentInfo(-2, "Y")
+	Map_Move($l_f_X + 80, $l_f_Y + 80, 20)
+	Sleep(700)
+	Agent_CancelAction()
+	Sleep(200)
+EndFunc
+
+Func Leveler_TrainerSkillsOnBar()
+	If Leveler_InterruptSkillsUnlocked() Then
+		If Not Leveler_BarHasSkill($SKILL_CRY_OF_FRUSTRATION) Then Return False
+		If Not Leveler_BarHasSkill($SKILL_POWER_DRAIN) Then Return False
+		If Not Leveler_BarHasSkill($SKILL_SIGNET_OF_DISRUPTION) Then Return False
+		Return True
+	EndIf
+	If Not Leveler_BarHasSkill($SKILL_SIGNET_OF_DISRUPTION) Then Return False
+	If Not Leveler_BarHasSkill($SKILL_LEECH_SIGNET) Then Return False
+	Return True
+EndFunc
+
+Func Leveler_BuySkillIfNeeded($a_i_SkillID)
+	If World_IsSkillLearnt($a_i_SkillID) Then Return True
+	Skill_BuySkillByID($a_i_SkillID)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 8000
+		If World_IsSkillLearnt($a_i_SkillID) Then Return True
+		Sleep(250)
+	WEnd
+	If World_IsSkillLearnt($a_i_SkillID) Then Return True
+	Out("[Step] Could not learn skill " & $a_i_SkillID)
+	Return False
+EndFunc
+
+; After secondary: empty starter bar.
+; After Zhao Di: Signet of Disruption, Leech Signet, Energy Burn if learnt.
+; After Kaineng: Cry of Frustration, Power Drain, Signet of Disruption.
+Func Leveler_EquipTrainerSkills()
+	Leveler_CloseTrainerWindow()
+	If Leveler_TrainerSkillsOnBar() Then
+		Out("[Step] Trainer skills are already on the bar")
+		Return True
+	EndIf
+	If Leveler_InterruptSkillsUnlocked() Then
+		Local $l_i_Kind = Leveler_CurrentSkillBarKind()
+		If $l_i_Kind = $LEVELER_BAR_STARTER Then $l_i_Kind = $LEVELER_BAR_INTERRUPT
+		Leveler_LoadProfessionSkillBar($l_i_Kind)
+		Sleep(600)
+		If Leveler_TrainerSkillsOnBar() Then
+			Out("[Step] Profession interrupt bar loaded")
+			Return True
+		EndIf
+		Out("[Step] Putting Kaineng interrupt skills on the bar")
+		Leveler_PutSkillOnBar(1, $SKILL_CRY_OF_FRUSTRATION)
+		Leveler_PutSkillOnBar(2, $SKILL_POWER_DRAIN)
+		Leveler_PutSkillOnBar(3, $SKILL_SIGNET_OF_DISRUPTION)
+		If Leveler_TrainerSkillsOnBar() Then
+			Out("[Step] Equipped Cry of Frustration, Power Drain, Signet of Disruption")
+			Return True
+		EndIf
+		Out("[Step] Interrupt skills are learnt but not all on the bar yet")
+		Return False
+	EndIf
+	Out("[Step] Putting learnt Zhao Di skills on the bar")
+	Local $l_i_Slot = 1
+	If World_IsSkillLearnt($SKILL_SIGNET_OF_DISRUPTION) Then
+		Leveler_PutSkillOnBar($l_i_Slot, $SKILL_SIGNET_OF_DISRUPTION)
+		$l_i_Slot += 1
+	EndIf
+	If World_IsSkillLearnt($SKILL_LEECH_SIGNET) Then
+		Leveler_PutSkillOnBar($l_i_Slot, $SKILL_LEECH_SIGNET)
+		$l_i_Slot += 1
+	EndIf
+	If World_IsSkillLearnt($SKILL_ENERGY_BURN) Then
+		Leveler_PutSkillOnBar($l_i_Slot, $SKILL_ENERGY_BURN)
+	EndIf
+	If Leveler_TrainerSkillsOnBar() Then
+		Out("[Step] Equipped Signet of Disruption and Leech Signet")
+		Return True
+	EndIf
+	If World_IsSkillLearnt($SKILL_SIGNET_OF_DISRUPTION) And World_IsSkillLearnt($SKILL_LEECH_SIGNET) Then
+		Out("[Step] Zhao Di skills are learnt; advancing even if a slot did not stick")
+		Return True
+	EndIf
+	Out("[Step] Zhao Di skills are not all on the bar yet")
+	Return False
+EndFunc
+
 Func Leveler_EquipSkillBar()
-	Local $l_i_Level = Agent_GetAgentInfo(-2, "Level")
-	Local $l_i_Prof = Leveler_PrimaryProfession()
-	Local $l_s_Bar = ""
-
-	If $l_i_Level < 3 Then
-		Switch $l_i_Prof
-			Case $GC_I_PROFESSION_WARRIOR
-				$l_s_Bar = "OQAAAAAAAAAAAAAA"
-			Case $GC_I_PROFESSION_RANGER
-				$l_s_Bar = "OgAAAAAAAAAAAAAA"
-			Case $GC_I_PROFESSION_MONK
-				$l_s_Bar = "OwAAAAAAAAAAAAAA"
-			Case $GC_I_PROFESSION_NECROMANCER
-				$l_s_Bar = "OABAAAAAAAAAAAAA"
-			Case $GC_I_PROFESSION_MESMER
-				$l_s_Bar = "OQBAAAAAAAAAAAAA"
-			Case $GC_I_PROFESSION_ELEMENTALIST
-				$l_s_Bar = "OgBAAAAAAAAAAAAA"
-			Case $GC_I_PROFESSION_RITUALIST
-				$l_s_Bar = "OACAAAAAAAAAAAAA"
-			Case $GC_I_PROFESSION_ASSASSIN
-				$l_s_Bar = "OwBAAAAAAAAAAAAA"
-			Case Else
-				$l_s_Bar = "OQAAAAAAAAAAAAAA"
-		EndSwitch
-	Else
-		Switch $l_i_Prof
-			Case $GC_I_PROFESSION_WARRIOR
-				$l_s_Bar = "OQUBIskDcdG0DaAKUECA"
-			Case $GC_I_PROFESSION_RANGER
-				$l_s_Bar = "OgUBIskDcdG0DaAKUECA"
-			Case $GC_I_PROFESSION_MONK
-				$l_s_Bar = "OwUBIskDcdG0DaAKUECA"
-			Case $GC_I_PROFESSION_NECROMANCER
-				$l_s_Bar = "OAVBIskDcdG0DaAKUECA"
-			Case $GC_I_PROFESSION_MESMER
-				$l_s_Bar = "OQBBIskDcdG0DaAKUECA"
-			Case $GC_I_PROFESSION_ELEMENTALIST
-				$l_s_Bar = "OgVBIskDcdG0DaAKUECA"
-			Case $GC_I_PROFESSION_RITUALIST
-				$l_s_Bar = "OAWBIskDcdG0DaAKUECA"
-			Case $GC_I_PROFESSION_ASSASSIN
-				$l_s_Bar = "OAWBIskDcdG0DaAKUECA"
-			Case Else
-				$l_s_Bar = "OQUBIskDcdG0DaAKUECA"
-		EndSwitch
+	If Leveler_TrainerSkillsOnBar() Then
+		Out("[Party] Trainer skills already on the bar; not reloading a template")
+		Return True
 	EndIf
-
-	If $l_s_Bar <> "" Then
-		Attribute_LoadSkillTemplate($l_s_Bar)
-		Sleep(400)
-		Out("[Party] Loaded skill template for profession " & $l_i_Prof)
+	If Leveler_InterruptSkillsUnlocked() Then
+		Leveler_LoadProfessionSkillBar()
+		If Not Leveler_TrainerSkillsOnBar() Then Leveler_EquipTrainerSkills()
+		Return True
 	EndIf
+	If Leveler_ZhaoDiSkillsUnlocked() Then
+		Out("[Party] Keeping Zhao Di skills; not loading the empty starter bar")
+		Return Leveler_EquipTrainerSkills()
+	EndIf
+	Leveler_LoadProfessionSkillBar($LEVELER_BAR_STARTER)
 	Return True
 EndFunc
 
