@@ -7,9 +7,9 @@
 ;   $g_b_IsWine, $g_b_ForceWineCompat, $g_b_ScannerUseLocal, $g_i_ScannerTimeoutMs
 ; Set those before any Scanner_* / Core_Initialize call.
 ;
-; Start stays stock Core_Initialize. When the first step needs a command
-; (Enter Mission, Map_Move, dialogs, packets), Wine_EnsureCommandQueue may
-; 4KB-scan .text and plant exactly one Engine JMP plus CommandEnterMission.
+; Start stays stock Core_Initialize. The first Leveler_ExecuteStep / Map_Move
+; calls Wine_EnsureCommandQueue: 4KB-scan .text, one Engine JMP, CommandMove
+; page. Mid-mission Zen must not re-click Enter Mission when Type reads 0.
 ; It never calls Assembler_ModifyMemory (no five-JMP path).
 
 If Not IsDeclared("g_b_IsWine") Then Global $g_b_IsWine = False
@@ -26,6 +26,7 @@ If Not IsDeclared("g_b_WineQueueGapLogged") Then Global $g_b_WineQueueGapLogged 
 If Not IsDeclared("g_p_WineAsmAlloc") Then Global $g_p_WineAsmAlloc = 0
 If Not IsDeclared("g_p_WineExistingE9") Then Global $g_p_WineExistingE9 = 0
 If Not IsDeclared("g_b_WineEnterSent") Then Global $g_b_WineEnterSent = False
+If Not IsDeclared("g_h_WineQueueLastTry") Then Global $g_h_WineQueueLastTry = 0
 
 Func Wine_IsWine()
 	If $g_b_WineChecked Then Return $g_b_IsWine
@@ -328,6 +329,13 @@ Func Wine_EnterLooksStarted($a_i_StartMap)
 	If Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
 	If Map_GetMapID() <> $a_i_StartMap And Map_GetMapID() > 0 Then Return True
 	If Map_GetInstanceInfo("IsExplorable") Then Return True
+	; InstanceInfo Type is 0 when g_p_InstanceInfo is dead. CharacterContext
+	; and mission objectives still work off BasePointer.
+	Local $iCur = Number(Map_GetCharacterInfo("CurrentMapID"))
+	If $iCur > 0 And $iCur <> $a_i_StartMap Then Return True
+	If Number(Map_GetCharacterInfo("IsExplorable")) Then Return True
+	If Number(Map_GetCharacterInfo("CurrentMapType")) = 1 Then Return True
+	If Number(World_GetWorldInfo("MissionObjectiveArraySize")) > 0 Then Return True
 	Return False
 EndFunc
 
@@ -348,6 +356,11 @@ Func Wine_LevelerOverlayRestore()
 EndFunc
 
 Func Wine_EnterChallenge()
+	If Wine_EnterLooksStarted(Map_GetMapID()) Then
+		$g_b_WineEnterSent = True
+		Out("Wine enter: already inside the mission instance; not clicking Enter Mission.")
+		Return True
+	EndIf
 	If $g_b_WineEnterSent Then
 		Out("Wine enter: mission load already started this attach; not clicking again.")
 		Return True
@@ -433,6 +446,15 @@ Func Wine_CommandsReady()
 	Return True
 EndFunc
 
+; Walking only needs QueueBase + CommandMove + an Engine drain (live E9).
+Func Wine_QueueWalkReady()
+	If Not Wine_CommandsReady() Then Return False
+	If Wine_LabelUserPtr("CommandMove") = 0 Then Return False
+	If Wine_EngineHookLive() Then Return True
+	If $g_p_WineExistingE9 <> 0 Then Return True
+	Return False
+EndFunc
+
 Func Wine_EnterMissionReady()
 	Local $pCmd = Wine_LabelUserPtr("CommandEnterMission")
 	If $pCmd = 0 Then Return False
@@ -498,9 +520,10 @@ Func Wine_WireCommandStructs()
 	EndIf
 EndFunc
 
-; Called from the first leveling command, not from Start. One-shot.
+; Called from the first Leveler_ExecuteStep / Map_Move, not from Start.
 ; Prefers a live QueueBase Core already allocated; otherwise one Engine JMP
-; and a small command page that includes CommandEnterMission.
+; and a small command page (CommandMove / CommandEnterMission / ...).
+; Retries while QueueBase is still dead so a missed first step can recover.
 Func Wine_EnsureCommandQueue()
 	If Not Wine_IsWine() Then Return True
 	If Not Wine_EnsureGwOpen() Then
@@ -508,26 +531,48 @@ Func Wine_EnsureCommandQueue()
 		Return False
 	EndIf
 	Wine_RefreshQueueFromLabels()
-	If Wine_CommandsReady() And Wine_EnterMissionReady() And Wine_EngineHookLive() Then
+	If Wine_QueueWalkReady() Then
 		$g_b_WineMinimalHook = True
 		Return True
 	EndIf
+	If Wine_CommandsReady() Then
+		If Wine_PlantEngineJmpOnly() Then Return True
+		If Wine_EngineHookLive() Then
+			Wine_WireCommandStructs()
+			$g_b_WineMinimalHook = True
+			Return True
+		EndIf
+	EndIf
 	If $g_b_WineQueueAttempted Then
-		Return Wine_CommandsReady() And Wine_EnterMissionReady() And Wine_EngineHookLive()
+		If $g_h_WineQueueLastTry <> 0 And TimerDiff($g_h_WineQueueLastTry) < 8000 Then
+			Return Wine_QueueWalkReady()
+		EndIf
+		Out("Wine queue: QueueBase still " & Wine_HexPtr($g_p_QueueBase) & " after last install; retrying.")
 	EndIf
 	$g_b_WineQueueAttempted = True
+	$g_h_WineQueueLastTry = TimerInit()
 	Out("Wine queue: Core_Initialize left QueueBase=" & Wine_HexPtr($g_p_QueueBase) & _
+			" CommandMove=" & Wine_HexPtr(Memory_GetValue("CommandMove")) & _
 			" CommandEnterMission=" & Wine_HexPtr(Memory_GetValue("CommandEnterMission")) & _
 			" MainStart=" & Wine_HexPtr(Memory_GetValue("MainStart")) & ". Installing lazily.")
 	If Not Wine_TextFirst8Live() Then
 		Return Wine_InjectAbort("refusing scan; .text first8 is not live")
 	EndIf
-	If Wine_CommandsReady() And Wine_EnterMissionReady() Then
+	If Wine_CommandsReady() Then
 		If Wine_PlantEngineJmpOnly() Then Return True
 		If Wine_EngineHookLive() Then Return True
-		Out("Wine queue: existing CommandEnterMission page could not be hooked; trying a new page.")
+		Out("Wine queue: existing command page could not be hooked; trying a new page.")
 	EndIf
-	Return Wine_InstallCommandQueue()
+	Local $b_Ok = Wine_InstallCommandQueue()
+	Wine_RefreshQueueFromLabels()
+	If $b_Ok And Wine_CommandsReady() Then
+		Out("Wine queue: live QueueBase=" & Wine_HexPtr($g_p_QueueBase) & _
+				" CommandMove=" & Wine_HexPtr(Memory_GetValue("CommandMove")) & _
+				" AgentBase=" & Wine_HexPtr($g_p_AgentBase))
+		Return True
+	EndIf
+	Out("Wine queue: install finished with QueueBase=" & Wine_HexPtr($g_p_QueueBase) & " (walk not ready)")
+	Return $b_Ok
 EndFunc
 
 Func Wine_LogCommandGap()

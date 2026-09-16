@@ -36,9 +36,11 @@ EndFunc
 ; Fight in explorables. Stay pacifist in outposts. Return False for a map ID
 ; here only when Dominic says that explorable should not fight.
 Func Leveler_ShouldFightHere()
-	If Map_GetInstanceInfo("IsLoading") Then Return False
-	If Map_GetInstanceInfo("IsOutpost") Then Return False
-	Return Map_GetInstanceInfo("IsExplorable") = True
+	If Leveler_InMissionInstance() Then Return True
+	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
+	If Leveler_IsOutpost() Then Return False
+	If Leveler_InstanceInfoTrusted() Then Return Map_GetInstanceInfo("IsExplorable") = True
+	Return Number(Map_GetCharacterInfo("IsExplorable")) Or Number(Map_GetCharacterInfo("CurrentMapType")) = 1
 EndFunc
 
 ; $a_b_Combat True = fight while walking. False is ignored in explorables.
@@ -55,7 +57,9 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	EndIf
 
 	Local $l_i_StartMap = Map_GetMapID()
-	If Wine_IsWine() Then Wine_EnsureCommandQueue()
+	If Wine_IsWine() Then
+		If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
+	EndIf
 	Leveler_EnsurePathfinder()
 
 	Local $l_v_Obstacles = 0
@@ -70,7 +74,8 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_SpiritRiftWatch Then $l_s_Callback = "Leveler_InterruptSpiritRifts"
 
 	Local $l_b_Ok = False
-	If Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
+	; Wine mid-mission still reports map 213. Do not Pathfinder the outpost.
+	If (Wine_IsWine() And Leveler_InMissionInstance()) Or Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
 		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 30000, $a_b_Combat)
 	Else
 		$l_b_Ok = Pathfinder_MoveTo($a_f_X, $a_f_Y, -1, $l_v_Obstacles, $l_i_Aggro, $LEVELER_FIGHT_RANGE_OUT, 0, $l_s_Callback)
@@ -329,6 +334,7 @@ Func Leveler_EnsureStepOutpost($a_i_Step)
 	If $l_i_Outpost = 0 Then Return True
 	If $l_i_Map = $l_i_Outpost And Map_GetInstanceInfo("IsOutpost") Then Return True
 	If $l_i_Map = $l_i_Outpost And Map_GetInstanceInfo("IsExplorable") Then Return True
+	If Leveler_InMissionInstance() And Leveler_StepAllowsMap($a_i_Step, $l_i_Map) Then Return True
 	If Leveler_StepAllowsMap($a_i_Step, $l_i_Map) Then Return True
 	If $g_b_ExplorableResume And Not Leveler_IsOutpost() And Leveler_StepHasActiveQuest($a_i_Step) And Leveler_StepAllowsMap($a_i_Step, $l_i_Map) Then
 		Out("[Move] Restart recovery: quest is in the log on map " & $l_i_Map & ". Resuming '" & $g_as_StepNames[$a_i_Step] & "' from here.")
@@ -956,8 +962,13 @@ EndFunc
 ; After a disconnect the client can sit on a loading / zero map. Wait until we can act.
 Func Leveler_ClientIsReady()
 	If Map_GetMapID() <= 0 Then Return False
-	If Map_GetInstanceInfo("IsLoading") Then Return False
-	If Wine_IsWine() And (Map_GetInstanceInfo("IsOutpost") Or Map_GetInstanceInfo("IsExplorable")) Then Return True
+	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
+	If Wine_IsWine() Then
+		If Leveler_InMissionInstance() Then Return True
+		If Map_GetInstanceInfo("IsOutpost") Or Map_GetInstanceInfo("IsExplorable") Then Return True
+		; Partial Core_Initialize: a live map id is enough. AgentBase=0 is not a DC.
+		Return True
+	EndIf
 	If Agent_GetAgentPtr(-2) = 0 Then Return False
 	If Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
 	Return True
@@ -965,6 +976,8 @@ EndFunc
 
 Func Leveler_ClientDisconnected()
 	If Map_GetMapID() <= 0 Then Return True
+	; Wine: AgentBase=0 with a live map id is a scan gap, not a disconnect.
+	If Wine_IsWine() And Map_GetMapID() > 0 Then Return False
 	If Agent_GetAgentPtr(-2) = 0 And Not Map_GetInstanceInfo("IsLoading") Then Return True
 	Return False
 EndFunc

@@ -217,20 +217,97 @@ EndFunc
 
 #Region Mission
 
+; g_p_InstanceInfo=0 reads Type=0, which the API treats as outpost. Do not
+; trust that when the pointer is dead.
+Func Leveler_InstanceInfoTrusted()
+	If Not IsDeclared("g_p_InstanceInfo") Then Return False
+	If Wine_IsWine() Then
+		If Not Wine_IsUserPtr($g_p_InstanceInfo) Then Return False
+	ElseIf Number($g_p_InstanceInfo) = 0 Then
+		Return False
+	EndIf
+	Local $l_i_Type = Number(Map_GetInstanceInfo("Type"))
+	If $l_i_Type < 0 Or $l_i_Type > 2 Then Return False
+	Return True
+EndFunc
+
+; CharacterContext CurrentMapID is the real instance (246 in Zen) even when
+; Map_GetMapID stays on the outpost id (213).
+Func Leveler_LiveMapID()
+	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
+	If $l_i_Cur > 0 Then Return $l_i_Cur
+	Return Map_GetMapID()
+EndFunc
+
+Func Leveler_HasMissionObjectives()
+	Return Number(World_GetWorldInfo("MissionObjectiveArraySize")) > 0
+EndFunc
+
+; Master Togo (Ritualist) and Headmaster Vhang are level-20 allies. Outpost
+; hench at Zen are ~level 10. Uses party context (BasePointer), not AgentBase.
+Func Leveler_PartyHasZenMissionAllies()
+	Local $l_i_Hench = Leveler_HenchmanCount()
+	Local $l_i_High = 0
+	Local $l_i_HighRt = 0
+	Local $i = 1
+	For $i = 1 To $l_i_Hench
+		Local $l_i_Lvl = Number(Party_GetMyPartyHenchmanInfo($i, "Level"))
+		Local $l_i_Prof = Number(Party_GetMyPartyHenchmanInfo($i, "Profession"))
+		If $l_i_Lvl >= 16 Then
+			$l_i_High += 1
+			If $l_i_Prof = $GC_I_PROFESSION_RITUALIST Then $l_i_HighRt += 1
+		EndIf
+	Next
+	Return $l_i_High >= 1 And $l_i_HighRt >= 1
+EndFunc
+
+Func Leveler_WineLooksInZenMission()
+	Local $l_i_Map = Map_GetMapID()
+	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
+	If $l_i_Map <> $MAP_ZEN_OP And $l_i_Map <> $MAP_ZEN_EXP And $l_i_Cur <> $MAP_ZEN_OP And $l_i_Cur <> $MAP_ZEN_EXP Then Return False
+	If $l_i_Cur = $MAP_ZEN_EXP Or $l_i_Map = $MAP_ZEN_EXP Then Return True
+	If Number(Map_GetCharacterInfo("IsExplorable")) Then Return True
+	If Number(Map_GetCharacterInfo("CurrentMapType")) = 1 Then Return True
+	If Leveler_HasMissionObjectives() Then Return True
+	If Leveler_PartyHasZenMissionAllies() Then Return True
+	Return False
+EndFunc
+
 Func Leveler_InMissionInstance($a_i_MapID = 0)
-	If Map_GetInstanceInfo("IsLoading") Then Return False
+	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
+
+	Local $l_i_Map = Map_GetMapID()
+	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
+	If $l_i_Cur = $MAP_ZEN_EXP Or $l_i_Map = $MAP_ZEN_EXP Then Return True
+	If $l_i_Cur = $MAP_CHO_EXPLORABLE Or $l_i_Map = $MAP_CHO_EXPLORABLE Then Return True
+	If $a_i_MapID <> 0 And ($l_i_Cur = $a_i_MapID Or $l_i_Map = $a_i_MapID) Then
+		If Number(Map_GetCharacterInfo("IsExplorable")) Or Number(Map_GetCharacterInfo("CurrentMapType")) = 1 Then Return True
+		If Leveler_HasMissionObjectives() Then Return True
+	EndIf
+
+	If Leveler_WineLooksInZenMission() Then Return True
+
+	; Cho keeps outpost map 214 inside the instance.
+	If $l_i_Map = $MAP_CHO_OUTPOST Or $l_i_Cur = $MAP_CHO_OUTPOST Then
+		If Number(Map_GetCharacterInfo("IsExplorable")) Then Return True
+		If Number(Map_GetCharacterInfo("CurrentMapType")) = 1 Then Return True
+		If Leveler_HasMissionObjectives() Then Return True
+	EndIf
+
+	If Not Leveler_InstanceInfoTrusted() Then Return False
 	If Map_GetInstanceInfo("IsOutpost") Then Return False
 	If Not Map_GetInstanceInfo("IsExplorable") Then Return False
-	If $a_i_MapID <> 0 And Map_GetMapID() = $a_i_MapID Then Return True
-	; Cho and Zen keep the outpost map ID when the mission instance loads.
-	If Map_GetMapID() = $MAP_CHO_OUTPOST Then Return True
-	If Map_GetMapID() = $MAP_ZEN_OP Then Return True
-	If Map_GetMapID() = $MAP_ZEN_EXP Then Return True
+	If $a_i_MapID <> 0 And $l_i_Map = $a_i_MapID Then Return True
+	If $l_i_Map = $MAP_CHO_OUTPOST Then Return True
+	If $l_i_Map = $MAP_ZEN_OP Then Return True
+	If $l_i_Map = $MAP_ZEN_EXP Then Return True
 	Return False
 EndFunc
 
 Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 45000)
+	If Leveler_InMissionInstance($a_i_MapID) Then Return True
 	If Map_WaitMapLoading($a_i_StartMap, 1, $a_i_Timeout) Then Return True
+	If Leveler_InMissionInstance($a_i_MapID) Then Return True
 	If Map_GetInstanceInfo("IsExplorable") Then
 		Local $l_i_Map = Map_GetMapID()
 		If $l_i_Map = $a_i_StartMap Or $l_i_Map = $a_i_MapID Then Return True
@@ -241,21 +318,27 @@ EndFunc
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Local $l_i_StartMap = Map_GetMapID()
 	If Leveler_InMissionInstance($a_i_MapID) Then
-		Out("[Step] Already inside " & $a_s_Name & " (map " & $l_i_StartMap & ")")
+		If Wine_IsWine() Then $g_b_WineEnterSent = True
+		Out("[Step] Already inside " & $a_s_Name & " (map " & $l_i_StartMap & _
+				" current " & Leveler_LiveMapID() & ", objectives " & _
+				Number(World_GetWorldInfo("MissionObjectiveArraySize")) & ")")
 		Return True
 	EndIf
 
 	; Engine already accepted Enter Challenge. Do not send it again.
-	If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
+	If (Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted()) Or Party_GetPartyContextInfo("IsWaitingForMission") Then
 		Out("[Step] Mission is already starting; waiting for the map to load")
 		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
 		Sleep(2000)
 		Return True
 	EndIf
 
-	If Not Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Step] Cannot enter " & $a_s_Name & " from map " & $l_i_StartMap & " type " & Map_GetInstanceInfo("Type"))
-		Return False
+	Local $l_b_Outpost = Map_GetInstanceInfo("IsOutpost") And Leveler_InstanceInfoTrusted()
+	If Not $l_b_Outpost Then
+		If Leveler_InstanceInfoTrusted() Or Not ($l_i_StartMap = $MAP_ZEN_OP Or $l_i_StartMap = $MAP_CHO_OUTPOST) Then
+			Out("[Step] Cannot enter " & $a_s_Name & " from map " & $l_i_StartMap & " type " & Map_GetInstanceInfo("Type"))
+			Return False
+		EndIf
 	EndIf
 
 	Out("Let's do " & $a_s_Name)
@@ -297,7 +380,8 @@ Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
 		Local $l_i_Map = Map_GetMapID()
 		Local $l_i_Type = Number(Map_GetInstanceInfo("Type"))
 		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 5000 Then
-			Out("[Step] Mission map id=" & $l_i_Map & ", type " & $l_i_Type)
+			Out("[Step] Mission map id=" & $l_i_Map & ", current " & Leveler_LiveMapID() & _
+					", type " & $l_i_Type & ", objectives " & Number(World_GetWorldInfo("MissionObjectiveArraySize")))
 			$l_i_LastLog = TimerDiff($l_h_Timer)
 		EndIf
 		If $l_i_Map <= 0 Then
@@ -318,13 +402,17 @@ Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
 			Sleep(250)
 			ContinueLoop
 		EndIf
+		If Leveler_InMissionInstance($a_i_MapID) Then
+			Out("[Step] Mission instance confirmed (map " & $l_i_Map & " current " & Leveler_LiveMapID() & ")")
+			Return True
+		EndIf
 		If $l_i_Type = $GC_I_MAP_TYPE_EXPLORABLE Then
 			If $l_i_Map = $a_i_MapID Or $l_i_Map = $a_i_StartMap Or $l_i_Map = $MAP_ZEN_EXP Then
 				Out("[Step] Mission explorable on map " & $l_i_Map)
 				Return True
 			EndIf
 		EndIf
-		If $l_b_SawLoad And $l_i_Type = $GC_I_MAP_TYPE_OUTPOST And TimerDiff($l_h_Timer) > 8000 Then
+		If $l_b_SawLoad And Leveler_InstanceInfoTrusted() And $l_i_Type = $GC_I_MAP_TYPE_OUTPOST And TimerDiff($l_h_Timer) > 8000 Then
 			Out("[Step] Loading bounced back to outpost map " & $l_i_Map)
 			Return False
 		EndIf
@@ -341,7 +429,7 @@ Func Leveler_PrepareCombatAI()
 	$g_b_CombatMode = True
 	Local $l_i_Map = Map_GetMapID()
 	If $l_i_Map <> $g_i_LastUAIMap Then $g_b_UAIReady = False
-	If Not Map_GetInstanceInfo("IsExplorable") Then
+	If Not Map_GetInstanceInfo("IsExplorable") And Not Leveler_InMissionInstance() Then
 		$g_b_UAIReady = False
 		Return True
 	EndIf

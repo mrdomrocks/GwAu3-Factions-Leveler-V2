@@ -2,6 +2,9 @@
 
 Func Leveler_ExecuteStep($a_i_Step)
 	If $g_b_LevelerPaused Then Return False
+	If Wine_IsWine() Then
+		If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
+	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	If Leveler_IsWiped() Then
@@ -1267,9 +1270,12 @@ Func Leveler_Step_ZenDaijunMission()
 	$g_s_CurrentHeader = "Zen Daijun Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
-		Out("[Step] Already inside Zen Daijun")
+		If Wine_IsWine() Then $g_b_WineEnterSent = True
+		Out("[Step] Already inside Zen Daijun (map " & Map_GetMapID() & _
+				" current " & Leveler_LiveMapID() & ", objectives " & _
+				Number(World_GetWorldInfo("MissionObjectiveArraySize")) & ")")
 	Else
-		If Map_GetMapID() <> $MAP_ZEN_OP Or Not Map_GetInstanceInfo("IsOutpost") Then
+		If Map_GetMapID() <> $MAP_ZEN_OP Or (Leveler_InstanceInfoTrusted() And Not Map_GetInstanceInfo("IsOutpost")) Then
 			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
 		EndIf
 		If Wine_IsWine() Then

@@ -446,7 +446,10 @@ Func Leveler_StatusCheck()
 		Local $sA = "0"
 		If IsDeclared("g_p_AgentBase") Then $sA = Hex(Number($g_p_AgentBase), 8)
 		Out("[Status] AgentBase=" & $sA & " QueueBase=" & $sQ & _
-				" — profession/position reads are dead. Using map " & $l_i_Map & " and quest flags.")
+				" — profession/position reads are dead. Using map " & $l_i_Map & _
+				" current " & Number(Map_GetCharacterInfo("CurrentMapID")) & _
+				" objectives " & Number(World_GetWorldInfo("MissionObjectiveArraySize")) & _
+				" and quest flags.")
 	EndIf
 	Local $l_b_Cho = Map_IsMapUnlocked($MAP_CHO_OUTPOST) Or $l_i_Map = $MAP_CHO_OUTPOST Or $l_i_Map = 257
 	Local $l_b_RanMusu = Map_IsMapUnlocked($MAP_RAN_MUSU) Or $l_i_Map = $MAP_RAN_MUSU Or $l_i_Map = $MAP_CHO_EXPLORABLE Or $l_i_Map = $MAP_KINYA
