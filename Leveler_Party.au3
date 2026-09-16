@@ -273,12 +273,12 @@ Func Leveler_WineLooksInZenMission()
 	If Leveler_MapLooksConnecting() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
-	If $l_i_Map <> $MAP_ZEN_OP And $l_i_Map <> $MAP_ZEN_EXP And $l_i_Cur <> $MAP_ZEN_OP And $l_i_Cur <> $MAP_ZEN_EXP Then Return False
 	If $l_i_Cur = $MAP_ZEN_EXP Or $l_i_Map = $MAP_ZEN_EXP Then Return True
-	If Number(Map_GetCharacterInfo("IsExplorable")) Then Return True
-	If Number(Map_GetCharacterInfo("CurrentMapType")) = 1 Then Return True
-	If Leveler_HasMissionObjectives() Then Return True
-	If Leveler_PartyHasZenMissionAllies() Then Return True
+	; Outpost 213 keeps a stale MissionObjectiveArraySize (live: 2). Objectives
+	; / IsExplorable flicker must not skip Enter Mission.
+	If $l_i_Map = $MAP_ZEN_OP Or $l_i_Cur = $MAP_ZEN_OP Then
+		Return Leveler_PartyHasZenMissionAllies()
+	EndIf
 	Return False
 EndFunc
 
@@ -290,27 +290,21 @@ Func Leveler_InMissionInstance($a_i_MapID = 0)
 	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
 	If $l_i_Cur = $MAP_ZEN_EXP Or $l_i_Map = $MAP_ZEN_EXP Then Return True
 	If $l_i_Cur = $MAP_CHO_EXPLORABLE Or $l_i_Map = $MAP_CHO_EXPLORABLE Then Return True
-	If $a_i_MapID <> 0 And ($l_i_Cur = $a_i_MapID Or $l_i_Map = $a_i_MapID) Then
-		If Number(Map_GetCharacterInfo("IsExplorable")) Or Number(Map_GetCharacterInfo("CurrentMapType")) = 1 Then Return True
-		If Leveler_HasMissionObjectives() Then Return True
+
+	; Wine: 213 is the outpost unless Togo (lvl20 Rt) is actually in the party.
+	If Wine_IsWine() Then
+		If ($l_i_Map = $MAP_ZEN_OP Or $l_i_Cur = $MAP_ZEN_OP) And Leveler_PartyHasZenMissionAllies() Then Return True
+		Return False
 	EndIf
 
 	If Leveler_WineLooksInZenMission() Then Return True
-
-	; Cho keeps outpost map 214 inside the instance.
-	If $l_i_Map = $MAP_CHO_OUTPOST Or $l_i_Cur = $MAP_CHO_OUTPOST Then
-		If Number(Map_GetCharacterInfo("IsExplorable")) Then Return True
-		If Number(Map_GetCharacterInfo("CurrentMapType")) = 1 Then Return True
-		If Leveler_HasMissionObjectives() Then Return True
-	EndIf
 
 	If Not Leveler_InstanceInfoTrusted() Then Return False
 	If Map_GetInstanceInfo("IsOutpost") Then Return False
 	If Not Map_GetInstanceInfo("IsExplorable") Then Return False
 	If $a_i_MapID <> 0 And $l_i_Map = $a_i_MapID Then Return True
-	If $l_i_Map = $MAP_CHO_OUTPOST Then Return True
-	If $l_i_Map = $MAP_ZEN_OP Then Return True
 	If $l_i_Map = $MAP_ZEN_EXP Then Return True
+	If $l_i_Map = $MAP_CHO_EXPLORABLE Then Return True
 	Return False
 EndFunc
 
@@ -330,8 +324,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	If Leveler_InMissionInstance($a_i_MapID) Then
 		If Wine_IsWine() Then $g_b_WineEnterSent = True
 		Out("[Step] Already inside " & $a_s_Name & " (map " & $l_i_StartMap & _
-				" current " & Leveler_LiveMapID() & ", objectives " & _
-				Number(World_GetWorldInfo("MissionObjectiveArraySize")) & ")")
+				" current " & Leveler_LiveMapID() & ")")
 		Return True
 	EndIf
 
@@ -423,7 +416,13 @@ Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
 			Out("[Step] Mission instance confirmed (map " & $l_i_Map & " current " & Leveler_LiveMapID() & ")")
 			Return True
 		EndIf
-		If $l_i_Type = $GC_I_MAP_TYPE_EXPLORABLE Then
+		; Wine: Type=explorable on outpost 213 is a flicker. Require 246 / Togo.
+		If Wine_IsWine() Then
+			If Wine_EnterMapEvidence($a_i_StartMap) Then
+				Out("[Step] Mission instance confirmed (map " & $l_i_Map & " current " & Leveler_LiveMapID() & ")")
+				Return True
+			EndIf
+		ElseIf $l_i_Type = $GC_I_MAP_TYPE_EXPLORABLE Then
 			If $l_i_Map = $a_i_MapID Or $l_i_Map = $a_i_StartMap Or $l_i_Map = $MAP_ZEN_EXP Then
 				Out("[Step] Mission explorable on map " & $l_i_Map)
 				Return True

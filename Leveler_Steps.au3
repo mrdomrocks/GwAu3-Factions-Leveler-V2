@@ -1276,8 +1276,7 @@ Func Leveler_Step_ZenDaijunMission()
 	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
 		If Wine_IsWine() Then $g_b_WineEnterSent = True
 		Out("[Step] Already inside Zen Daijun (map " & Map_GetMapID() & _
-				" current " & Leveler_LiveMapID() & ", objectives " & _
-				Number(World_GetWorldInfo("MissionObjectiveArraySize")) & ")")
+				" current " & Leveler_LiveMapID() & ", Togo allies)")
 		Leveler_LoadZenSkillBar()
 	Else
 		If Map_GetMapID() <> $MAP_ZEN_OP Or (Leveler_InstanceInfoTrusted() And Not Map_GetInstanceInfo("IsOutpost")) Then
@@ -1298,6 +1297,12 @@ Func Leveler_Step_ZenDaijunMission()
 	Leveler_LoadZenSkillBar()
 	If Not Leveler_PrepareCombatAI() Then Return False
 	If Leveler_IsWiped() Then Return False
+	; Wine: never escort on outpost 213. In-mission is held 246 or Togo (lvl20 Rt).
+	If Wine_IsWine() And Not Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+		Out("[Step] Still on outpost (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & _
+				"); not escorting. Enter Mission must hold 246.")
+		Return False
+	EndIf
 
 	$g_b_SpiritRiftWatch = True
 	$g_h_RiftCooldown = TimerInit()
