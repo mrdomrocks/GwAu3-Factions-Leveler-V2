@@ -282,6 +282,17 @@ Func Leveler_WineLooksInZenMission()
 	Return False
 EndFunc
 
+; Wine: sitting at Zen 213 and not actually in the instance (no 246, no Togo).
+; InstanceInfo IsOutpost/IsExplorable flicker must not count as explorable.
+Func Leveler_WineAtZenOutpost()
+	If Not Wine_IsWine() Then Return False
+	If Leveler_MapLooksConnecting() Then Return False
+	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then Return False
+	Local $l_i_Map = Map_GetMapID()
+	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
+	Return $l_i_Map = $MAP_ZEN_OP Or $l_i_Cur = $MAP_ZEN_OP
+EndFunc
+
 Func Leveler_InMissionInstance($a_i_MapID = 0)
 	If Leveler_MapLooksConnecting() Then Return False
 	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
@@ -344,6 +355,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	EndIf
 
 	Local $l_b_Outpost = Map_GetInstanceInfo("IsOutpost") And Leveler_InstanceInfoTrusted()
+	If Leveler_WineAtZenOutpost() Then $l_b_Outpost = True
 	If Not $l_b_Outpost Then
 		If Leveler_InstanceInfoTrusted() Or Not ($l_i_StartMap = $MAP_ZEN_OP Or $l_i_StartMap = $MAP_CHO_OUTPOST) Then
 			Out("[Step] Cannot enter " & $a_s_Name & " from map " & $l_i_StartMap & " type " & Map_GetInstanceInfo("Type"))

@@ -1279,8 +1279,16 @@ Func Leveler_Step_ZenDaijunMission()
 				" current " & Leveler_LiveMapID() & ", Togo allies)")
 		Leveler_LoadZenSkillBar()
 	Else
-		If Map_GetMapID() <> $MAP_ZEN_OP Or (Leveler_InstanceInfoTrusted() And Not Map_GetInstanceInfo("IsOutpost")) Then
-			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
+		; Wine 213 without 246/Togo is the outpost. Do not Travel/resign on
+		; InstanceInfo IsOutpost flicker — that loops 213→213 and never enters.
+		If Not Leveler_WineAtZenOutpost() Then
+			If Wine_IsWine() Then
+				If Map_GetMapID() <> $MAP_ZEN_OP And Number(Map_GetCharacterInfo("CurrentMapID")) <> $MAP_ZEN_OP Then
+					If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
+				EndIf
+			ElseIf Map_GetMapID() <> $MAP_ZEN_OP Or (Leveler_InstanceInfoTrusted() And Not Map_GetInstanceInfo("IsOutpost")) Then
+				If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
+			EndIf
 		EndIf
 		If Wine_IsWine() Then
 			Out("[Step] Wine: set the Zen bar by slot, then click Enter Mission (no Skill_LoadSkillBar / hench packets)")

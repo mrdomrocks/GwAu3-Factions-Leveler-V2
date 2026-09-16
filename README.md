@@ -54,7 +54,7 @@ Native Windows is unchanged unless `ForceWineCompat=1`.
 3. If attach reports 0/78, the API Wine patches are missing or a previous 0/78 result was cached — restart AutoIt3.
 4. Status check uses the current map and later quests as a floor. At Zen Daijun (213) with Enter Mission, next step must be **Zen Daijun Mission**, not Forming A Party, even when AgentBase is 0.
 5. At the Zen outpost (213) only: Wine hides the overlay and clicks the Enter Mission pill via PostMessage/ControlClick plus a **frame-mapped** MouseClick (outer “Guild Wars Reforged” rect, xdotool Y=59 — not the DX child’s Y≈30). Latch **only** when map/CurrentMapID is **246** for >1s. Do not latch on `{ENTER}` + Type/IsWaitingForMission flicker while still on 213.
-6. Already-inside Zen on Wine is **map/CurrentMapID 246** or Togo (lvl20 Rt) in the party. Stale `MissionObjectiveArraySize` on outpost 213 must **not** skip Enter Mission or start Escort Togo.
+6. Already-inside Zen on Wine is **map/CurrentMapID 246** or Togo (lvl20 Rt) in the party. Stale `MissionObjectiveArraySize` on outpost 213 must **not** skip Enter Mission or start Escort Togo. On 213 without Togo, do **not** Travel/resign 213→213 when InstanceInfo flickers explorable — go straight to Enter Mission.
 7. The first step must log a live `QueueBase` (and `CommandMove`) after `Wine_EnsureCommandQueue`. `Map_Move` can then walk the mission path. Pathing/queue on Wine is validated live.
 8. Zen combat stays on Togo (do not walk off him). A wipe / Togo death resigns **once**, sends Return-to-Outpost **once**, and waits. Do not re-send 0xA7 while the client shows Connecting — that hangs at 0%. Success is a clean Zen outpost (213), then re-enter.
 

@@ -180,7 +180,14 @@ EndFunc
 ; $a_b_Rezone True = leave and re-enter the outpost so we spawn at the portal
 ; instead of pathing across town from the last NPC (bag merchant, crafter, ...).
 Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
-	If Map_GetMapID() = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
+	Local $l_i_Now = Map_GetMapID()
+	; Wine: already at Zen 213. InstanceInfo explorable flicker must not resign.
+	If Wine_IsWine() And $l_i_Now = $a_i_MapID And $a_i_MapID = $MAP_ZEN_OP Then
+		If Not $a_b_Rezone Then Return True
+		Out("[Move] Already at Zen outpost 213; not leaving explorable to re-travel")
+		Return True
+	EndIf
+	If $l_i_Now = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
 		If Not $a_b_Rezone Then Return True
 		Out("[Move] Rezoning map " & $a_i_MapID & " to reset position")
 		If Map_RndTravel($a_i_MapID, True, True) Then Return True
@@ -188,7 +195,8 @@ Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 		Return True
 	EndIf
 	If Map_GetInstanceInfo("IsExplorable") Then
-		Out("[Move] Leaving explorable map " & Map_GetMapID() & " to travel to " & $a_i_MapID)
+		If Wine_IsWine() And $l_i_Now = $a_i_MapID And $a_i_MapID = $MAP_ZEN_OP Then Return True
+		Out("[Move] Leaving explorable map " & $l_i_Now & " to travel to " & $a_i_MapID)
 		If Map_TravelTo($a_i_MapID) Then
 			If Not Leveler_WaitUntilMapReady() Then Return False
 			If Map_GetMapID() = $a_i_MapID Then Return True
