@@ -378,8 +378,8 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 EndFunc
 
 ; Wine has no LoadFinished hook, so Map_WaitMapIsLoaded never completes.
-; Type 2 is LOADING — keep waiting. Success is explorable (type 1) on the
-; outpost id (Cho/Zen keep it) or the explorable id (246). Fail on char-select.
+; Type 2 is LOADING — keep waiting. Wine success is map 246 (or Togo in party),
+; not Type=explorable flicker on outpost 213. Fail on char-select.
 Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
 	Local $l_h_Timer = TimerInit()
 	Local $l_b_SawLoad = False
