@@ -262,8 +262,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Out("Exiting Outpost")
 	If Wine_IsWine() Then
 		If Not Wine_EnterChallenge() Then
-			Out("[Step] Cannot enter " & $a_s_Name & ": Wine QueueBase is not live.")
-			Wine_LogCommandGap()
+			Out("[Step] Cannot enter " & $a_s_Name & ": no Gw window for Enter Mission click.")
 			Return False
 		EndIf
 		If Not Leveler_WaitWineMission($a_i_MapID, $l_i_StartMap) Then
@@ -291,14 +290,26 @@ EndFunc
 Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
 	Local $l_h_Timer = TimerInit()
 	Local $l_b_SawLoad = False
+	Local $l_i_ZeroHits = 0
+	Local $l_i_LastLog = -5000
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
 		If $g_b_LevelerPaused Then Return False
 		Local $l_i_Map = Map_GetMapID()
 		Local $l_i_Type = Number(Map_GetInstanceInfo("Type"))
-		If $l_i_Map <= 0 Then
-			Out("[Step] Client left the world (map " & $l_i_Map & "). Enter dumped to character select.")
-			Return False
+		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 5000 Then
+			Out("[Step] Mission map id=" & $l_i_Map & ", type " & $l_i_Type)
+			$l_i_LastLog = TimerDiff($l_h_Timer)
 		EndIf
+		If $l_i_Map <= 0 Then
+			$l_i_ZeroHits += 1
+			If $l_i_ZeroHits >= 5 Then
+				Out("[Step] Client left the world (map " & $l_i_Map & "). Enter dumped to character select.")
+				Return False
+			EndIf
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		$l_i_ZeroHits = 0
 		If $l_i_Type = $GC_I_MAP_TYPE_LOADING Then
 			If Not $l_b_SawLoad Then
 				Out("[Step] Mission is loading (map " & $l_i_Map & ", type 2)")

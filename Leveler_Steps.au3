@@ -2,12 +2,6 @@
 
 Func Leveler_ExecuteStep($a_i_Step)
 	If $g_b_LevelerPaused Then Return False
-	If Wine_IsWine() Then
-		If Not Wine_EnsureCommandQueue() Then
-			Wine_LogCommandGap()
-			Return False
-		EndIf
-	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	If Leveler_IsWiped() Then
@@ -1278,9 +1272,13 @@ Func Leveler_Step_ZenDaijunMission()
 		If Map_GetMapID() <> $MAP_ZEN_OP Or Not Map_GetInstanceInfo("IsOutpost") Then
 			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
 		EndIf
-		Out("[Step] Load skill bar, then henchmen, then enter")
-		If Not Leveler_LoadZenSkillBar() Then Return False
-		If Not Leveler_PrepareMissionParty() Then Return False
+		If Wine_IsWine() Then
+			Out("[Step] Wine: click Enter Mission without skill/hench packets (those plus the queue enter dumped to character select)")
+		Else
+			Out("[Step] Load skill bar, then henchmen, then enter")
+			If Not Leveler_LoadZenSkillBar() Then Return False
+			If Not Leveler_PrepareMissionParty() Then Return False
+		EndIf
 		Out("[Step] Entering Zen Daijun")
 		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_EXP) Then Return False
 	EndIf

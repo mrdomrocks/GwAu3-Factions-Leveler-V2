@@ -55,6 +55,7 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	EndIf
 
 	Local $l_i_StartMap = Map_GetMapID()
+	If Wine_IsWine() Then Wine_EnsureCommandQueue()
 	Leveler_EnsurePathfinder()
 
 	Local $l_v_Obstacles = 0
@@ -956,6 +957,7 @@ EndFunc
 Func Leveler_ClientIsReady()
 	If Map_GetMapID() <= 0 Then Return False
 	If Map_GetInstanceInfo("IsLoading") Then Return False
+	If Wine_IsWine() And (Map_GetInstanceInfo("IsOutpost") Or Map_GetInstanceInfo("IsExplorable")) Then Return True
 	If Agent_GetAgentPtr(-2) = 0 Then Return False
 	If Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
 	Return True

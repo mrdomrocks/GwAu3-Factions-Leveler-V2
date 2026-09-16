@@ -25,6 +25,7 @@ If Not IsDeclared("g_b_WineMinimalHook") Then Global $g_b_WineMinimalHook = Fals
 If Not IsDeclared("g_b_WineQueueGapLogged") Then Global $g_b_WineQueueGapLogged = False
 If Not IsDeclared("g_p_WineAsmAlloc") Then Global $g_p_WineAsmAlloc = 0
 If Not IsDeclared("g_p_WineExistingE9") Then Global $g_p_WineExistingE9 = 0
+If Not IsDeclared("g_b_WineEnterSent") Then Global $g_b_WineEnterSent = False
 
 Func Wine_IsWine()
 	If $g_b_WineChecked Then Return $g_b_IsWine
@@ -306,14 +307,78 @@ Func Wine_ResolveCallTarget($a_p_Site)
 	Return $pFallback
 EndFunc
 
-; Stock Map_EnterChallenge: CtoS PARTY_ENTER_CHALLENGE (0xA5, 1).
-; Ui_EnterChallenge also Map_WaitMapIsLoaded, which needs the LoadFinished JMP
-; we do not plant. Do not call that wait on Wine.
+; Queue enters (Ui_EnterChallenge / PARTY_ENTER_CHALLENGE 0xA5) both started
+; a load then dumped this wine-gw client to character select. Click the
+; visible Enter Mission button instead — no PacketSend, no EnterMission stub.
+Func Wine_ClientClick($a_h_Wnd, $a_i_X, $a_i_Y)
+	If $a_h_Wnd = 0 Then Return
+	Local $tPt = DllStructCreate("int;int")
+	DllStructSetData($tPt, 1, $a_i_X)
+	DllStructSetData($tPt, 2, $a_i_Y)
+	DllCall("user32.dll", "bool", "ClientToScreen", "hwnd", $a_h_Wnd, "ptr", DllStructGetPtr($tPt))
+	Local $iSx = DllStructGetData($tPt, 1)
+	Local $iSy = DllStructGetData($tPt, 2)
+	Out("Wine enter: click client " & $a_i_X & "," & $a_i_Y & " -> screen " & $iSx & "," & $iSy)
+	MouseClick("left", $iSx, $iSy, 1, 0)
+EndFunc
+
+Func Wine_EnterLooksStarted($a_i_StartMap)
+	If Map_GetMapID() <= 0 Then Return False
+	If Map_GetInstanceInfo("IsLoading") Then Return True
+	If Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
+	If Map_GetMapID() <> $a_i_StartMap And Map_GetMapID() > 0 Then Return True
+	If Map_GetInstanceInfo("IsExplorable") Then Return True
+	Return False
+EndFunc
+
 Func Wine_EnterChallenge()
-	If Not Wine_EnsureCommandQueue() Then Return False
-	If Not Wine_CommandsReady() Then Return False
-	Out("Wine enter: Core_SendPacket PARTY_ENTER_CHALLENGE 0xA5,1 (Map_EnterChallenge). Not Ui_EnterChallenge/Map_WaitMapIsLoaded.")
-	Core_SendPacket(0x8, $GC_I_HEADER_PARTY_ENTER_CHALLENGE, 1)
+	If $g_b_WineEnterSent Then
+		Out("Wine enter: already clicked Enter Mission this attach; not sending again.")
+		Return True
+	EndIf
+	$g_b_WineEnterSent = True
+
+	Local $hWnd = $g_h_GWWindow
+	If $hWnd = 0 Then $hWnd = Wine_FindGwHwnd($g_i_GWProcessId)
+	If $hWnd = 0 Then
+		Out("Wine enter: no Gw window for Enter Mission click")
+		Return False
+	EndIf
+
+	Local $iStart = Map_GetMapID()
+	WinActivate($hWnd)
+	Sleep(250)
+	Out("Wine enter: UI click Enter Mission (no queue packet, no Ui_EnterChallenge).")
+
+	ControlSend($hWnd, "", "", "{ENTER}")
+	Sleep(900)
+	If Wine_EnterLooksStarted($iStart) Then
+		Out("Wine enter: {ENTER} started the mission load")
+		Return True
+	EndIf
+
+	Local $aSz = WinGetClientSize($hWnd)
+	Local $iW = 800
+	Local $iH = 600
+	If IsArray($aSz) Then
+		$iW = Number($aSz[0])
+		$iH = Number($aSz[1])
+	EndIf
+	If $iW < 200 Then $iW = 800
+	If $iH < 200 Then $iH = 600
+	Out("Wine enter: Gw client " & $iW & "x" & $iH)
+
+	; Party-window Enter Mission sits in the left column, lower half.
+	Local $aiX[8] = [90, 110, 70, 130, Int($iW * 0.11), Int($iW * 0.14), Int($iW * 0.08), Int($iW * 0.50)]
+	Local $aiY[8] = [Int($iH * 0.70), Int($iH * 0.64), Int($iH * 0.76), Int($iH * 0.58), Int($iH * 0.72), Int($iH * 0.80), Int($iH * 0.68), Int($iH * 0.88)]
+	Local $i = 0
+	For $i = 0 To 7
+		If Wine_EnterLooksStarted($iStart) Then Return True
+		Wine_ClientClick($hWnd, $aiX[$i], $aiY[$i])
+		Sleep(700)
+	Next
+	ControlSend($hWnd, "", "", "{ENTER}")
+	Sleep(400)
 	Return True
 EndFunc
 
