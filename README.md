@@ -55,7 +55,8 @@ Native Windows is unchanged unless `ForceWineCompat=1`.
 4. Status check uses the current map and later quests as a floor. At Zen Daijun (213) with Enter Mission, next step must be **Zen Daijun Mission**, not Forming A Party, even when AgentBase is 0.
 5. At the Zen outpost (213) only: Wine hides the On-Top leveler overlay, then clicks the **top-bar blue Enter Mission pill** (same row as the district dropdown). On the live 1272×713 client that is `636,22` / `636,30` / `636,38` / `636,48` / `596,36` / `676,36` / `566,44` / `706,44`. `{ENTER}` still runs first.
 6. If the character is **already inside** Zen (objective “Find the source of the plague”, Master Togo / Headmaster Vhang in party, or `CurrentMapID` 246) after a partial `Core_Initialize`, Status next step is still **Zen Daijun Mission**, but the bot must **not** re-click Enter Mission. `AgentBase=0` with a live map id is not a disconnect.
-7. The first step must log a live `QueueBase` (and `CommandMove`) after `Wine_EnsureCommandQueue`. `Map_Move` can then walk the mission path. Do not claim a full Wine leveling-loop success until that walk is confirmed live.
+7. The first step must log a live `QueueBase` (and `CommandMove`) after `Wine_EnsureCommandQueue`. `Map_Move` can then walk the mission path. Pathing/queue on Wine is validated live.
+8. Zen combat stays on Togo (do not walk off him). A wipe / Togo death resigns **once**, sends Return-to-Outpost **once**, and waits. Do not re-send 0xA7 while the client shows Connecting — that hangs at 0%. Success is a clean Zen outpost (213), then re-enter.
 
 ## Scope
 

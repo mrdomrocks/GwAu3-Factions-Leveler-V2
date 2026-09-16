@@ -365,6 +365,9 @@ Global $g_s_CurrentHeader = ""
 Global $g_b_UAIReady = False
 Global $g_i_LastUAIMap = 0
 Global $g_b_ConnectionLost = False
+; One Return-to-Outpost packet per wipe. Re-sending while Connecting hangs Gw.
+Global $g_b_WipeReturnSent = False
+Global $g_h_WipeReturnAt = 0
 ; One-time recovery after a completed Lost Treasure restart: path Cho -> Ran Musu -> Tengu.
 Global $g_b_LostTreasureToTenguOnce = False
 ; Set on Start only. Stay in an explorable after a client/script restart; do not block the next quest.

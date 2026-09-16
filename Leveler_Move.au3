@@ -83,6 +83,10 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
 	If Leveler_IsWiped() Then Return False
+	If $g_b_SpiritRiftWatch Then
+		If Not Leveler_WaitOutOfCombat(45000) Then Return False
+		If Not Leveler_HoldForTogo() Then Return False
+	EndIf
 	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
 	Return $l_b_Ok
 EndFunc
@@ -94,6 +98,11 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 		If Leveler_IsWiped() Then Return False
 		If Map_GetMapID() <> $l_i_StartMap Then Return True
 		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+		If $g_b_SpiritRiftWatch And Leveler_TogoNeedsHelp() Then
+			Leveler_FightWithTogo()
+			Sleep(250)
+			ContinueLoop
+		EndIf
 		If $a_b_Combat Then Leveler_CombatTick()
 		Map_Move($a_f_X, $a_f_Y, 20)
 		Sleep(250)
@@ -579,9 +588,25 @@ Func Leveler_InteractNpcAt($a_f_X, $a_f_Y, $a_b_Combat = False)
 	Return True
 EndFunc
 
+Func Leveler_ZenTogoIsDead()
+	If Not $g_b_SpiritRiftWatch And Not Leveler_WineLooksInZenMission() Then Return False
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Not Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
+		Local $l_s_Name = Agent_GetAgentInfo($i, "Name")
+		Local $l_i_Model = Agent_GetAgentInfo($i, "PlayerNumber")
+		If Leveler_IsTogoModel($l_i_Model) Or StringInStr($l_s_Name, "Togo") Then Return True
+	Next
+	Return False
+EndFunc
+
 Func Leveler_IsWiped()
+	If Leveler_MapLooksConnecting() Then Return False
 	If Party_GetPartyContextInfo("IsDefeated") Then Return True
 	If Party_IsWiped() Then Return True
+	If Leveler_ZenTogoIsDead() Then Return True
 	Return False
 EndFunc
 
@@ -611,7 +636,66 @@ EndFunc
 Func Leveler_CombatTick()
 	If Not Leveler_ShouldFightHere() Then Return
 	If Not Leveler_PrepareCombatAI() Then Return
+	If $g_b_SpiritRiftWatch Then
+		Leveler_InterruptSpiritRifts()
+		If Leveler_TogoNeedsHelp() Then
+			Leveler_FightWithTogo()
+			Return
+		EndIf
+	EndIf
 	UAI_Fight(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $LEVELER_AGGRO, $LEVELER_FIGHT_RANGE_OUT)
+EndFunc
+
+Func Leveler_EnemiesNearAgent($a_i_Agent, $a_f_Range = 900)
+	If $a_i_Agent = 0 Then Return False
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
+		If Agent_GetAgentInfo($i, "Allegiance") <> $GC_I_ALLEGIANCE_ENEMY Then ContinueLoop
+		If Agent_GetDistance($i, $a_i_Agent) < $a_f_Range Then Return True
+	Next
+	Return False
+EndFunc
+
+; Togo must survive Zen. Stay on him when he is pulled, low, or left behind.
+Func Leveler_TogoNeedsHelp()
+	Local $l_i_Togo = Leveler_GetTogo()
+	If $l_i_Togo = 0 Then Return False
+	Local $l_f_HP = Number(Agent_GetAgentInfo($l_i_Togo, "HP"))
+	If $l_f_HP > 0 And $l_f_HP <= 0.65 Then Return True
+	If Agent_GetDistance($l_i_Togo) > 850 Then Return True
+	Return Leveler_EnemiesNearAgent($l_i_Togo, 900)
+EndFunc
+
+Func Leveler_FightWithTogo()
+	If Not Leveler_ShouldFightHere() Then Return
+	If Not Leveler_PrepareCombatAI() Then Return
+	Leveler_InterruptSpiritRifts()
+	Local $l_i_Togo = Leveler_GetTogo()
+	Local $l_f_X = Agent_GetAgentInfo(-2, "X")
+	Local $l_f_Y = Agent_GetAgentInfo(-2, "Y")
+	If $l_i_Togo <> 0 Then
+		$l_f_X = Agent_GetAgentInfo($l_i_Togo, "X")
+		$l_f_Y = Agent_GetAgentInfo($l_i_Togo, "Y")
+		If Agent_GetDistance($l_i_Togo) > 400 Then Map_Move($l_f_X, $l_f_Y, 20)
+	EndIf
+	UAI_Fight($l_f_X, $l_f_Y, $LEVELER_AGGRO, $LEVELER_FIGHT_RANGE_OUT)
+EndFunc
+
+Func Leveler_HoldForTogo($a_i_Timeout = 25000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_IsWiped() Then Return False
+		Local $l_i_Togo = Leveler_GetTogo()
+		If $l_i_Togo = 0 Then Return True
+		If Agent_GetDistance($l_i_Togo) < 700 And Not Leveler_TogoNeedsHelp() And Not Leveler_InDanger($LEVELER_AGGRO) Then Return True
+		Leveler_FightWithTogo()
+		Sleep(250)
+	WEnd
+	Return Not Leveler_IsWiped()
 EndFunc
 
 Func Leveler_WaitCombat($a_i_Ms)
@@ -803,7 +887,7 @@ Func Leveler_LootNearby($a_i_Model = 0, $a_f_Range = 2000, $a_i_Timeout = 10000)
 EndFunc
 
 Func Leveler_InterruptSpiritRifts()
-	If Map_GetMapID() <> $MAP_ZEN_OP Then Return
+	If Map_GetMapID() <> $MAP_ZEN_OP And Leveler_LiveMapID() <> $MAP_ZEN_EXP And Map_GetMapID() <> $MAP_ZEN_EXP Then Return
 	If $g_h_RiftCooldown <> 0 And TimerDiff($g_h_RiftCooldown) < 1000 Then Return
 
 	Local $l_i_Max = Agent_GetMaxAgents()
@@ -962,6 +1046,7 @@ EndFunc
 ; After a disconnect the client can sit on a loading / zero map. Wait until we can act.
 Func Leveler_ClientIsReady()
 	If Map_GetMapID() <= 0 Then Return False
+	If Leveler_MapLooksConnecting() Then Return False
 	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
 	If Wine_IsWine() Then
 		If Leveler_InMissionInstance() Then Return True
@@ -1088,23 +1173,77 @@ Func Leveler_RecoverWipe()
 		Return True
 	EndIf
 
-	Out("[Recover] Party wiped or dead. Resigning and returning to outpost.")
-	Chat_SendChat("resign", "/")
-	Sleep(1200)
+	Return Leveler_ReturnWipeToOutpost()
+EndFunc
 
+; True once we are sitting in the mission outpost (213 / 214), not Connecting and not still in the instance.
+Func Leveler_AtWipeOutpost()
+	If Leveler_MapLooksConnecting() Then Return False
+	Local $l_i_Map = Map_GetMapID()
+	If $l_i_Map <= 0 Then Return False
+	If Leveler_InstanceInfoTrusted() And Map_GetInstanceInfo("IsOutpost") Then Return True
+	If Leveler_InMissionInstance() Then Return False
+	If Number(Map_GetCharacterInfo("CurrentMapType")) = 2 Then Return False
+	If $l_i_Map = $MAP_ZEN_OP Or $l_i_Map = $MAP_CHO_OUTPOST Or $l_i_Map = $MAP_SEITUNG Then
+		If Number(Map_GetCharacterInfo("CurrentMapType")) = 0 Then Return True
+		If Number(Map_GetCharacterInfo("IsExplorable")) = 0 And Not Leveler_HasMissionObjectives() Then Return True
+	EndIf
+	Return False
+EndFunc
+
+; Wait for the outpost after a wipe. Do not send travel/return packets here.
+Func Leveler_WaitReturnToOutpost($a_i_Timeout = 90000)
 	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < 60000
-		If Map_GetInstanceInfo("IsOutpost") Then ExitLoop
-		If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
+	Local $l_i_LastLog = -8000
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Game_GetGameInfo("IsCinematic") Then
+			Cinematic_SkipCinematic()
+			Sleep(400)
+		EndIf
+		If Leveler_AtWipeOutpost() Then
+			$g_b_WipeReturnSent = False
+			$g_b_WineEnterSent = False
+			Out("[Recover] Back in outpost map " & Map_GetMapID() & ". Retrying: " & $g_s_CurrentHeader)
+			Return True
+		EndIf
+		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 8000 Then
+			Out("[Recover] Waiting for outpost (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & _
+					" type " & Map_GetInstanceInfo("Type") & " connecting=" & Number(Leveler_MapLooksConnecting()) & ")")
+			$l_i_LastLog = TimerDiff($l_h_Timer)
+		EndIf
 		Sleep(500)
 	WEnd
+	Out("[Recover] Outpost return timed out. Not sending more return packets.")
+	Return False
+EndFunc
 
-	Map_WaitMapLoading()
-	Sleep(1000)
-	If Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Recover] Back in outpost. Retrying: " & $g_s_CurrentHeader)
+; Resign once, Return-to-Outpost once, then wait. Repeating 0xA7 while Connecting hangs Gw at 0%.
+Func Leveler_ReturnWipeToOutpost()
+	If Leveler_AtWipeOutpost() Then
+		$g_b_WipeReturnSent = False
+		$g_b_WineEnterSent = False
+		Out("[Recover] Already at the outpost after the wipe.")
 		Return True
 	EndIf
-	Out("[Recover] Failed to reach an outpost.")
-	Return False
+	If Leveler_MapLooksConnecting() Then
+		Out("[Recover] Client is connecting; waiting without sending return packets.")
+		Return Leveler_WaitReturnToOutpost()
+	EndIf
+
+	If Not $g_b_WipeReturnSent Then
+		Out("[Recover] Party wiped or Togo fell. Resigning once, then returning to outpost once.")
+		Chat_SendChat("resign", "/")
+		Sleep(1500)
+		If Party_GetPartyContextInfo("IsDefeated") Or Leveler_InMissionInstance() Or Leveler_HasMissionObjectives() Then
+			If Wine_IsWine() Then Wine_EnsureCommandQueue()
+			Map_ReturnToOutpost(False)
+			$g_b_WipeReturnSent = True
+			$g_h_WipeReturnAt = TimerInit()
+			Out("[Recover] Sent Return-to-Outpost. Waiting for the outpost (no further packets).")
+		EndIf
+	Else
+		Out("[Recover] Return-to-Outpost already sent this wipe; waiting.")
+	EndIf
+	Return Leveler_WaitReturnToOutpost()
 EndFunc

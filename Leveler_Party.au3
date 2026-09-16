@@ -261,7 +261,16 @@ Func Leveler_PartyHasZenMissionAllies()
 	Return $l_i_High >= 1 And $l_i_HighRt >= 1
 EndFunc
 
+; Connecting / loading (Type 2). Do not treat as in-mission or ready.
+Func Leveler_MapLooksConnecting()
+	If Map_GetMapID() <= 0 Then Return True
+	If Leveler_InstanceInfoTrusted() And Map_GetInstanceInfo("IsLoading") Then Return True
+	If Number(Map_GetCharacterInfo("CurrentMapType")) = 2 Then Return True
+	Return False
+EndFunc
+
 Func Leveler_WineLooksInZenMission()
+	If Leveler_MapLooksConnecting() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
 	If $l_i_Map <> $MAP_ZEN_OP And $l_i_Map <> $MAP_ZEN_EXP And $l_i_Cur <> $MAP_ZEN_OP And $l_i_Cur <> $MAP_ZEN_EXP Then Return False
@@ -274,6 +283,7 @@ Func Leveler_WineLooksInZenMission()
 EndFunc
 
 Func Leveler_InMissionInstance($a_i_MapID = 0)
+	If Leveler_MapLooksConnecting() Then Return False
 	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
 
 	Local $l_i_Map = Map_GetMapID()

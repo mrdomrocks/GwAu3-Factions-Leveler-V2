@@ -5,6 +5,10 @@ Func Leveler_ExecuteStep($a_i_Step)
 	If Wine_IsWine() Then
 		If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
 	EndIf
+	If Leveler_MapLooksConnecting() Then
+		Out("[Recover] Client is connecting; waiting for the outpost without sending packets.")
+		Return Leveler_WaitReturnToOutpost()
+	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	If Leveler_IsWiped() Then
@@ -1274,12 +1278,14 @@ Func Leveler_Step_ZenDaijunMission()
 		Out("[Step] Already inside Zen Daijun (map " & Map_GetMapID() & _
 				" current " & Leveler_LiveMapID() & ", objectives " & _
 				Number(World_GetWorldInfo("MissionObjectiveArraySize")) & ")")
+		Leveler_LoadZenSkillBar()
 	Else
 		If Map_GetMapID() <> $MAP_ZEN_OP Or (Leveler_InstanceInfoTrusted() And Not Map_GetInstanceInfo("IsOutpost")) Then
 			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
 		EndIf
 		If Wine_IsWine() Then
-			Out("[Step] Wine: click Enter Mission without skill/hench packets (those plus the queue enter dumped to character select)")
+			Out("[Step] Wine: set the Zen bar by slot, then click Enter Mission (no Skill_LoadSkillBar / hench packets)")
+			Leveler_LoadZenSkillBar()
 		Else
 			Out("[Step] Load skill bar, then henchmen, then enter")
 			If Not Leveler_LoadZenSkillBar() Then Return False
@@ -1289,23 +1295,31 @@ Func Leveler_Step_ZenDaijunMission()
 		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_EXP) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
+	Leveler_LoadZenSkillBar()
 	If Not Leveler_PrepareCombatAI() Then Return False
 	If Leveler_IsWiped() Then Return False
 
 	$g_b_SpiritRiftWatch = True
 	$g_h_RiftCooldown = TimerInit()
 	$g_b_CombatMode = True
+	Out("[Step] Escort Togo: fight on him, interrupt Spirit Rifts, do not walk off the party")
 
 	If Not Leveler_MoveTo(15120.68, 10456.73, True) Then
 		$g_b_SpiritRiftWatch = False
 		Return False
 	EndIf
-	Sleep(15000)
+	If Not Leveler_WaitOutOfCombat(20000) Then
+		$g_b_SpiritRiftWatch = False
+		Return False
+	EndIf
 	If Not Leveler_MoveTo(11990.38, 10782.05, True) Then
 		$g_b_SpiritRiftWatch = False
 		Return False
 	EndIf
-	Sleep(10000)
+	If Not Leveler_WaitOutOfCombat(20000) Then
+		$g_b_SpiritRiftWatch = False
+		Return False
+	EndIf
 	If Not Leveler_MoveTo(10161.92, 9751.41, True) Then
 		$g_b_SpiritRiftWatch = False
 		Return False
