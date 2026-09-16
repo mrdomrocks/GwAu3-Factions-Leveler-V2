@@ -182,11 +182,7 @@ EndFunc
 Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 	Local $l_i_Now = Map_GetMapID()
 	; Wine: already at Zen 213. InstanceInfo explorable flicker must not resign.
-	If Wine_IsWine() And $l_i_Now = $a_i_MapID And $a_i_MapID = $MAP_ZEN_OP Then
-		If Not $a_b_Rezone Then Return True
-		Out("[Move] Already at Zen outpost 213; not leaving explorable to re-travel")
-		Return True
-	EndIf
+	If Wine_IsWine() And $l_i_Now = $a_i_MapID And $a_i_MapID = $MAP_ZEN_OP Then Return True
 	If $l_i_Now = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
 		If Not $a_b_Rezone Then Return True
 		Out("[Move] Rezoning map " & $a_i_MapID & " to reset position")
