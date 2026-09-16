@@ -53,7 +53,7 @@ Native Windows is unchanged unless `ForceWineCompat=1`.
 2. Click Start. The log should say `Initializing and attaching to PID …` then stock `End of Initialization` / `Initialized for: <name>`.
 3. If attach reports 0/78, the API Wine patches are missing or a previous 0/78 result was cached — restart AutoIt3.
 4. Status check uses the current map and later quests as a floor. At Zen Daijun (213) with Enter Mission, next step must be **Zen Daijun Mission**, not Forming A Party, even when AgentBase is 0.
-5. At 213, the first Zen Daijun Mission tick should log `Wine: single Engine JMP planted` (or reuse Core's page) with a non-zero `QueueBase` and `CommandEnterMission`, then `Ui_EnterChallenge` should load explorable **246**. The wine-gw Engine scan can land one byte late (`EC D9 45 08`); the hook site is the preceding `8B EC D9 45 08`. If that site is already `E9` and QueueBase is still 0, restart `Gw.exe` and Start again. Do not claim a full Wine leveling-loop success until that enter is confirmed live.
+5. At 213, the first Zen Daijun Mission tick should plant or **reuse** the Engine JMP (site `007E9591`; reuse if Gw still has the `50a84c8` hook). Wine enter then sends stock `PARTY_ENTER_CHALLENGE` (`0xA5`, 1) — not `Ui_EnterChallenge` + `Map_WaitMapIsLoaded` (that wait needs the LoadFinished JMP we do not plant, and `Ui_EnterChallenge(True)` dumped this client to character select). Success is explorable type 1 on **246** (or 213 if Cho/Zen keep the outpost id). Type 2 is loading; character select / map 0 is a failed dump. Do not claim a full Wine leveling-loop success until that enter is confirmed live.
 
 ## Scope
 

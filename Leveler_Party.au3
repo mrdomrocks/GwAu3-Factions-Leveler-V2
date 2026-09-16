@@ -261,25 +261,65 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Out("Let's do " & $a_s_Name)
 	Out("Exiting Outpost")
 	If Wine_IsWine() Then
-		If Not Wine_EnsureCommandQueue() Then
-			Out("[Step] Cannot enter " & $a_s_Name & ": Wine QueueBase/EnterMission is not live.")
+		If Not Wine_EnterChallenge() Then
+			Out("[Step] Cannot enter " & $a_s_Name & ": Wine QueueBase is not live.")
 			Wine_LogCommandGap()
 			Return False
 		EndIf
-		Out("[Step] Wine queue live. QueueBase=" & Hex(Number($g_p_QueueBase), 8) & _
-				" CommandEnterMission=" & Hex(Number(Memory_GetValue("CommandEnterMission")), 8))
-	EndIf
-	; Arborstone enter. False = EnterMission(1) and instant-DCs on this client.
-	Ui_EnterChallenge(True)
-	If Not Map_WaitMapLoading($l_i_StartMap, 1) Then
-		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
+		If Not Leveler_WaitWineMission($a_i_MapID, $l_i_StartMap) Then
 			Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
 			Return False
+		EndIf
+	Else
+		; Arborstone enter. False = EnterMission(1) and instant-DCs on this client.
+		Ui_EnterChallenge(True)
+		If Not Map_WaitMapLoading($l_i_StartMap, 1) Then
+			If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
+				Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
+				Return False
+			EndIf
 		EndIf
 	EndIf
 	Sleep(2000)
 	Out("[Step] Mission instance loaded on map " & Map_GetMapID())
 	Return True
+EndFunc
+
+; Wine has no LoadFinished hook, so Map_WaitMapIsLoaded never completes.
+; Type 2 is LOADING — keep waiting. Success is explorable (type 1) on the
+; outpost id (Cho/Zen keep it) or the explorable id (246). Fail on char-select.
+Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
+	Local $l_h_Timer = TimerInit()
+	Local $l_b_SawLoad = False
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		Local $l_i_Map = Map_GetMapID()
+		Local $l_i_Type = Number(Map_GetInstanceInfo("Type"))
+		If $l_i_Map <= 0 Then
+			Out("[Step] Client left the world (map " & $l_i_Map & "). Enter dumped to character select.")
+			Return False
+		EndIf
+		If $l_i_Type = $GC_I_MAP_TYPE_LOADING Then
+			If Not $l_b_SawLoad Then
+				Out("[Step] Mission is loading (map " & $l_i_Map & ", type 2)")
+				$l_b_SawLoad = True
+			EndIf
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		If $l_i_Type = $GC_I_MAP_TYPE_EXPLORABLE Then
+			If $l_i_Map = $a_i_MapID Or $l_i_Map = $a_i_StartMap Or $l_i_Map = $MAP_ZEN_EXP Then
+				Out("[Step] Mission explorable on map " & $l_i_Map)
+				Return True
+			EndIf
+		EndIf
+		If $l_b_SawLoad And $l_i_Type = $GC_I_MAP_TYPE_OUTPOST And TimerDiff($l_h_Timer) > 8000 Then
+			Out("[Step] Loading bounced back to outpost map " & $l_i_Map)
+			Return False
+		EndIf
+		Sleep(250)
+	WEnd
+	Return False
 EndFunc
 
 #EndRegion Mission

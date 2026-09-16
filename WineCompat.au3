@@ -24,6 +24,7 @@ If Not IsDeclared("g_b_WineQueueAttempted") Then Global $g_b_WineQueueAttempted 
 If Not IsDeclared("g_b_WineMinimalHook") Then Global $g_b_WineMinimalHook = False
 If Not IsDeclared("g_b_WineQueueGapLogged") Then Global $g_b_WineQueueGapLogged = False
 If Not IsDeclared("g_p_WineAsmAlloc") Then Global $g_p_WineAsmAlloc = 0
+If Not IsDeclared("g_p_WineExistingE9") Then Global $g_p_WineExistingE9 = 0
 
 Func Wine_IsWine()
 	If $g_b_WineChecked Then Return $g_b_IsWine
@@ -286,15 +287,34 @@ EndFunc
 
 Func Wine_ResolveCallTarget($a_p_Site)
 	If $a_p_Site = 0 Then Return 0
-	Local $aiOff[3] = [0, -1, 1]
+	; ASM GetScannedAddress is P-1+offset. Prefer site-1, then a 558BEC target.
+	Local $aiOff[3] = [-1, 0, 1]
+	Local $pFallback = 0
 	Local $i = 0
 	For $i = 0 To 2
 		Local $p = $a_p_Site + $aiOff[$i]
 		If Wine_CompactHex(Wine_ReadBytesHex($p, 1)) <> "E8" Then ContinueLoop
 		Local $pT = Scanner_GetCallTargetAddress($p)
-		If Wine_IsUserPtr($pT) Then Return $pT
+		If Not Wine_IsUserPtr($pT) Then ContinueLoop
+		If Wine_CompactHex(Wine_ReadBytesHex($pT, 3)) = "558BEC" Then
+			Out("Wine call target " & Wine_HexPtr($pT) & " from " & Wine_HexPtr($p) & " (d=" & $aiOff[$i] & ", prologue 558BEC)")
+			Return $pT
+		EndIf
+		If $pFallback = 0 Then $pFallback = $pT
 	Next
-	Return 0
+	If $pFallback <> 0 Then Out("Wine call target " & Wine_HexPtr($pFallback) & " (no 558BEC prologue)")
+	Return $pFallback
+EndFunc
+
+; Stock Map_EnterChallenge: CtoS PARTY_ENTER_CHALLENGE (0xA5, 1).
+; Ui_EnterChallenge also Map_WaitMapIsLoaded, which needs the LoadFinished JMP
+; we do not plant. Do not call that wait on Wine.
+Func Wine_EnterChallenge()
+	If Not Wine_EnsureCommandQueue() Then Return False
+	If Not Wine_CommandsReady() Then Return False
+	Out("Wine enter: Core_SendPacket PARTY_ENTER_CHALLENGE 0xA5,1 (Map_EnterChallenge). Not Ui_EnterChallenge/Map_WaitMapIsLoaded.")
+	Core_SendPacket(0x8, $GC_I_HEADER_PARTY_ENTER_CHALLENGE, 1)
+	Return True
 EndFunc
 
 Func Wine_FreeAsmAlloc($a_p)
@@ -520,7 +540,8 @@ Func Wine_FindEngineHookSite($a_p_Engine)
 		EndIf
 	Next
 	If $pE9 <> 0 Then
-		Out("Wine inject abort: Engine site already starts with E9 at " & Wine_HexPtr($pE9) & "; not planting a second JMP")
+		$g_p_WineExistingE9 = $pE9
+		Out("Wine Engine: site already E9 at " & Wine_HexPtr($pE9) & "; will reuse that page, not plant a second JMP")
 		Return 0
 	EndIf
 	If $pLate <> 0 Then
@@ -709,12 +730,25 @@ Func Wine_InstallCommandQueue()
 	If $pUiMsg = 0 Then Out("Wine inject: UIMessage not resolved; travel/UIMsg may no-op after Enter Mission")
 
 	Out("Wine Engine scan result=" & Wine_HexPtr($pEngine))
+	$g_p_WineExistingE9 = 0
 	Local $pHook = Wine_FindEngineHookSite($pEngine)
+	Local $bReuse = False
+	Local $pAlloc = 0
+	If $pHook = 0 And $g_p_WineExistingE9 <> 0 Then
+		$pHook = $g_p_WineExistingE9
+		Local $pMainExist = Scanner_GetCallTargetAddress($pHook)
+		$pAlloc = $pMainExist - (4 + 4 + 4 + 256 * 256)
+		If Not Wine_IsUserPtr($pAlloc) Or Not Wine_IsUserPtr($pMainExist) Then
+			Return Wine_InjectAbort("existing Engine JMP target is not a user page; restart Gw.exe")
+		EndIf
+		$bReuse = True
+		Out("Wine: reusing Engine JMP " & Wine_HexPtr($pHook) & " -> MainProc " & Wine_HexPtr($pMainExist) & " page " & Wine_HexPtr($pAlloc))
+	EndIf
 	If $pHook = 0 Then Return False
 
 	Local $sBefore = Wine_ReadBytesHex($pHook, 5)
 	Out("Wine Engine site before JMP: " & Wine_HexPtr($pHook) & " bytes=" & $sBefore)
-	If StringLeft(Wine_CompactHex($sBefore), 2) = "E9" Then
+	If (Not $bReuse) And StringLeft(Wine_CompactHex($sBefore), 2) = "E9" Then
 		Return Wine_InjectAbort("Engine site already starts with E9 at " & Wine_HexPtr($pHook) & "; QueueBase was not live. Restart Gw.exe.")
 	EndIf
 
@@ -734,28 +768,37 @@ Func Wine_InstallCommandQueue()
 	$g_i_ASMCodeOffset = 0
 	$g_s_ASMCode = ""
 	Wine_AssembleMinimalEngine()
-	Local $iAlloc = Int($g_i_ASMSize) + 0x1000
-	If $iAlloc < 0x11000 Then $iAlloc = 0x11000
-	Out("Wine inject: VirtualAllocEx " & $iAlloc & " bytes RWX for queue+EnterMission (ASMSize=" & Int($g_i_ASMSize) & ")")
+	If $bReuse Then
+		$g_p_WineAsmAlloc = 0
+		$g_p_ASMMemory = $pAlloc
+		Out("Wine inject: rewriting stubs on existing Queue/ASM page " & Wine_HexPtr($pAlloc))
+	Else
+		Local $iAlloc = Int($g_i_ASMSize) + 0x1000
+		If $iAlloc < 0x11000 Then $iAlloc = 0x11000
+		Out("Wine inject: VirtualAllocEx " & $iAlloc & " bytes RWX for queue+EnterMission (ASMSize=" & Int($g_i_ASMSize) & ")")
 
-	Local $avAlloc = DllCall($g_h_Kernel32, "ptr", "VirtualAllocEx", _
-			"handle", $g_h_GWProcess, _
-			"ptr", 0, _
-			"ulong_ptr", $iAlloc, _
-			"dword", 0x3000, _
-			"dword", 0x40)
-	If @error Or Not IsArray($avAlloc) Or $avAlloc[0] = 0 Then
-		Return Wine_InjectAbort("VirtualAllocEx failed")
+		Local $avAlloc = DllCall($g_h_Kernel32, "ptr", "VirtualAllocEx", _
+				"handle", $g_h_GWProcess, _
+				"ptr", 0, _
+				"ulong_ptr", $iAlloc, _
+				"dword", 0x3000, _
+				"dword", 0x40)
+		If @error Or Not IsArray($avAlloc) Or $avAlloc[0] = 0 Then
+			Return Wine_InjectAbort("VirtualAllocEx failed")
+		EndIf
+		$pAlloc = $avAlloc[0]
+		If Not Wine_IsUserPtr($pAlloc) Then Return Wine_InjectAbort("VirtualAllocEx returned non-user ptr " & Wine_HexPtr($pAlloc), $pAlloc)
+		$g_p_WineAsmAlloc = $pAlloc
+		$g_p_ASMMemory = $pAlloc
+		Out("Wine inject: Queue/ASM page at " & Wine_HexPtr($pAlloc))
 	EndIf
-	Local $pAlloc = $avAlloc[0]
-	If Not Wine_IsUserPtr($pAlloc) Then Return Wine_InjectAbort("VirtualAllocEx returned non-user ptr " & Wine_HexPtr($pAlloc), $pAlloc)
-	$g_p_WineAsmAlloc = $pAlloc
-	$g_p_ASMMemory = $pAlloc
-	Out("Wine inject: Queue/ASM page at " & Wine_HexPtr($pAlloc))
 
 	Wine_PromoteNewLabels()
 	Assembler_CompleteASMCode()
-	If $g_s_ASMCode = "" Then Return Wine_InjectAbort("Assembler_CompleteASMCode produced no bytes", $pAlloc)
+	If $g_s_ASMCode = "" Then
+		If $bReuse Then Return Wine_InjectAbort("Assembler_CompleteASMCode produced no bytes")
+		Return Wine_InjectAbort("Assembler_CompleteASMCode produced no bytes", $pAlloc)
+	EndIf
 	Memory_WriteBinary($g_s_ASMCode, $g_p_ASMMemory + $g_i_ASMCodeOffset)
 
 	Local $pQueue = Memory_GetValue("QueueBase")
@@ -764,29 +807,38 @@ Func Wine_InstallCommandQueue()
 	Local $pCmdPkt = Memory_GetValue("CommandPacketSend")
 	Local $pCmdDlg = Memory_GetValue("CommandDialog")
 	Local $pCmdEnt = Memory_GetValue("CommandEnterMission")
-	If Not Wine_IsUserPtr($pQueue) Then Return Wine_InjectAbort("QueueBase label is not a user ptr", $pAlloc)
-	If Not Wine_IsUserPtr($pMain) Then Return Wine_InjectAbort("MainProc label is not a user ptr", $pAlloc)
-	If Not Wine_IsUserPtr($pCmdMove) Then Return Wine_InjectAbort("CommandMove label is not a user ptr", $pAlloc)
-	If Not Wine_IsUserPtr($pCmdPkt) Then Return Wine_InjectAbort("CommandPacketSend label is not a user ptr", $pAlloc)
-	If Not Wine_IsUserPtr($pCmdDlg) Then Return Wine_InjectAbort("CommandDialog label is not a user ptr", $pAlloc)
-	If Not Wine_IsUserPtr($pCmdEnt) Then Return Wine_InjectAbort("CommandEnterMission label is not a user ptr", $pAlloc)
+	Local $pFreeOnAbort = 0
+	If Not $bReuse Then $pFreeOnAbort = $pAlloc
+	If Not Wine_IsUserPtr($pQueue) Then Return Wine_InjectAbort("QueueBase label is not a user ptr", $pFreeOnAbort)
+	If Not Wine_IsUserPtr($pMain) Then Return Wine_InjectAbort("MainProc label is not a user ptr", $pFreeOnAbort)
+	If Not Wine_IsUserPtr($pCmdMove) Then Return Wine_InjectAbort("CommandMove label is not a user ptr", $pFreeOnAbort)
+	If Not Wine_IsUserPtr($pCmdPkt) Then Return Wine_InjectAbort("CommandPacketSend label is not a user ptr", $pFreeOnAbort)
+	If Not Wine_IsUserPtr($pCmdDlg) Then Return Wine_InjectAbort("CommandDialog label is not a user ptr", $pFreeOnAbort)
+	If Not Wine_IsUserPtr($pCmdEnt) Then Return Wine_InjectAbort("CommandEnterMission label is not a user ptr", $pFreeOnAbort)
 	Out("Wine inject: QueueBase=" & Wine_HexPtr($pQueue) & " MainProc=" & Wine_HexPtr($pMain) & _
 			" CommandEnterMission=" & Wine_HexPtr($pCmdEnt))
 
-	Local $sMid = Wine_ReadBytesHex($pHook, 5)
-	If Wine_CompactHex($sMid) <> Wine_CompactHex($sBefore) Then
-		Return Wine_InjectAbort("Engine site bytes changed before JMP (have " & $sMid & ", want " & $sBefore & ")", $pAlloc)
-	EndIf
-	If Not Wine_EnginePatternNear($pHook) Then
-		Return Wine_InjectAbort("Engine needle no longer near hook site; not planting JMP", $pAlloc)
-	EndIf
+	If Not $bReuse Then
+		Local $sMid = Wine_ReadBytesHex($pHook, 5)
+		If Wine_CompactHex($sMid) <> Wine_CompactHex($sBefore) Then
+			Return Wine_InjectAbort("Engine site bytes changed before JMP (have " & $sMid & ", want " & $sBefore & ")", $pAlloc)
+		EndIf
+		If Not Wine_EnginePatternNear($pHook) Then
+			Return Wine_InjectAbort("Engine needle no longer near hook site; not planting JMP", $pAlloc)
+		EndIf
 
-	Memory_WriteDetour("MainStart", "MainProc")
-	Local $sAfter = Wine_ReadBytesHex($pHook, 5)
-	Out("Wine Engine site after JMP: " & Wine_HexPtr($pHook) & " bytes=" & $sAfter)
-	If StringLeft(Wine_CompactHex($sAfter), 2) <> "E9" Then
-		If Wine_CompactHex($sBefore) <> "" Then Memory_WriteBinary(Wine_CompactHex($sBefore), $pHook)
-		Return Wine_InjectAbort("JMP did not stick (after=" & $sAfter & "); restored original site bytes", $pAlloc)
+		Memory_WriteDetour("MainStart", "MainProc")
+		Local $sAfter = Wine_ReadBytesHex($pHook, 5)
+		Out("Wine Engine site after JMP: " & Wine_HexPtr($pHook) & " bytes=" & $sAfter)
+		If StringLeft(Wine_CompactHex($sAfter), 2) <> "E9" Then
+			If Wine_CompactHex($sBefore) <> "" Then Memory_WriteBinary(Wine_CompactHex($sBefore), $pHook)
+			Return Wine_InjectAbort("JMP did not stick (after=" & $sAfter & "); restored original site bytes", $pAlloc)
+		EndIf
+	Else
+		If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pHook, 5)), 2) <> "E9" Then
+			Return Wine_InjectAbort("reused Engine site lost its E9")
+		EndIf
+		Out("Wine: left existing Engine JMP in place; stubs rewritten on " & Wine_HexPtr($pAlloc))
 	EndIf
 
 	$g_p_SavedIndex = Memory_GetValue("SavedIndex")
@@ -796,9 +848,15 @@ Func Wine_InstallCommandQueue()
 	$g_p_QueueBase = $pQueue
 	Wine_WireCommandStructs()
 	$g_b_WineMinimalHook = True
-	Out("Wine: single Engine JMP planted. QueueBase=" & Wine_HexPtr($g_p_QueueBase) & _
-			" MainStart=" & Wine_HexPtr($pHook) & " MainProc=" & Wine_HexPtr($pMain) & _
-			" CommandEnterMission=" & Wine_HexPtr($pCmdEnt))
+	If $bReuse Then
+		Out("Wine: reused Engine JMP. QueueBase=" & Wine_HexPtr($g_p_QueueBase) & _
+				" MainStart=" & Wine_HexPtr($pHook) & " MainProc=" & Wine_HexPtr($pMain) & _
+				" CommandPacketSend=" & Wine_HexPtr($pCmdPkt))
+	Else
+		Out("Wine: single Engine JMP planted. QueueBase=" & Wine_HexPtr($g_p_QueueBase) & _
+				" MainStart=" & Wine_HexPtr($pHook) & " MainProc=" & Wine_HexPtr($pMain) & _
+				" CommandEnterMission=" & Wine_HexPtr($pCmdEnt))
+	EndIf
 	Out("Wine: skipped Render/LoadFinished/Trader/TradePartner detours (not Assembler_ModifyMemory).")
 	Return True
 EndFunc
