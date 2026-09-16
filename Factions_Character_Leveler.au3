@@ -97,9 +97,8 @@ Out("Factions Character Leveler (Phase 1-5)")
 Out("Port of the Py4GW Factions bot through attribute quest 2, Kryta, Elona, and Vaettir unlock.")
 Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 If Wine_IsWine() Then
-	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID from the main loop (not the Start click).")
-	Out("Scanner_GetLoggedCharNames is skipped on Wine. Local scan timeout is " & $g_i_ScannerTimeoutMs & " ms.")
-	Out("Start stays stopped unless AgentBase/MyID/Engine/Move/BasePointer/QueueBase are live (4/78 hwnd-only is ATTACH FAILED).")
+	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID. Window title is often Guild Wars Reforged.")
+	Out("Scanner_GetLoggedCharNames is skipped on Wine so a timed local scan cannot cache 0/78 before Start.")
 Else
 	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
 EndIf
@@ -116,10 +115,6 @@ EndIf
 
 While 1
 	Sleep(80)
-	If $g_b_StartRequested And Not $g_b_BotCoreInitialized Then
-		$g_b_StartRequested = False
-		StartBot()
-	EndIf
 	If $g_b_BotCoreInitialized And $g_b_BotRunning And Not $g_b_LevelerPaused Then
 		If $g_b_NeedStatusCheck Then
 			$g_i_Step = Leveler_StatusCheck()
@@ -139,20 +134,11 @@ WEnd
 Func StartBot()
 	If Not Leveler_AttachToGw() Then
 		If Wine_IsWine() Then
-			GUICtrlSetState($g_h_StartButton, $GUI_ENABLE)
-			Out("ATTACH FAILED. Leave the character in-world, click Refresh, then Start. Do not Exit so you can retry.")
+			Out("Attach failed. Leave the character in-world, click Refresh, then Start. Do not Exit so you can retry.")
 			Return
 		EndIf
 		MsgBox(0, "Error", "Could not attach to Guild Wars.")
 		_Exit()
-	EndIf
-
-	If Wine_IsWine() And Not Wine_CoreReady() Then
-		Wine_LogCorePointers("StartBot refused")
-		GUICtrlSetState($g_h_StartButton, $GUI_ENABLE)
-		GUICtrlSetData($g_h_StartButton, "Start")
-		Out("ATTACH FAILED: " & Wine_CoreReadyMiss() & " not live. Bot loop will not start.")
-		Return
 	EndIf
 
 	GUICtrlSetState($g_h_NameCombo, $GUI_DISABLE)
@@ -172,7 +158,6 @@ Func StartBot()
 	Leveler_RefreshQuestFlags(True)
 
 	Out("Initialized for: " & Player_GetCharName())
-	If Wine_IsWine() Then Wine_LogCorePointers("bot loop starting")
 	Out("Map: " & Map_GetMapID() & "  Pos: " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")))
 	If Not Leveler_IsOutpost() Then Out("Restart recovery is on. Will resume the current quest here if it is in the log.")
 	Out("Core ready. Returning to the run loop.")
@@ -181,6 +166,7 @@ EndFunc
 ; Attach by character name on Windows. On Wine the client title is often
 ; "Guild Wars Reforged", so Core_Initialize(name) plus Scanner_GetLoggedCharNames
 ; can cache a 0/78 local scan; attach by Gw.exe PID instead.
+; Start still calls Core_Initialize immediately (no salvage, no JMP, no queue).
 Func Leveler_AttachToGw()
 	Wine_ApplyRuntimeGuards()
 	Local $l_s_Name = StringStripWS(GUICtrlRead($g_h_NameCombo), 3)
@@ -188,7 +174,6 @@ Func Leveler_AttachToGw()
 	Local $l_v_Hwnd = 0
 
 	If $g_i_ProcessID Then
-		If Wine_IsWine() Then Return Leveler_InitializePidWine(Number($g_i_ProcessID, 2), $l_b_ChangeTitle)
 		Out("Initializing and attaching to PID " & $g_i_ProcessID & " (" & Wine_RuntimeLabel() & ")")
 		$l_v_Hwnd = Core_Initialize(Number($g_i_ProcessID, 2), $l_b_ChangeTitle)
 		Return Leveler_AttachLooksLive($l_v_Hwnd)
@@ -216,8 +201,8 @@ Func Leveler_AttachToGw()
 		Return True
 	EndIf
 
-	; Wine: PID-first from the main loop. Do not Core_Initialize(name) first —
-	; a failed named attach can record 0/78 and skip the critical rescan.
+	; Wine: PID-first. Do not Core_Initialize(name) first — a failed named
+	; attach can record 0/78 and skip the critical rescan.
 	Local $l_i_WinPid = Wine_PidFromGwWindow()
 	Local $l_a_List = ProcessList("gw.exe")
 	Local $l_i_ListCount = 0
@@ -243,69 +228,50 @@ Func Leveler_AttachToGw()
 		$l_ai_Pids[$l_ai_Pids[0]] = $l_i_Extra
 	Next
 	If $l_ai_Pids[0] < 1 Then
-		Out("Wine: no Gw.exe process found.")
-		Return False
+		Local $l_i_Fallback = Wine_FindGwPid()
+		If $l_i_Fallback = 0 Then
+			Out("Wine: no Gw.exe process found.")
+			Return False
+		EndIf
+		$l_ai_Pids[0] = 1
+		$l_ai_Pids[1] = $l_i_Fallback
 	EndIf
 
 	Local $l_i_LivePid = 0
 	Local $p = 1
 	For $p = 1 To $l_ai_Pids[0]
-		If Leveler_InitializePidWine($l_ai_Pids[$p], $l_b_ChangeTitle) Then
-			Local $l_s_Got = StringStripWS(Player_GetCharName(), 3)
-			If $l_s_Name <> "" And $l_s_Got <> "" And StringCompare($l_s_Got, $l_s_Name) <> 0 Then
-				Out("PID " & $l_ai_Pids[$p] & " is '" & $l_s_Got & "', not '" & $l_s_Name & "'; trying next.")
-				$l_i_LivePid = $l_ai_Pids[$p]
-				ContinueLoop
-			EndIf
-			Return True
+		Out("Initializing and attaching to PID " & $l_ai_Pids[$p] & " (" & Wine_RuntimeLabel() & ")")
+		$l_v_Hwnd = Core_Initialize($l_ai_Pids[$p], $l_b_ChangeTitle)
+		If Not Leveler_AttachLooksLive($l_v_Hwnd) Then
+			Out("Scanner failed (error " & @error & ") on PID " & $l_ai_Pids[$p])
+			ContinueLoop
 		EndIf
+		Local $l_s_Got = StringStripWS(Player_GetCharName(), 3)
+		If $l_s_Name <> "" And $l_s_Got <> "" And StringCompare($l_s_Got, $l_s_Name) <> 0 Then
+			Out("PID " & $l_ai_Pids[$p] & " is '" & $l_s_Got & "', not '" & $l_s_Name & "'; trying next.")
+			$l_i_LivePid = $l_ai_Pids[$p]
+			ContinueLoop
+		EndIf
+		Return True
 	Next
 
 	If $l_i_LivePid <> 0 Then
 		Out("No PID matched '" & $l_s_Name & "'; re-attaching to PID " & $l_i_LivePid)
-		Return Leveler_InitializePidWine($l_i_LivePid, $l_b_ChangeTitle)
+		$l_v_Hwnd = Core_Initialize($l_i_LivePid, $l_b_ChangeTitle)
+		Return Leveler_AttachLooksLive($l_v_Hwnd)
 	EndIf
 	Return False
 EndFunc
 
-Func Leveler_InitializePidWine($a_i_Pid, $a_b_ChangeTitle)
-	Wine_ApplyRuntimeGuards()
-	Wine_ResetScannerState()
-	Out("Initializing and attaching to PID " & $a_i_Pid & " via Core_Initialize timeout=" & _
-			$g_i_ScannerTimeoutMs & "ms (" & Wine_RuntimeLabel() & ")")
-	Local $l_v_Hwnd = Core_Initialize($a_i_Pid, $a_b_ChangeTitle)
-	Local $iErr = @error
-	Wine_LogCorePointers("after Core_Initialize hwnd=" & String($l_v_Hwnd) & " err=" & $iErr)
-
-	If Wine_CoreReady() Then
-		Out("Wine: Core_Initialize bound live AgentBase/MyID/Engine/Move/BasePointer/QueueBase")
+Func Leveler_AttachLooksLive($a_v_Hwnd)
+	If $a_v_Hwnd <> 0 And $a_v_Hwnd <> "" Then Return True
+	If Not Wine_IsWine() Then Return False
+	; Scanner_GetHwnd can miss Guild Wars Reforged even when memory attach worked.
+	If $g_h_GWProcess <> 0 And $g_p_BasePointer Then
+		Local $l_h_Win = Wine_FindGwHwnd($g_i_GWProcessId)
+		If $l_h_Win <> 0 Then $g_h_GWWindow = $l_h_Win
 		Return True
 	EndIf
-
-	If $g_h_GWProcess = 0 Then
-		Out("Core_Initialize failed (no process handle) on PID " & $a_i_Pid)
-		Wine_ProbeGwMemory()
-		Return False
-	EndIf
-
-	Out("Wine: Core_Initialize returned without live criticals (hwnd-only is not attach). Salvaging.")
-	If Not Wine_SalvageAfterCoreInitialize() Then
-		Wine_LogCorePointers("after salvage")
-		Out("ATTACH FAILED: " & Wine_CoreReadyMiss() & " not live. Bot loop will not start.")
-		Return False
-	EndIf
-	Wine_LogCorePointers("after salvage")
-	If Not Wine_CoreReady() Then
-		Out("ATTACH FAILED: " & Wine_CoreReadyMiss() & " not live. Bot loop will not start.")
-		Return False
-	EndIf
-	Out("Wine: salvage bound live AgentBase/MyID/Engine/Move/BasePointer/QueueBase")
-	Return True
-EndFunc
-
-Func Leveler_AttachLooksLive($a_v_Hwnd)
-	If Wine_IsWine() Then Return Wine_CoreReady()
-	If $a_v_Hwnd <> 0 And $a_v_Hwnd <> "" Then Return True
 	Return False
 EndFunc
 
@@ -318,7 +284,7 @@ Func Leveler_RefreshCharCombo()
 		Local $l_a_List = ProcessList("gw.exe")
 		Local $l_i_Count = 0
 		If Not @error And IsArray($l_a_List) Then $l_i_Count = $l_a_List[0][0]
-		Out("Wine refresh: " & $l_i_Count & " Gw.exe process(es), window PID " & Wine_PidFromGwWindow() & ". Start attaches from the main loop.")
+		Out("Wine refresh: " & $l_i_Count & " Gw.exe process(es), window PID " & Wine_PidFromGwWindow() & ". Start calls Core_Initialize by PID.")
 		If $l_i_Count >= 1 Then
 			For $i = 1 To $l_i_Count
 				Local $l_h_Win = Wine_FindGwHwnd(Number($l_a_List[$i][1]))
@@ -410,12 +376,6 @@ Func GuiButtonHandler()
 				GUICtrlSetData($g_h_PauseButton, "Pause")
 				GUICtrlSetState($g_h_PauseButton, $GUI_ENABLE)
 				Out("Start pressed. Status check will run on the next loop tick.")
-			ElseIf Wine_IsWine() Then
-				; Core_Initialize from an OnEvent callback is where the 0/78 local
-				; scan was dying. The old leveler attaches from its main loop.
-				$g_b_StartRequested = True
-				GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
-				Out("Start queued. Attach will run on the next main-loop tick (Wine). GUI may freeze during the scan.")
 			Else
 				StartBot()
 			EndIf

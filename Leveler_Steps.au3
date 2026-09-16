@@ -1,13 +1,6 @@
 #include-once
 
 Func Leveler_ExecuteStep($a_i_Step)
-	If Wine_IsWine() And Not Wine_CoreReady() Then
-		Out("[Step] ATTACH FAILED: " & Wine_CoreReadyMiss() & " not live; Map_Move would no-op. Stopping.")
-		$g_b_BotRunning = False
-		GUICtrlSetData($g_h_StartButton, "Start")
-		GUICtrlSetState($g_h_StartButton, $GUI_ENABLE)
-		Return False
-	EndIf
 	If $g_b_LevelerPaused Then Return False
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
