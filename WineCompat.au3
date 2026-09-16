@@ -323,6 +323,34 @@ Func Wine_WindowClass($a_h_Wnd)
 	Return ""
 EndFunc
 
+; Outer "Guild Wars Reforged" frame (xdotool Y=59). DX child WinGetPos
+; can sit higher (~Y=30) so child-based screen Y=54 is above the frame.
+Func Wine_GwFrameHwnd($a_h_Wnd)
+	Local $iPid = 0
+	If $a_h_Wnd <> 0 Then $iPid = Number(WinGetProcess($a_h_Wnd))
+	If $iPid <= 0 Then $iPid = Number($g_i_GWProcessId)
+	Local $aWins = WinList()
+	If IsArray($aWins) Then
+		Local $i = 1
+		For $i = 1 To $aWins[0][0]
+			If $aWins[$i][0] = "" Then ContinueLoop
+			If Not StringInStr($aWins[$i][0], "Guild Wars") Then ContinueLoop
+			If $iPid > 0 And Number(WinGetProcess($aWins[$i][1])) <> $iPid Then ContinueLoop
+			Return $aWins[$i][1]
+		Next
+	EndIf
+	Local $h = $a_h_Wnd
+	Local $n = 0
+	While $h <> 0 And $n < 6
+		If StringInStr(WinGetTitle($h), "Guild Wars") Then Return $h
+		Local $aPar = DllCall("user32.dll", "hwnd", "GetParent", "hwnd", $h)
+		If Not IsArray($aPar) Or $aPar[0] = 0 Then ExitLoop
+		$h = $aPar[0]
+		$n += 1
+	WEnd
+	Return $a_h_Wnd
+EndFunc
+
 ; Prefer ArenaNet_Dx_Window_Class (the game client), not the frame.
 Func Wine_GwClientHwnd($a_h_Wnd)
 	If $a_h_Wnd = 0 Then $a_h_Wnd = $g_h_GWWindow
@@ -341,13 +369,15 @@ Func Wine_GwClientHwnd($a_h_Wnd)
 	Return $a_h_Wnd
 EndFunc
 
-; Client (x,y) -> screen using WinGetPos + frame metrics. Rejects ClientToScreen
-; when that point is outside the window rect (Wine's typical miss).
+; Client (x,y) -> desktop using the OUTER framed window (xdotool Y=59), not
+; the DX child's WinGetPos (top ~30). Reject any point above the frame top.
 Func Wine_ClientToScreenSafe($a_h_Wnd, $a_i_X, $a_i_Y)
 	Local $aOut[2] = [0, 0]
 	If $a_h_Wnd = 0 Then Return $aOut
-	Local $aPos = WinGetPos($a_h_Wnd)
-	Local $aCli = WinGetClientSize($a_h_Wnd)
+	Local $hFrame = Wine_GwFrameHwnd($a_h_Wnd)
+	If $hFrame = 0 Then $hFrame = $a_h_Wnd
+	Local $aPos = WinGetPos($hFrame)
+	Local $aCli = WinGetClientSize($hFrame)
 	Local $iL = 0
 	Local $iT = 0
 	Local $iW = 0
@@ -373,20 +403,10 @@ Func Wine_ClientToScreenSafe($a_h_Wnd, $a_i_X, $a_i_Y)
 	EndIf
 	Local $iSx = $iL + $iBorder + $a_i_X
 	Local $iSy = $iT + $iTitle + $a_i_Y
-
-	Local $tPt = DllStructCreate("int;int")
-	DllStructSetData($tPt, 1, $a_i_X)
-	DllStructSetData($tPt, 2, $a_i_Y)
-	DllCall("user32.dll", "bool", "ClientToScreen", "hwnd", $a_h_Wnd, "ptr", DllStructGetPtr($tPt))
-	Local $iCtsX = Number(DllStructGetData($tPt, 1))
-	Local $iCtsY = Number(DllStructGetData($tPt, 2))
-	If $iW > 0 And $iH > 0 And $iCtsX >= $iL And $iCtsX < $iL + $iW And $iCtsY >= $iT And $iCtsY < $iT + $iH Then
-		$aOut[0] = $iCtsX
-		$aOut[1] = $iCtsY
+	If $iSy < $iT Then $iSy = $iT + $iTitle + $a_i_Y
+	If $iW > 0 And ($iSx < $iL Or $iSx >= $iL + $iW Or $iSy < $iT Or $iSy >= $iT + $iH) Then
+		Out("Wine enter: frame-mapped " & $iSx & "," & $iSy & " still outside frame " & $iL & "," & $iT & " " & $iW & "x" & $iH)
 		Return $aOut
-	EndIf
-	If $iCtsX <> 0 Or $iCtsY <> 0 Then
-		Out("Wine enter: ClientToScreen " & $iCtsX & "," & $iCtsY & " is outside Gw " & $iL & "," & $iT & " " & $iW & "x" & $iH & "; using WinGetPos " & $iSx & "," & $iSy)
 	EndIf
 	$aOut[0] = $iSx
 	$aOut[1] = $iSy
@@ -411,27 +431,45 @@ Func Wine_ClientClick($a_h_Wnd, $a_i_X, $a_i_Y)
 	ControlClick($hCli, "", "", "left", 1, $a_i_X, $a_i_Y)
 	Local $aScr = Wine_ClientToScreenSafe($hCli, $a_i_X, $a_i_Y)
 	If $aScr[0] <> 0 Or $aScr[1] <> 0 Then
-		Out("Wine enter: validated screen " & $aScr[0] & "," & $aScr[1])
+		Out("Wine enter: frame-mapped screen " & $aScr[0] & "," & $aScr[1] & " (client " & $a_i_X & "," & $a_i_Y & ")")
 		Local $iMode = Opt("MouseCoordMode", 1)
 		MouseClick("left", $aScr[0], $aScr[1], 1, 0)
 		Opt("MouseCoordMode", $iMode)
 	EndIf
 EndFunc
 
-Func Wine_EnterLooksStarted($a_i_StartMap)
-	If Map_GetMapID() <= 0 Then Return False
-	If Map_GetInstanceInfo("IsLoading") Then Return True
-	If Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
-	If Map_GetMapID() <> $a_i_StartMap And Map_GetMapID() > 0 Then Return True
-	If Map_GetInstanceInfo("IsExplorable") Then Return True
-	; InstanceInfo Type is 0 when g_p_InstanceInfo is dead. CharacterContext
-	; and mission objectives still work off BasePointer.
+; Durable enter proof only. Do not use InstanceInfo Type / IsWaitingForMission
+; / objectives — those flicker on Wine and falsely latch $g_b_WineEnterSent.
+Func Wine_EnterMapEvidence($a_i_StartMap)
+	Local $iMap = Map_GetMapID()
 	Local $iCur = Number(Map_GetCharacterInfo("CurrentMapID"))
-	If $iCur > 0 And $iCur <> $a_i_StartMap Then Return True
-	If Number(Map_GetCharacterInfo("IsExplorable")) Then Return True
-	If Number(Map_GetCharacterInfo("CurrentMapType")) = 1 Then Return True
-	If Number(World_GetWorldInfo("MissionObjectiveArraySize")) > 0 Then Return True
+	If $iMap = 246 Or $iCur = 246 Then Return True
+	If $iMap = 245 Or $iCur = 245 Then Return True
+	If $iMap > 0 And $iMap <> $a_i_StartMap And $iMap <> 213 And $iMap <> 214 Then Return True
+	If $iCur > 0 And $iCur <> $a_i_StartMap And $iCur <> 213 And $iCur <> 214 Then Return True
 	Return False
+EndFunc
+
+; True only if map evidence stays true for ~1.2s (not a one-tick flicker).
+; Once 246 is seen, keep waiting out the hold even after $a_i_Timeout.
+Func Wine_WaitEnterEvidence($a_i_StartMap, $a_i_Timeout = 2000)
+	Local $hAll = TimerInit()
+	Local $hHeld = 0
+	While True
+		If Wine_EnterMapEvidence($a_i_StartMap) Then
+			If $hHeld = 0 Then $hHeld = TimerInit()
+			If TimerDiff($hHeld) >= 1200 Then Return True
+		Else
+			$hHeld = 0
+			If TimerDiff($hAll) >= $a_i_Timeout Then Return False
+		EndIf
+		Sleep(200)
+	WEnd
+	Return False
+EndFunc
+
+Func Wine_EnterLooksStarted($a_i_StartMap)
+	Return Wine_EnterMapEvidence($a_i_StartMap)
 EndFunc
 
 Func Wine_LevelerOverlayHold()
@@ -451,14 +489,19 @@ Func Wine_LevelerOverlayRestore()
 EndFunc
 
 Func Wine_EnterChallenge()
-	If Wine_EnterLooksStarted(Map_GetMapID()) Then
+	Local $iNow = Map_GetMapID()
+	If Wine_EnterMapEvidence($iNow) And Wine_WaitEnterEvidence($iNow, 2000) Then
 		$g_b_WineEnterSent = True
-		Out("Wine enter: already inside the mission instance; not clicking Enter Mission.")
+		Out("Wine enter: already inside the mission (map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")) & ").")
 		Return True
 	EndIf
 	If $g_b_WineEnterSent Then
-		Out("Wine enter: mission load already started this attach; not clicking again.")
-		Return True
+		If Wine_EnterMapEvidence($iNow) Then
+			Out("Wine enter: mission load already started this attach; not clicking again.")
+			Return True
+		EndIf
+		Out("Wine enter: previous latch was stale (still map " & $iNow & "); retrying clicks.")
+		$g_b_WineEnterSent = False
 	EndIf
 
 	Local $hWnd = $g_h_GWWindow
@@ -479,7 +522,9 @@ Func Wine_EnterChallenge()
 	DllCall("user32.dll", "bool", "BringWindowToTop", "hwnd", $hWnd)
 	Sleep(400)
 
-	Local $aPos = WinGetPos($hWnd)
+	Local $hFrame = Wine_GwFrameHwnd($hWnd)
+	Local $aPos = WinGetPos($hFrame)
+	Local $aDx = WinGetPos($hWnd)
 	Local $aSz = WinGetClientSize($hWnd)
 	Local $iW = 800
 	Local $iH = 600
@@ -489,52 +534,49 @@ Func Wine_EnterChallenge()
 	EndIf
 	If $iW < 200 Then $iW = 800
 	If $iH < 200 Then $iH = 600
-	Local $sPos = "?"
-	If IsArray($aPos) Then $sPos = $aPos[0] & "," & $aPos[1] & " " & $aPos[2] & "x" & $aPos[3]
+	Local $sFrame = "?"
+	Local $sDx = "?"
+	If IsArray($aPos) Then $sFrame = $aPos[0] & "," & $aPos[1] & " " & $aPos[2] & "x" & $aPos[3]
+	If IsArray($aDx) Then $sDx = $aDx[0] & "," & $aDx[1] & " " & $aDx[2] & "x" & $aDx[3]
 	Local $iCx = Int($iW / 2)
-	; Pill is mid-top HUD, just below the title, same row as district.
-	; Do not use ClientToScreen-only Y=20–60 — those mapped above the window.
-	Out("Wine enter: hwnd=" & $hWnd & " class=" & Wine_WindowClass($hWnd) & " pos=" & $sPos & " client=" & $iW & "x" & $iH & " pill " & $iCx & ",12-80 (overlay hidden)")
+	Out("Wine enter: dx=" & $hWnd & " class=" & Wine_WindowClass($hWnd) & " dxPos=" & $sDx & " frame=" & $sFrame & " client=" & $iW & "x" & $iH & " (overlay hidden)")
 
 	ControlSend($hWnd, "", "", "{ENTER}")
-	Sleep(700)
-	If Wine_EnterLooksStarted($iStart) Then
+	If Wine_WaitEnterEvidence($iStart, 2500) Then
 		$g_b_WineEnterSent = True
-		Out("Wine enter: {ENTER} started the mission load")
+		Out("Wine enter: {ENTER} loaded map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
 		WinSetOnTop($hWnd, "", 0)
 		Wine_LevelerOverlayRestore()
 		Return True
 	EndIf
 
-	Local $aiY[7] = [18, 28, 40, 52, 64, 80, 24]
+	Local $aiY[6] = [22, 32, 42, 54, 68, 80]
 	Local $aiXOff[3] = [0, -40, 40]
 	Local $iY = 0
 	Local $iX = 0
-	For $iY = 0 To 6
+	For $iY = 0 To 5
 		For $iX = 0 To 2
-			If Wine_EnterLooksStarted($iStart) Then
+			Wine_ClientClick($hWnd, $iCx + $aiXOff[$iX], $aiY[$iY])
+			If Wine_WaitEnterEvidence($iStart, 1600) Then
 				$g_b_WineEnterSent = True
-				Out("Wine enter: click started the mission load")
+				Out("Wine enter: click loaded map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
 				WinSetOnTop($hWnd, "", 0)
 				Wine_LevelerOverlayRestore()
 				Return True
 			EndIf
-			Wine_ClientClick($hWnd, $iCx + $aiXOff[$iX], $aiY[$iY])
-			Sleep(450)
 		Next
 	Next
 	ControlSend($hWnd, "", "", "{ENTER}")
-	Sleep(600)
-	If Wine_EnterLooksStarted($iStart) Then
+	If Wine_WaitEnterEvidence($iStart, 2500) Then
 		$g_b_WineEnterSent = True
-		Out("Wine enter: {ENTER} started the mission load")
+		Out("Wine enter: {ENTER} loaded map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
 		WinSetOnTop($hWnd, "", 0)
 		Wine_LevelerOverlayRestore()
 		Return True
 	EndIf
 	WinSetOnTop($hWnd, "", 0)
 	Wine_LevelerOverlayRestore()
-	Out("Wine enter: clicks did not start a load (still map " & Map_GetMapID() & "). Not latching; will retry next step.")
+	Out("Wine enter: no durable map change (still " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")) & "). Not latching.")
 	Return False
 EndFunc
 

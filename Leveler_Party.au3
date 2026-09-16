@@ -336,7 +336,14 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	EndIf
 
 	; Engine already accepted Enter Challenge. Do not send it again.
-	If (Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted()) Or Party_GetPartyContextInfo("IsWaitingForMission") Then
+	; Wine: IsWaitingForMission / Type flicker is not proof — require map 246.
+	If Wine_IsWine() Then
+		If Wine_EnterMapEvidence($l_i_StartMap) Then
+			Out("[Step] Already inside " & $a_s_Name & " (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & ")")
+			$g_b_WineEnterSent = True
+			Return True
+		EndIf
+	ElseIf (Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted()) Or Party_GetPartyContextInfo("IsWaitingForMission") Then
 		Out("[Step] Mission is already starting; waiting for the map to load")
 		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
 		Sleep(2000)
