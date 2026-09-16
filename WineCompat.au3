@@ -473,38 +473,61 @@ Func Wine_BindReadOnlyFromQueue($aResults, $a_amx2_Patterns)
 	Return True
 EndFunc
 
-; Verify Engine hook site: pattern at candidate+0x22, 5 bytes 8B EC D9 45 08.
-; Try scan result, result-1, result+1 (Wine 4KB scan has no ASM P-1).
-Func Wine_FindEngineHookSite($a_p_Engine)
-	If $a_p_Engine = 0 Then Return 0
+; Wine 4KB uses match+offset (no ASM P-1). On wine-gw the Engine needle
+; landed one byte late: site was EC D9 45 08, real hook is 8B EC D9 45 08
+; at site-1, with the needle at hook+0x23. Accept hook+0x21/22/23.
+Func Wine_EnginePatternNear($a_p_Hook)
+	If $a_p_Hook = 0 Then Return False
 	Local Const $sPat = "568B3085F67478EB038D4900D9460C"
-	Local Const $sEpi = "8BECD94508"
 	Local $aiOff[3] = [0, -1, 1]
-	Local $pPatOnly = 0
-	Local $sPatFive = ""
 	Local $i = 0
 	For $i = 0 To 2
+		If Wine_PatternMatchesHex(Wine_ReadBytesHex($a_p_Hook + 0x22 + $aiOff[$i], 15), $sPat) Then Return True
+	Next
+	Return False
+EndFunc
+
+; Prefer the MainExit epilogue 8B EC D9 45 08 near the scan result.
+; Do not plant if that site (or the 1-byte-late match) already starts with E9.
+Func Wine_FindEngineHookSite($a_p_Engine)
+	If $a_p_Engine = 0 Then Return 0
+	Local Const $sEpi = "8BECD94508"
+	Local $aiOff[7] = [0, -1, 1, -2, 2, -3, 3]
+	Local $pE9 = 0
+	Local $pLate = 0
+	Local $sLate = ""
+	Local $i = 0
+	For $i = 0 To 6
 		Local $pCand = $a_p_Engine + $aiOff[$i]
+		If Not Wine_IsUserPtr($pCand) Then ContinueLoop
 		Local $sFive = Wine_ReadBytesHex($pCand, 5)
-		Local $sAt22 = Wine_ReadBytesHex($pCand + 0x22, 15)
-		Out("Wine Engine candidate " & Wine_HexPtr($pCand) & " d=" & $aiOff[$i] & " site5=" & $sFive & " +22=" & $sAt22)
-		If Not Wine_PatternMatchesHex($sAt22, $sPat) Then ContinueLoop
 		Local $sFiveC = Wine_CompactHex($sFive)
-		If StringLeft($sFiveC, 2) = "E9" Then
-			Out("Wine inject abort: Engine site already starts with E9 at " & Wine_HexPtr($pCand))
-			Return 0
+		Local $bNear = Wine_EnginePatternNear($pCand)
+		Out("Wine Engine candidate " & Wine_HexPtr($pCand) & " d=" & $aiOff[$i] & " site5=" & $sFive & " near=" & $bNear)
+		If StringLeft($sFiveC, 2) = "E9" And $bNear Then
+			If $pE9 = 0 Then $pE9 = $pCand
+			ContinueLoop
 		EndIf
-		If $sFiveC = $sEpi Then Return $pCand
-		If $pPatOnly = 0 Then
-			$pPatOnly = $pCand
-			$sPatFive = $sFive
+		If $sFiveC = $sEpi And $bNear Then
+			If $aiOff[$i] <> 0 Then
+				Out("Wine Engine: using " & Wine_HexPtr($pCand) & " (scan offset " & $aiOff[$i] & ", epilogue 8B EC D9 45 08)")
+			EndIf
+			Return $pCand
+		EndIf
+		If $bNear And $pLate = 0 Then
+			$pLate = $pCand
+			$sLate = $sFive
 		EndIf
 	Next
-	If $pPatOnly <> 0 Then
-		Out("Wine inject abort: Engine pattern matched at " & Wine_HexPtr($pPatOnly) & " but site 5 bytes are " & $sPatFive & " (expected 8B EC D9 45 08)")
+	If $pE9 <> 0 Then
+		Out("Wine inject abort: Engine site already starts with E9 at " & Wine_HexPtr($pE9) & "; not planting a second JMP")
 		Return 0
 	EndIf
-	Out("Wine inject abort: Engine pattern 568B3085F67478... not found at result/result-1/result+1")
+	If $pLate <> 0 Then
+		Out("Wine inject abort: Engine pattern near " & Wine_HexPtr($pLate) & " but site 5 bytes are " & $sLate & " (expected 8B EC D9 45 08)")
+		Return 0
+	EndIf
+	Out("Wine inject abort: Engine pattern 568B3085F67478... / epilogue 8B EC D9 45 08 not found near " & Wine_HexPtr($a_p_Engine))
 	Return 0
 EndFunc
 
@@ -754,8 +777,8 @@ Func Wine_InstallCommandQueue()
 	If Wine_CompactHex($sMid) <> Wine_CompactHex($sBefore) Then
 		Return Wine_InjectAbort("Engine site bytes changed before JMP (have " & $sMid & ", want " & $sBefore & ")", $pAlloc)
 	EndIf
-	If Not Wine_PatternMatchesHex(Wine_ReadBytesHex($pHook + 0x22, 15), "568B3085F67478EB038D4900D9460C") Then
-		Return Wine_InjectAbort("Engine +0x22 pattern no longer matches; not planting JMP", $pAlloc)
+	If Not Wine_EnginePatternNear($pHook) Then
+		Return Wine_InjectAbort("Engine needle no longer near hook site; not planting JMP", $pAlloc)
 	EndIf
 
 	Memory_WriteDetour("MainStart", "MainProc")
