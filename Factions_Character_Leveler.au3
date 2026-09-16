@@ -99,6 +99,7 @@ Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 If Wine_IsWine() Then
 	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID from the main loop (not the Start click).")
 	Out("Scanner_GetLoggedCharNames is skipped on Wine. Local scan timeout is " & $g_i_ScannerTimeoutMs & " ms.")
+	Out("Start stays stopped unless AgentBase/MyID/Engine/Move/BasePointer/QueueBase are live (4/78 hwnd-only is ATTACH FAILED).")
 Else
 	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
 EndIf
@@ -139,11 +140,19 @@ Func StartBot()
 	If Not Leveler_AttachToGw() Then
 		If Wine_IsWine() Then
 			GUICtrlSetState($g_h_StartButton, $GUI_ENABLE)
-			Out("Attach failed. Leave the character in-world, click Refresh, then Start. Do not Exit so you can retry.")
+			Out("ATTACH FAILED. Leave the character in-world, click Refresh, then Start. Do not Exit so you can retry.")
 			Return
 		EndIf
 		MsgBox(0, "Error", "Could not attach to Guild Wars.")
 		_Exit()
+	EndIf
+
+	If Wine_IsWine() And Not Wine_CoreReady() Then
+		Wine_LogCorePointers("StartBot refused")
+		GUICtrlSetState($g_h_StartButton, $GUI_ENABLE)
+		GUICtrlSetData($g_h_StartButton, "Start")
+		Out("ATTACH FAILED: " & Wine_CoreReadyMiss() & " not live. Bot loop will not start.")
+		Return
 	EndIf
 
 	GUICtrlSetState($g_h_NameCombo, $GUI_DISABLE)
@@ -163,6 +172,7 @@ Func StartBot()
 	Leveler_RefreshQuestFlags(True)
 
 	Out("Initialized for: " & Player_GetCharName())
+	If Wine_IsWine() Then Wine_LogCorePointers("bot loop starting")
 	Out("Map: " & Map_GetMapID() & "  Pos: " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")))
 	If Not Leveler_IsOutpost() Then Out("Restart recovery is on. Will resume the current quest here if it is in the log.")
 	Out("Core ready. Returning to the run loop.")
@@ -259,32 +269,43 @@ Func Leveler_AttachToGw()
 EndFunc
 
 Func Leveler_InitializePidWine($a_i_Pid, $a_b_ChangeTitle)
-	Local $iAttempt = 1
-	Local $iMax = 3
-	For $iAttempt = 1 To $iMax
-		Wine_ApplyRuntimeGuards()
-		Wine_ResetScannerState()
-		Out("Initializing and attaching to PID " & $a_i_Pid & " attempt " & $iAttempt & "/" & $iMax & _
-				" timeout=" & $g_i_ScannerTimeoutMs & "ms (" & Wine_RuntimeLabel() & ")")
-		Local $l_v_Hwnd = Core_Initialize($a_i_Pid, $a_b_ChangeTitle)
-		Local $iErr = @error
-		If Leveler_AttachLooksLive($l_v_Hwnd) Then Return True
-		Out("Scanner failed (error " & $iErr & ") on PID " & $a_i_Pid)
+	Wine_ApplyRuntimeGuards()
+	Wine_ResetScannerState()
+	Out("Initializing and attaching to PID " & $a_i_Pid & " via Core_Initialize timeout=" & _
+			$g_i_ScannerTimeoutMs & "ms (" & Wine_RuntimeLabel() & ")")
+	Local $l_v_Hwnd = Core_Initialize($a_i_Pid, $a_b_ChangeTitle)
+	Local $iErr = @error
+	Wine_LogCorePointers("after Core_Initialize hwnd=" & String($l_v_Hwnd) & " err=" & $iErr)
+
+	If Wine_CoreReady() Then
+		Out("Wine: Core_Initialize bound live AgentBase/MyID/Engine/Move/BasePointer/QueueBase")
+		Return True
+	EndIf
+
+	If $g_h_GWProcess = 0 Then
+		Out("Core_Initialize failed (no process handle) on PID " & $a_i_Pid)
 		Wine_ProbeGwMemory()
-		Sleep(750)
-	Next
-	Return False
+		Return False
+	EndIf
+
+	Out("Wine: Core_Initialize returned without live criticals (hwnd-only is not attach). Salvaging.")
+	If Not Wine_SalvageAfterCoreInitialize() Then
+		Wine_LogCorePointers("after salvage")
+		Out("ATTACH FAILED: " & Wine_CoreReadyMiss() & " not live. Bot loop will not start.")
+		Return False
+	EndIf
+	Wine_LogCorePointers("after salvage")
+	If Not Wine_CoreReady() Then
+		Out("ATTACH FAILED: " & Wine_CoreReadyMiss() & " not live. Bot loop will not start.")
+		Return False
+	EndIf
+	Out("Wine: salvage bound live AgentBase/MyID/Engine/Move/BasePointer/QueueBase")
+	Return True
 EndFunc
 
 Func Leveler_AttachLooksLive($a_v_Hwnd)
+	If Wine_IsWine() Then Return Wine_CoreReady()
 	If $a_v_Hwnd <> 0 And $a_v_Hwnd <> "" Then Return True
-	If Not Wine_IsWine() Then Return False
-	; Scanner_GetHwnd can miss Guild Wars Reforged even when memory attach worked.
-	If $g_h_GWProcess <> 0 And $g_p_BasePointer Then
-		Local $l_h_Win = Wine_FindGwHwnd($g_i_GWProcessId)
-		If $l_h_Win <> 0 Then $g_h_GWWindow = $l_h_Win
-		Return True
-	EndIf
 	Return False
 EndFunc
 

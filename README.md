@@ -33,7 +33,9 @@ Under Wine the client window title is often `Guild Wars Reforged`, not `Guild Wa
 - Skips `Scanner_GetLoggedCharNames` on Wine. That call `Memory_Close()`s the process and can cache a **0/78** local pattern scan (`ScanAgentBasePtr`, `ScanMyIDPtr`, `ScanEngineHook`, `ScanMoveFunc`, `ScanBasePointerPtr`).
 - Queues Start onto the **main loop** instead of calling `Core_Initialize` from the button OnEvent. The old leveler attached from its runner loop; scanning from an AutoIt GUI event is where wine-gw was returning 0/78 on a real `Gw.exe` (PID 32 owned `Guild Wars Reforged`).
 - Attaches **by the window's PID first**, then `ProcessList("gw.exe")`. Character name is still preferred when several clients are running and the memory charname matches.
-- Retries attach up to 3 times after resetting scanner cache (`g_ap_ScanResults`, GwAu3 header, section state).
+- Calls `Core_Initialize(pid)` once from the main loop (same as Fedora/desktop). A 4/78 local scan can still print `End of Initialization` / `Initialized for: <name>` with **AgentBase=0** and **QueueBase=0**. That is not a live attach.
+- If those criticals are dead, salvages with a read-only 4KB `.text` scan of AgentBase/MyID/Engine/Move/BasePointer, then plants **one** Engine JMP for the Map_Move queue drain. Never `Assembler_ModifyMemory` / five detours.
+- Start enables the bot loop only when AgentBase, MyID, Engine (site `E9`), Move, BasePointer, and QueueBase are live user pointers. Otherwise the log says **ATTACH FAILED** and the GUI stays on Start.
 - Does not rename the Guild Wars window, and does not use `Core_AutoStart`'s `Guild Wars - <char>` title check.
 
 Optional `Config/leveler.ini` next to the script (defaults apply if the file is missing):
@@ -49,11 +51,12 @@ On Wine, timeouts below 60000 are raised to 60000. Native Windows is unchanged u
 
 ### Verify attach
 
-1. Character in-world under Wine. Refresh should list a `Gw.exe` PID (title may be `Guild Wars Reforged`) and must **not** print `0/78`.
-2. Click Start. The log should say `Start queued` then `Initializing and attaching to PID … attempt 1/3 timeout=60000ms`. The GUI may freeze for up to a minute.
-3. Success looks like `End of Initialization` then `Initialized for: <name>`.
-4. On failure, copy the `Wine probe:` line (`handle=`, `text=`, `first8=`). `first8` all zeros means ReadProcessMemory is not seeing `.text`; non-zero code bytes mean the timed local scan still missed patterns.
-5. Restart AutoIt3 before retrying if a previous run already cached 0/78.
+1. Character in-world under Wine. Refresh should list a `Gw.exe` PID (title may be `Guild Wars Reforged`).
+2. Click Start. The log should say `Start queued` then `Initializing and attaching to PID … via Core_Initialize`. The GUI may freeze during the local scan.
+3. `End of Initialization` / `Initialized for: <name>` is **not** enough. The log must then show `Wine pointers (after Core_Initialize):` with non-zero AgentBase/MyID/Engine/Move/BasePointer/QueueBase, **or** a salvage pass (`Wine 4KB scan: found 5/5`, `Wine: single Engine JMP planted`, site after JMP starting with `E9`).
+4. Bot loop starts only after `Wine: Core_Initialize bound live …` or `Wine: salvage bound live …`. The Start button becoming **Running** with AgentBase=0 / QueueBase=0 is a bug — that path must print **ATTACH FAILED** instead.
+5. On failure, copy `Wine pointers` / `Wine criticals missing:` / `Wine probe:` (`handle=`, `text=`, `first8=`). `first8` all zeros means ReadProcessMemory is not seeing `.text`.
+6. Do not claim a live Wine leveling run from this PR until wine-gw shows those six pointers live and Map_Move actually moves the character.
 
 ## Scope
 
