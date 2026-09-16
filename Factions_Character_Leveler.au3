@@ -5,6 +5,7 @@ Opt("ExpandVarStrings", 1)
 
 #include "../../API/_GwAu3.au3"
 #include "WineCompat.au3"
+#include "WineInitFinish.au3"
 #include "Leveler_Const.au3"
 #include "Leveler_Move.au3"
 #include "Leveler_Quest.au3"
@@ -98,7 +99,7 @@ Out("Port of the Py4GW Factions bot through attribute quest 2, Kryta, Elona, and
 Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 If Wine_IsWine() Then
 	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID from the main loop (not the Start click).")
-	Out("Scanner_GetLoggedCharNames is skipped on Wine. Local scan timeout is " & $g_i_ScannerTimeoutMs & " ms.")
+	Out("Scanner_GetLoggedCharNames is skipped on Wine. Start uses a chunked .text scan instead of the API 20s local timeout.")
 Else
 	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
 EndIf
@@ -259,20 +260,29 @@ Func Leveler_AttachToGw()
 EndFunc
 
 Func Leveler_InitializePidWine($a_i_Pid, $a_b_ChangeTitle)
-	Local $iAttempt = 1
-	Local $iMax = 3
-	For $iAttempt = 1 To $iMax
-		Wine_ApplyRuntimeGuards()
-		Wine_ResetScannerState()
-		Out("Initializing and attaching to PID " & $a_i_Pid & " attempt " & $iAttempt & "/" & $iMax & _
-				" timeout=" & $g_i_ScannerTimeoutMs & "ms (" & Wine_RuntimeLabel() & ")")
-		Local $l_v_Hwnd = Core_Initialize($a_i_Pid, $a_b_ChangeTitle)
-		Local $iErr = @error
-		If Leveler_AttachLooksLive($l_v_Hwnd) Then Return True
-		Out("Scanner failed (error " & $iErr & ") on PID " & $a_i_Pid)
-		Wine_ProbeGwMemory()
-		Sleep(750)
-	Next
+	Wine_ApplyRuntimeGuards()
+	Wine_ResetScannerState()
+	Out("Initializing and attaching to PID " & $a_i_Pid & " via chunked .text scan (" & Wine_RuntimeLabel() & ")")
+	Out("Skipping the API's 20s per-byte local scan (it times out ~0.5MB into 5.4MB and caches 0/78).")
+
+	If Not Wine_PreparePid($a_i_Pid) Then
+		Out("Wine: Memory_Open/sections failed on PID " & $a_i_Pid)
+		Return False
+	EndIf
+	Wine_ProbeGwMemory()
+	If Wine_TrySalvageInit($a_b_ChangeTitle) Then Return True
+
+	; Fallback: Core_Initialize may still allocate the GwAu3 header / inject.
+	; Clear the timed-scan miss cache first so it does not skip a rescan.
+	Out("Chunked salvage missed critical patterns; falling back to Core_Initialize")
+	Wine_ClearScanCacheFlags()
+	Local $l_v_Hwnd = Core_Initialize($a_i_Pid, $a_b_ChangeTitle)
+	Local $iErr = @error
+	If Leveler_AttachLooksLive($l_v_Hwnd) Then Return True
+	Out("Scanner failed (error " & $iErr & ") on PID " & $a_i_Pid)
+	Wine_ProbeGwMemory()
+	Wine_ClearScanCacheFlags()
+	If Wine_EnsureGwOpen($a_i_Pid) And Wine_TrySalvageInit($a_b_ChangeTitle) Then Return True
 	Return False
 EndFunc
 
@@ -394,7 +404,7 @@ Func GuiButtonHandler()
 				; scan was dying. The old leveler attaches from its main loop.
 				$g_b_StartRequested = True
 				GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
-				Out("Start queued. Attach will run on the next main-loop tick (Wine). GUI may freeze during the scan.")
+				Out("Start queued. Attach will run on the next main-loop tick (Wine chunked .text scan). GUI may freeze for several seconds.")
 			Else
 				StartBot()
 			EndIf
