@@ -1,10 +1,6 @@
 #include-once
 
 Func Leveler_ExecuteStep($a_i_Step)
-	If Wine_IsWine() And Not Wine_CommandsReady() Then
-		Out("[Step] Wine command queue is not live (no single Engine JMP); not calling Map_Move/Ui_Dialog.")
-		Return False
-	EndIf
 	If $g_b_LevelerPaused Then Return False
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
