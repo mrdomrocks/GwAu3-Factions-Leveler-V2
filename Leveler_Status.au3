@@ -331,10 +331,123 @@ Func Leveler_LostTreasureAlreadyDone()
 	Return False
 EndFunc
 
+; AgentBase/MyID are required for profession, position, and many quest predicates.
+Func Leveler_AgentMemoryLive()
+	If IsDeclared("g_p_AgentBase") And Number($g_p_AgentBase) <> 0 Then Return True
+	If Agent_GetAgentInfo(-2, "X") <> 0 Or Agent_GetAgentInfo(-2, "Y") <> 0 Then Return True
+	If Leveler_PrimaryProfession() >= 1 Then Return True
+	Return False
+EndFunc
+
+Func Leveler_MaxStep($a_i_A, $a_i_B)
+	If $a_i_A > $a_i_B Then Return $a_i_A
+	Return $a_i_B
+EndFunc
+
+; Last completed story step implied by the character's current map. Uses Map_GetMapID
+; only (not account Map_IsMapUnlocked) so a fresh courtyard character is not skipped.
+Func Leveler_StoryFloorFromMap($a_i_Map)
+	Switch $a_i_Map
+		Case $MAP_JAGA
+			Return $LEVELER_STEP_VAETTIR
+		Case $MAP_LONGEYE, $MAP_BJORA
+			Return $LEVELER_STEP_TO_LONGEYE
+		Case $MAP_DOCKS, $MAP_CONSULATE, $MAP_SUN_DOCKS, $MAP_GTOB
+			Return $LEVELER_STEP_TO_DOCKS
+		Case $MAP_KAMADAN
+			Return $LEVELER_STEP_TO_KAMADAN
+		Case $MAP_LIONS_ARCH, $MAP_LIONS_GATE, $MAP_BEJUNKAN
+			Return $LEVELER_STEP_TO_LA
+		Case $MAP_GUNNAR, $MAP_KILROY
+			Return $LEVELER_STEP_TO_GUNNAR
+		Case $MAP_NORRHART
+			Return $LEVELER_STEP_ATTR_2
+		Case $MAP_HOM, $MAP_AB
+			Return $LEVELER_STEP_EOTN_POOL
+		Case $MAP_EOTN
+			Return $LEVELER_STEP_TO_EOTN
+		Case $MAP_BOREAL, $MAP_ICE_CLIFF
+			Return $LEVELER_STEP_TO_BOREAL
+		Case $MAP_TUNNELS
+			Return $LEVELER_STEP_UNLOCK_MOX
+		Case $MAP_KAINENG
+			Return $LEVELER_STEP_TO_KC
+		Case $MAP_MARKETPLACE, $MAP_BUKDEK, $MAP_WAJJUN
+			Return $LEVELER_STEP_TO_MARKET
+		Case $MAP_KAINENG_DOCKS
+			Return $LEVELER_STEP_ZEN_MISSION
+		Case $MAP_ZEN_EXP
+			Return $LEVELER_STEP_TO_ZEN
+		Case $MAP_ZEN_OP
+			Return $LEVELER_STEP_TO_ZEN
+		Case $MAP_JAYA, $MAP_HAIJU
+			Return $LEVELER_STEP_DESTROY_MON
+		Case $MAP_SEITUNG, $MAP_SAOSHANG
+			Return $LEVELER_STEP_ROAD
+		Case $MAP_TSUMEI, $MAP_PANJIANG
+			Return $LEVELER_STEP_CHO_MISSION
+		Case $MAP_RAN_MUSU, $MAP_CHO_EXPLORABLE, $MAP_KINYA
+			Return $LEVELER_STEP_CHO_MISSION
+		Case $MAP_CHO_OUTPOST
+			Return $LEVELER_STEP_TO_CHO
+		Case $MAP_SHING_JEA, $MAP_SUNQUA_VALE, $MAP_LINNOK
+			Return $LEVELER_STEP_OVERLOOK
+	EndSwitch
+	Return -1
+EndFunc
+
+; Raise the floor from later story steps that are already proven done on this
+; character. Skip account-wide skill / storage / bag flags.
+Func Leveler_StoryFloorFromDoneFlags()
+	Local $l_i_Floor = -1
+	Local $l_ai_Story[22] = [ _
+			$LEVELER_STEP_PARTY, $LEVELER_STEP_SECONDARY, $LEVELER_STEP_TO_CHO, $LEVELER_STEP_CHO_MISSION, _
+			$LEVELER_STEP_ATTR_1, $LEVELER_STEP_TENGU, $LEVELER_STEP_THREAT, $LEVELER_STEP_ROAD, _
+			$LEVELER_STEP_SEITUNG, $LEVELER_STEP_DESTROY_MON, $LEVELER_STEP_TO_ZEN, $LEVELER_STEP_ZEN_MISSION, _
+			$LEVELER_STEP_TO_MARKET, $LEVELER_STEP_TO_KC, $LEVELER_STEP_CURE, $LEVELER_STEP_BURDEN, _
+			$LEVELER_STEP_TO_BOREAL, $LEVELER_STEP_TO_EOTN, $LEVELER_STEP_ATTR_2, $LEVELER_STEP_TO_GUNNAR, _
+			$LEVELER_STEP_TO_LA, $LEVELER_STEP_TO_KAMADAN]
+	Local $i = 0
+	For $i = 0 To UBound($l_ai_Story) - 1
+		If $g_ab_StepDone[$l_ai_Story[$i]] Then $l_i_Floor = Leveler_MaxStep($l_i_Floor, $l_ai_Story[$i])
+	Next
+	If Leveler_IsQuestDone($QUEST_FORMING_A_PARTY) Then $l_i_Floor = Leveler_MaxStep($l_i_Floor, $LEVELER_STEP_PARTY)
+	If Leveler_LostTreasureAlreadyDone() Then $l_i_Floor = Leveler_MaxStep($l_i_Floor, $LEVELER_STEP_ATTR_1)
+	If Leveler_HasLaterQuest() Then $l_i_Floor = Leveler_MaxStep($l_i_Floor, $LEVELER_STEP_ATTR_1)
+	Return $l_i_Floor
+EndFunc
+
+; If a later story beat is clearly done (standing at Zen Daijun, Road handed in,
+; Lost Treasure done), mark every earlier step done so FirstIncompleteStep
+; cannot jump back to Forming A Party.
+Func Leveler_ApplyStoryMonotonicity($a_i_Map)
+	Local $l_i_Floor = Leveler_MaxStep(Leveler_StoryFloorFromMap($a_i_Map), Leveler_StoryFloorFromDoneFlags())
+	If $l_i_Floor < 0 Then Return -1
+	Local $i = 0
+	Local $l_i_Filled = 0
+	For $i = 0 To $l_i_Floor
+		If Not $g_ab_StepDone[$i] Then $l_i_Filled += 1
+		$g_ab_StepDone[$i] = True
+	Next
+	If $l_i_Filled > 0 Then
+		Out("[Status] Story floor " & $l_i_Floor & " — " & $g_as_StepNames[$l_i_Floor] & _
+				" (map " & $a_i_Map & "). Marked " & $l_i_Filled & " earlier step(s) done.")
+	EndIf
+	Return $l_i_Floor
+EndFunc
+
 ; Brief inventory / quest / map check. Greys finished steps and returns the first incomplete one.
 Func Leveler_StatusCheck()
 	Out("[Status] Checking character progress...")
 	Local $l_i_Map = Map_GetMapID()
+	If Not Leveler_AgentMemoryLive() Then
+		Local $sQ = "0"
+		If IsDeclared("g_p_QueueBase") Then $sQ = Hex(Number($g_p_QueueBase), 8)
+		Local $sA = "0"
+		If IsDeclared("g_p_AgentBase") Then $sA = Hex(Number($g_p_AgentBase), 8)
+		Out("[Status] AgentBase=" & $sA & " QueueBase=" & $sQ & _
+				" — profession/position reads are dead. Using map " & $l_i_Map & " and quest flags.")
+	EndIf
 	Local $l_b_Cho = Map_IsMapUnlocked($MAP_CHO_OUTPOST) Or $l_i_Map = $MAP_CHO_OUTPOST Or $l_i_Map = 257
 	Local $l_b_RanMusu = Map_IsMapUnlocked($MAP_RAN_MUSU) Or $l_i_Map = $MAP_RAN_MUSU Or $l_i_Map = $MAP_CHO_EXPLORABLE Or $l_i_Map = $MAP_KINYA
 	Local $l_b_Seitung = Map_IsMapUnlocked($MAP_SEITUNG) Or $l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_SAOSHANG Or $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU Or $l_i_Map = $MAP_ZEN_OP
@@ -371,8 +484,17 @@ Func Leveler_StatusCheck()
 	; Monastery tutorial is character-specific. Account map unlocks, storage
 	; pointers, and account skill unlocks must not skip Secondary / Xunlai / craft.
 	$g_ab_StepDone[$LEVELER_STEP_OVERLOOK] = $l_b_ShingJea And Not Leveler_OnOverlook()
-	$g_ab_StepDone[$LEVELER_STEP_PARTY] = (Not Leveler_QuestLogActive($QUEST_FORMING_A_PARTY)) And (Leveler_QuestLogCompleted($QUEST_FORMING_A_PARTY) Or Leveler_HasSecondaryProfession() Or Leveler_HasQuest($QUEST_SECONDARY) Or Leveler_HasQuest($QUEST_FORMAL_INTRO))
-	$g_ab_StepDone[$LEVELER_STEP_SECONDARY] = Leveler_SecondaryStepReadyToLeave()
+	; AgentBase=0 makes HasSecondaryProfession false even when A/Me9 is in-world.
+	; Later quests / current map must still count Forming A Party as done.
+	Local $l_b_PastParty = Leveler_IsQuestDone($QUEST_FORMING_A_PARTY) Or Leveler_LostTreasureAlreadyDone() Or _
+			Leveler_HasLaterQuest() Or $l_b_TsumeiPath Or _
+			$l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_SAOSHANG Or $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU Or _
+			$l_i_Map = $MAP_ZEN_OP Or $l_i_Map = $MAP_ZEN_EXP Or $l_i_Map = $MAP_RAN_MUSU Or _
+			$l_i_Map = $MAP_CHO_OUTPOST Or $l_i_Map = $MAP_CHO_EXPLORABLE Or $l_i_Map = $MAP_MARKETPLACE
+	$g_ab_StepDone[$LEVELER_STEP_PARTY] = $l_b_PastParty Or ((Not Leveler_QuestLogActive($QUEST_FORMING_A_PARTY)) And _
+			(Leveler_QuestLogCompleted($QUEST_FORMING_A_PARTY) Or Leveler_HasSecondaryProfession() Or _
+			Leveler_HasQuest($QUEST_SECONDARY) Or Leveler_HasQuest($QUEST_FORMAL_INTRO)))
+	$g_ab_StepDone[$LEVELER_STEP_SECONDARY] = Leveler_SecondaryStepReadyToLeave() Or $l_b_PastParty
 	Out("[Status] Profession " & Leveler_PrimaryProfession() & "/" & Leveler_SecondaryProfession() & "  Gold " & Leveler_CharacterGold() & "  Secondary step done=" & $g_ab_StepDone[$LEVELER_STEP_SECONDARY])
 	$g_ab_StepDone[$LEVELER_STEP_XUNLAI] = Leveler_XunlaiUnlocked()
 	; After Road / Seitung, do not send this character back to the monastery weapon/armor crafts.
@@ -453,8 +575,10 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_VAETTIR] = $l_b_Jaga
 	$g_ab_StepDone[$LEVELER_STEP_DONE] = $l_b_Jaga
 
-	; No fill-forward. Account skills, storage pointers, and courtyard unlocks
-	; must not mark the tutorial quests complete on a fresh character.
+	; Account skills / storage / courtyard unlocks still do not skip a fresh
+	; monastery character. Current-map and later story-quest progress do:
+	; standing at Zen Daijun (213) must not jump back to Forming A Party.
+	Leveler_ApplyStoryMonotonicity($l_i_Map)
 
 	Local $l_i_Next = Leveler_FirstIncompleteStep()
 	Out("[Status] Map " & $l_i_Map & "  Next step: " & $l_i_Next & " — " & $g_as_StepNames[$l_i_Next])
