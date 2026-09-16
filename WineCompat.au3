@@ -359,6 +359,23 @@ Func Wine_BindReadOnly($aResults)
 	Return True
 EndFunc
 
+; Map_Move, Ui_Dialog, and Core_SendPacket all Core_Enqueue into $g_p_QueueBase.
+; That buffer is VirtualAllocEx'd inside Gw and drained by a JMP at Engine.
+; Read-only AgentBase/MyID is not a command path. QueueBase stays 0 on Wine.
+Func Wine_CommandsReady()
+	If Not IsDeclared("g_p_QueueBase") Then Return False
+	If $g_p_QueueBase = 0 Then Return False
+	If Not Wine_IsUserPtr($g_p_QueueBase) Then Return False
+	Return True
+EndFunc
+
+Func Wine_LogCommandGap()
+	Out("Wine cannot run Leveler_ExecuteStep yet: Map_Move / Ui_Dialog / Core_SendPacket need the GwAu3 command queue.")
+	Out("That queue is a VirtualAllocEx page inside Gw.exe plus a 5-byte JMP at Engine (MainStart).")
+	Out("a3ceeb0 planted that JMP (and four more: Render, LoadFinished, Trader, TradePartner) and Gw.exe exited.")
+	Out("Least-dangerous next inject (not enabled, not live-tested): one new RWX page for queue + CommandMove/PacketSend/Dialog only; one Engine JMP after verifying site bytes; skip the other four detours.")
+EndFunc
+
 Func Wine_ScanPatternsChunked()
 	Local $pStart = $g_ai2_Sections[$GC_I_SECTION_TEXT][0]
 	Local $pEnd = $g_ai2_Sections[$GC_I_SECTION_TEXT][1]

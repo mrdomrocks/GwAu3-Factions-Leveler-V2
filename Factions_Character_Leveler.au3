@@ -156,7 +156,26 @@ Func StartBot()
 		GUICtrlSetState($g_h_RefreshButton, $GUI_ENABLE)
 		Out("Read-only attach ok. AgentBase=" & Hex($g_p_AgentBase) & " BasePointer=" & Hex($g_p_BasePointer))
 		If $sName <> "" Then Out("Charname: " & $sName)
-		Out("Wine: no engine hooks and no memory writes. Bot loop not started. Gw.exe should still be running.")
+		If Wine_CommandsReady() Then
+			Out("Wine command queue is present; starting the leveler loop.")
+			GUICtrlSetState($g_h_NameCombo, $GUI_DISABLE)
+			GUICtrlSetState($g_h_RefreshButton, $GUI_DISABLE)
+			GUICtrlSetState($g_h_PauseButton, $GUI_ENABLE)
+			GUICtrlSetData($g_h_StartButton, "Running")
+			GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
+			$g_b_BotRunning = True
+			$g_b_BotCoreInitialized = True
+			$g_b_LevelerPaused = False
+			$g_b_LevelerFailed = False
+			$g_b_NeedStatusCheck = True
+			$g_b_LostTreasureToTenguOnce = False
+			$g_b_ExplorableResume = True
+			Leveler_RefreshQuestFlags(True)
+			Out("Core ready (Wine). Returning to the run loop.")
+			Return
+		EndIf
+		Wine_LogCommandGap()
+		Out("Bot loop not started. Gw.exe should still be running.")
 		Return
 	EndIf
 
