@@ -19,10 +19,10 @@ Global Const $LEVELER_STEP_ROAD = 14
 Global Const $LEVELER_STEP_SEITUNG = 15
 Global Const $LEVELER_STEP_DESTROY_MON = 16
 Global Const $LEVELER_STEP_TO_ZEN = 17
-Global Const $LEVELER_STEP_SKILLS2 = 18
-Global Const $LEVELER_STEP_ZEN_MISSION = 19
-Global Const $LEVELER_STEP_TO_MARKET = 20
-Global Const $LEVELER_STEP_TO_KC = 21
+Global Const $LEVELER_STEP_ZEN_MISSION = 18
+Global Const $LEVELER_STEP_TO_MARKET = 19
+Global Const $LEVELER_STEP_TO_KC = 20
+Global Const $LEVELER_STEP_SKILLS2 = 21
 Global Const $LEVELER_STEP_MAX_ARMOR = 22
 Global Const $LEVELER_STEP_DESTROY_SEITUNG = 23
 Global Const $LEVELER_STEP_CURE = 24
@@ -65,10 +65,10 @@ Global $g_as_StepNames[$LEVELER_STEP_COUNT] = [ _
 		"Craft Seitung Armor", _
 		"Destroy Monastery Armor", _
 		"To Zen Daijun", _
-		"Complete Skills Training", _
 		"Zen Daijun Mission", _
 		"To Marketplace", _
 		"To Kaineng Center", _
+		"Complete Skills Training", _
 		"Craft Max Armor", _
 		"Destroy Seitung Armor", _
 		"Quest: The Search For A Cure", _
@@ -179,26 +179,61 @@ Global Const $DIALOG_FORMAL_ZUI_2 = 0x800009
 Global Const $DIALOG_FORMAL_ZUI_2_TALK = 0x19
 Global Const $DIALOG_FORMAL_SKIP = 0x80000B
 Global Const $DIALOG_FORMAL_COMPLETE = 0x813E07
+Global Const $DIALOG_FORMAL_KAYAO_ACCEPT = 0x17
 Global Const $TOGO_SUNQUA_X = 20007.00
 Global Const $TOGO_SUNQUA_Y = -7747.00
 Global Const $ZUI_SUNQUA_X = 6637.00
 Global Const $ZUI_SUNQUA_Y = 16147.00
+Global Const $KAYAO_CHO_X = 7884.00
+Global Const $KAYAO_CHO_Y = -10029.00
 Global Const $DIALOG_XUNLAI_1 = 0x800001
 Global Const $DIALOG_XUNLAI_2 = 0x800002
 Global Const $DIALOG_LOST_TREASURE_ACCEPT = 0x815A01
 Global Const $DIALOG_LOST_TREASURE_STEP = 0x815A04
-Global Const $DIALOG_LOST_TREASURE_COMPLETE = 0x815A07
+Global Const $DIALOG_LOST_TREASURE_COMPLETE = 0x17
 Global Const $DIALOG_TENGU_ACCEPT = 0x815301
 Global Const $DIALOG_TENGU_STEP = 0x815304
 Global Const $DIALOG_TENGU_COMPLETE = 0x815307
+; Python Attribute_Points_Quest_1 / Warning the Tengu waypoints
+Global Const $LOST_TOWN_APPROACH_X = 16184.75
+Global Const $LOST_TOWN_APPROACH_Y = 19001.78
+Global Const $LOST_TOWN_PATH1_X = 13713.27
+Global Const $LOST_TOWN_PATH1_Y = 18504.61
+Global Const $LOST_TOWN_PATH2_X = 14576.15
+Global Const $LOST_TOWN_PATH2_Y = 17817.62
+Global Const $LOST_TOWN_PATH3_X = 15824.60
+Global Const $LOST_TOWN_PATH3_Y = 18817.90
+Global Const $LOST_TOWN_PORTAL_X = 17005
+Global Const $LOST_TOWN_PORTAL_Y = 19787
+Global Const $LOST_CHO_START_X = -17979.38
+Global Const $LOST_CHO_START_Y = -493.08
+Global Const $LOST_CHO_END_X = 20660.90
+Global Const $LOST_CHO_END_Y = -9207.07
+Global Const $LOST_CHO_END_RANGE = 2500
+Global Const $TENGU_ANG_X = 15846
+Global Const $TENGU_ANG_Y = 19013
+Global Const $TENGU_PORTAL_X = 14730
+Global Const $TENGU_PORTAL_Y = 15176
+Global Const $TENGU_KINYA_START_X = 1429
+Global Const $TENGU_KINYA_START_Y = 12768
+Global Const $TENGU_SOAR_X = -1023
+Global Const $TENGU_SOAR_Y = 4844
+Global Const $TENGU_AFFLICTED_X = -5011
+Global Const $TENGU_AFFLICTED_Y = 732
 Global Const $DIALOG_THREAT_ACCEPT = 0x815401
 Global Const $DIALOG_THREAT_COMPLETE = 0x815407
 Global Const $DIALOG_JOURNEY_ACCEPT = 0x815501
 Global Const $DIALOG_JOURNEY_COMPLETE = 0x815507
 Global Const $DIALOG_ROAD_ACCEPT = 0x815601
 Global Const $DIALOG_ROAD_STEP1 = 0x80000B
+Global Const $DIALOG_ROAD_TSUKARO_TALK = 0x815604
+Global Const $DIALOG_ROAD_TSUKARO_GO = 0x800008
+Global Const $DIALOG_ROAD_TSUKARO_LETS_GO = 0x800009
+Global Const $DIALOG_ROAD_TSUKARO_YES = 0x80000B
 Global Const $DIALOG_ROAD_STEP2 = 0x815604
 Global Const $DIALOG_ROAD_COMPLETE = 0x815607
+Global Const $TSUKARO_LINNOK_X = 538.00
+Global Const $TSUKARO_LINNOK_Y = 10125.00
 Global Const $DIALOG_BURDEN_ACCEPT = 0x815D01
 Global Const $DIALOG_BURDEN_STEP2 = 0x815D04
 Global Const $DIALOG_BURDEN_COMPLETE = 0x815D07
@@ -253,7 +288,9 @@ Global Const $MODEL_TOGO_2 = 3081
 Global Const $MODEL_TOGO_3 = 3120
 Global Const $MODEL_TOGO_4 = 3215
 Global Const $MODEL_XUNLAI = 283
+; Raitahn Nem. Same model in Ran Musu Gardens and Cho explorable.
 Global Const $MODEL_LOST_TREASURE_GUARD = 3093
+Global Const $MODEL_RAITAHN_NEM = 3093
 Global Const $MODEL_SISTER_TAI = 3367
 Global Const $MODEL_BROTHER_TOSAI = 3171
 Global Const $MODEL_BURDEN_NPC = 3307
@@ -282,12 +319,9 @@ Global Const $MODEL_BELT_POUCH = 34
 Global Const $SKILL_ENERGY_BURN = 42
 Global Const $SKILL_LEECH_SIGNET = 61
 Global Const $SKILL_SIGNET_OF_DISRUPTION = 860
-; Xu Fengxia / Michiko (Ran Musu, then Kaineng). Python labeled 57 as Cry of Pain.
+; Xu Fengxia / Michiko (Ran Musu, then Kaineng).
 Global Const $SKILL_CRY_OF_FRUSTRATION = 57
-Global Const $SKILL_CRY_OF_PAIN = 57
 Global Const $SKILL_POWER_DRAIN = 25
-; Python Complete Skills Training IDs (61 is Leech Signet, not Power Spike)
-Global Const $SKILL_POWER_SPIKE = 61
 Global Const $SKILL_BACKFIRE = 54
 Global Const $SKILL_SPIRIT_RIFT = 910
 
@@ -328,3 +362,10 @@ Global $g_b_FarmMode = False
 Global $g_b_KilroyMode = False
 Global $g_h_RiftCooldown = 0
 Global $g_s_CurrentHeader = ""
+Global $g_b_UAIReady = False
+Global $g_i_LastUAIMap = 0
+Global $g_b_ConnectionLost = False
+; One-time recovery after a completed Lost Treasure restart: path Cho -> Ran Musu -> Tengu.
+Global $g_b_LostTreasureToTenguOnce = False
+; Set on Start only. Stay in an explorable after a client/script restart; do not block the next quest.
+Global $g_b_ExplorableResume = False

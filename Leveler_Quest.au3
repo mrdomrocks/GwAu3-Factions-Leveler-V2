@@ -1,59 +1,144 @@
 #include-once
 
-; Port of Python QuestLoop.
+; GwAu3 quest helper. Walk to the NPC, Agent_GoNPC, then send
+; Ui_AcceptQuest / Ui_UpdateQuest / Ui_RewardQuest (or a custom Ui_Dialog).
 ; $a_s_Mode: "accept" | "complete" | "step" | "skip"
-; Do not halt the bot on failure. The step machine retries the current header.
 Func Leveler_QuestLoop($a_i_QuestID, $a_f_X, $a_f_Y, $a_i_Dialog, $a_s_Mode = "accept", $a_i_NpcModel = 0, $a_i_Multi = 0)
-	Local $l_i_Attempts = 0
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $l_f_X = $a_f_X
 	Local $l_f_Y = $a_f_Y
 
-	Local $l_b_HadQuest = Leveler_HasQuest($a_i_QuestID)
-
-	If $a_i_QuestID <> 0 And $a_s_Mode = "accept" And $l_b_HadQuest Then
-		Ui_ActiveQuest($a_i_QuestID)
-		Out("[Quest] Quest #" & $a_i_QuestID & " already in the log")
-		Return True
-	EndIf
-	If $a_i_QuestID <> 0 And $a_s_Mode = "complete" Then
-		If $a_i_QuestID = $QUEST_SECONDARY And Leveler_SecondaryRewardTaken() Then
-			Leveler_MarkQuestDone($a_i_QuestID)
-			Out("[Quest] Quest #317 reward already taken")
-			Return True
-		EndIf
-		If Not $l_b_HadQuest And $a_i_QuestID <> $QUEST_SECONDARY Then
-			Out("[Quest] Quest #" & $a_i_QuestID & " is not in the log; cannot complete yet")
-			Return False
-		EndIf
-	EndIf
-
-	If $a_s_Mode = "complete" And $a_i_QuestID <> 0 Then Ui_ActiveQuest($a_i_QuestID)
-
-	While Leveler_QuestLoopCondition($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap) And $l_i_Attempts < 8
-		If $g_b_LevelerPaused Then Return False
-		If Leveler_IsWiped() Then Return False
-		Leveler_ResolveQuestXY($a_i_NpcModel, $l_f_X, $l_f_Y)
-		Out("[Quest] Attempt " & ($l_i_Attempts + 1) & " " & $a_s_Mode & " quest #" & $a_i_QuestID)
-		If Not Leveler_MoveAndDialog($l_f_X, $l_f_Y, $a_i_Dialog, $g_b_CombatMode, $a_i_NpcModel) Then
-			Sleep(600)
-		EndIf
-		If $a_i_Multi <> 0 Then
-			Leveler_MoveAndDialog($l_f_X, $l_f_Y, $a_i_Multi, $g_b_CombatMode, $a_i_NpcModel)
-		EndIf
-		Sleep(800)
-		$l_i_Attempts += 1
-	WEnd
-
-	If Leveler_QuestSuccessCondition($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap) Then
+	If Leveler_QuestAlreadyDone($a_i_QuestID, $a_s_Mode) Then
 		If $a_s_Mode = "accept" And $a_i_QuestID <> 0 Then Ui_ActiveQuest($a_i_QuestID)
 		If $a_s_Mode = "complete" And $a_i_QuestID <> 0 Then Leveler_MarkQuestDone($a_i_QuestID)
-		Out("[Quest] Successfully finished " & $a_s_Mode & " quest #" & $a_i_QuestID)
+		Out("[Quest] #" & $a_i_QuestID & " " & $a_s_Mode & " already done")
 		Return True
 	EndIf
 
-	Out("[Quest] Failed to " & $a_s_Mode & " quest #" & $a_i_QuestID & ". Retrying step.")
-	Return False
+	If $a_s_Mode = "complete" And $a_i_QuestID <> 0 And Not Leveler_HasQuest($a_i_QuestID) And $a_i_QuestID <> $QUEST_SECONDARY Then
+		Out("[Quest] #" & $a_i_QuestID & " is not in the log; cannot take the reward")
+		Return False
+	EndIf
+
+	; Do not set a quest active or request its info until it is in the log.
+	; Doing that on accept (before pickup) crashes the client.
+	If $a_i_QuestID <> 0 And Leveler_HasQuest($a_i_QuestID) Then
+		Ui_ActiveQuest($a_i_QuestID)
+		Quest_RequestInfos($a_i_QuestID)
+		Sleep(200)
+	EndIf
+
+	Local $l_i_Attempt
+	For $l_i_Attempt = 1 To 8
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_IsWiped() Then Return False
+		; Step dialogs must actually be sent. "No marker on the nearest NPC" is not success
+		; before we have walked to the quest NPC.
+		If $a_s_Mode <> "step" And Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap) Then ExitLoop
+		If $a_s_Mode = "step" And $l_i_Attempt > 1 And Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap) Then ExitLoop
+		If $a_s_Mode = "step" And $a_i_QuestID <> 0 And Quest_GetQuestInfo($a_i_QuestID, "CanReward") Then ExitLoop
+
+		Leveler_ResolveQuestXY($a_i_NpcModel, $l_f_X, $l_f_Y)
+		If $l_f_X = 0 And $l_f_Y = 0 And $a_i_QuestID <> 0 Then Leveler_FillQuestMarker($a_i_QuestID, $l_f_X, $l_f_Y)
+
+		Out("[Quest] " & $a_s_Mode & " #" & $a_i_QuestID & " attempt " & $l_i_Attempt)
+		If Not Leveler_QuestTalk($l_f_X, $l_f_Y, $a_i_QuestID, $a_s_Mode, $a_i_Dialog, $a_i_NpcModel, $a_i_Multi) Then
+			Sleep(500)
+			ContinueLoop
+		EndIf
+
+		If $a_i_QuestID <> 0 Then Quest_RequestInfos($a_i_QuestID)
+		If Leveler_WaitQuestResult($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap, 4000) Then ExitLoop
+	Next
+
+	If Not Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap) Then
+		Out("[Quest] Failed to " & $a_s_Mode & " #" & $a_i_QuestID)
+		Return False
+	EndIf
+
+	If $a_s_Mode = "accept" And $a_i_QuestID <> 0 Then Ui_ActiveQuest($a_i_QuestID)
+	If $a_s_Mode = "complete" And $a_i_QuestID <> 0 Then Leveler_MarkQuestDone($a_i_QuestID)
+	Out("[Quest] " & $a_s_Mode & " #" & $a_i_QuestID & " finished")
+	Return True
+EndFunc
+
+; Walk into talk range, open the NPC, then send the GwAu3 quest dialog.
+Func Leveler_QuestTalk($a_f_X, $a_f_Y, $a_i_QuestID, $a_s_Mode, $a_i_Dialog, $a_i_NpcModel = 0, $a_i_Multi = 0)
+	Local $l_i_StartMap = Map_GetMapID()
+	If $a_f_X <> 0 Or $a_f_Y <> 0 Then
+		If Not Leveler_MoveTo($a_f_X, $a_f_Y, Leveler_ShouldFightHere()) And Map_GetMapID() = $l_i_StartMap Then Return False
+	EndIf
+	If Map_GetMapID() <> $l_i_StartMap Then Return True
+
+	Local $l_i_Npc = Leveler_ResolveTalkNpc($a_f_X, $a_f_Y, $a_i_NpcModel)
+	If $l_i_Npc = 0 Then
+		Out("[Quest] No NPC near " & Round($a_f_X) & ", " & Round($a_f_Y))
+		Return False
+	EndIf
+
+	Agent_ChangeTarget($l_i_Npc)
+	Sleep(150)
+	Agent_GoNPC($l_i_Npc)
+
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 5000
+		If Agent_GetDistance($l_i_Npc) < $LEVELER_ARRIVE_RANGE Then ExitLoop
+		Sleep(100)
+	WEnd
+	If Agent_GetDistance($l_i_Npc) >= $LEVELER_ARRIVE_RANGE Then
+		Out("[Quest] Could not reach NPC model " & Agent_GetAgentInfo($l_i_Npc, "PlayerNumber"))
+		Return False
+	EndIf
+
+	Sleep(700)
+	Leveler_SendQuestAction($a_i_QuestID, $a_s_Mode, $a_i_Dialog)
+	If $a_s_Mode = "complete" And $a_i_Dialog <> 0 Then
+		Sleep(400)
+		Ui_Dialog($a_i_Dialog)
+	EndIf
+	Sleep(500)
+	If $a_i_Multi <> 0 Then
+		Ui_Dialog($a_i_Multi)
+		Sleep(400)
+	EndIf
+	Return True
+EndFunc
+
+; Standard GwAu3 dialogs are 0x008QQQ01 (accept), 0x008QQQ04 (update), 0x008QQQ07 (reward).
+Func Leveler_SendQuestAction($a_i_QuestID, $a_s_Mode, $a_i_Dialog)
+	Switch $a_s_Mode
+		Case "accept"
+			If $a_i_QuestID <> 0 And ($a_i_Dialog = 0 Or Leveler_IsStandardQuestDialog($a_i_Dialog, $a_i_QuestID, 1)) Then
+				Ui_AcceptQuest($a_i_QuestID)
+			ElseIf $a_i_Dialog <> 0 Then
+				Ui_Dialog($a_i_Dialog)
+			EndIf
+		Case "complete"
+			If $a_i_QuestID <> 0 Then Ui_RewardQuest($a_i_QuestID)
+			If $a_i_Dialog <> 0 Then Ui_Dialog($a_i_Dialog)
+		Case "step"
+			If $a_i_QuestID <> 0 And ($a_i_Dialog = 0 Or Leveler_IsStandardQuestDialog($a_i_Dialog, $a_i_QuestID, 4)) Then
+				Ui_UpdateQuest($a_i_QuestID)
+			ElseIf $a_i_Dialog <> 0 Then
+				Ui_Dialog($a_i_Dialog)
+			EndIf
+		Case Else
+			If $a_i_Dialog <> 0 Then Ui_Dialog($a_i_Dialog)
+	EndSwitch
+EndFunc
+
+Func Leveler_IsStandardQuestDialog($a_i_Dialog, $a_i_QuestID, $a_i_Suffix)
+	If $a_i_Dialog = 0 Or $a_i_QuestID = 0 Then Return False
+	Return $a_i_Dialog = Number("0x008" & Hex($a_i_QuestID, 3) & Hex($a_i_Suffix, 2))
+EndFunc
+
+Func Leveler_FillQuestMarker($a_i_QuestID, ByRef $a_f_X, ByRef $a_f_Y)
+	If Not Leveler_HasQuest($a_i_QuestID) Then Return
+	Local $l_f_MX = Quest_GetQuestInfo($a_i_QuestID, "MarkerX")
+	Local $l_f_MY = Quest_GetQuestInfo($a_i_QuestID, "MarkerY")
+	If $l_f_MX = 0 And $l_f_MY = 0 Then Return
+	$a_f_X = $l_f_MX
+	$a_f_Y = $l_f_MY
 EndFunc
 
 Func Leveler_ResolveQuestXY($a_i_NpcModel, ByRef $a_f_X, ByRef $a_f_Y)
@@ -66,56 +151,111 @@ Func Leveler_ResolveQuestXY($a_i_NpcModel, ByRef $a_f_X, ByRef $a_f_Y)
 	$a_f_Y = Agent_GetAgentInfo($l_i_Npc, "Y")
 EndFunc
 
-; Walk the live quest log for an exact quest ID. Returns:
-; 0 = not in log, 1 = in log (objectives open), 2 = in log (reward ready, not turned in).
-; Bit 0x2 means the reward can be taken. It does NOT mean the quest is finished.
+Func Leveler_WaitQuestResult($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap, $a_i_Timeout = 4000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_IsWiped() Then Return False
+		If Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap) Then Return True
+		Sleep(200)
+	WEnd
+	Return Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap)
+EndFunc
+
+Func Leveler_QuestAlreadyDone($a_i_QuestID, $a_s_Mode)
+	Switch $a_s_Mode
+		Case "accept"
+			If $a_i_QuestID = 0 Then Return False
+			If Leveler_HasQuest($a_i_QuestID) Then Return True
+			Return Leveler_QuestFinished($a_i_QuestID)
+		Case "complete"
+			If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
+			If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
+			If $a_i_QuestID = 0 Then Return False
+			If Leveler_QuestNeedsHandIn($a_i_QuestID) Then Return False
+			Return True
+		Case Else
+			Return False
+	EndSwitch
+EndFunc
+
+Func Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap)
+	Switch $a_s_Mode
+		Case "accept"
+			Return Leveler_HasQuest($a_i_QuestID) Or Leveler_QuestFinished($a_i_QuestID)
+		Case "complete"
+			If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
+			If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
+			If Leveler_QuestNeedsHandIn($a_i_QuestID) Then Return False
+			Return True
+		Case "step", "skip"
+			If Map_GetMapID() <> $a_i_StartMap Then Return True
+			If $a_s_Mode = "step" And $a_i_QuestID <> 0 And Quest_GetQuestInfo($a_i_QuestID, "CanReward") Then Return True
+			Return Not Leveler_NpcHasQuestMarker($a_i_NpcModel)
+		Case Else
+			Return Leveler_HasQuest($a_i_QuestID)
+	EndSwitch
+EndFunc
+
+; 0 = not in log, 1 = in log (objectives open), 2 = in log (reward ready).
+; Bit 0x2 / CanReward means the reward can be taken. It is not finished for #317 or #318.
 Func Leveler_QuestLogMatch($a_i_QuestID)
 	If $a_i_QuestID = 0 Then Return 0
+	If Quest_GetQuestInfo($a_i_QuestID, "HasQuest") Then
+		If Quest_GetQuestInfo($a_i_QuestID, "CanReward") Then Return 2
+		If BitAND(Quest_GetQuestInfo($a_i_QuestID, "LogState"), 0x2) <> 0 Then Return 2
+		Return 1
+	EndIf
 	Local $l_p_Log = World_GetWorldInfo("QuestLog")
 	Local $l_i_Size = World_GetWorldInfo("QuestLogSize")
-	If $l_p_Log = 0 Or $l_i_Size <= 0 Then
-		If Quest_GetQuestInfo($a_i_QuestID, "HasQuest") Then
-			If Quest_GetQuestInfo($a_i_QuestID, "IsCompleted") Then Return 2
-			Return 1
-		EndIf
-		Return 0
-	EndIf
+	If $l_p_Log = 0 Or $l_i_Size <= 0 Then Return 0
 	Local $i
 	For $i = 0 To $l_i_Size - 1
 		Local $l_p_Entry = $l_p_Log + ($i * 0x34)
 		If Memory_Read($l_p_Entry, "long") <> $a_i_QuestID Then ContinueLoop
-		Local $l_i_State = Memory_Read($l_p_Entry + 0x4, "long")
-		If BitAND($l_i_State, 0x2) <> 0 Then Return 2
+		If BitAND(Memory_Read($l_p_Entry + 0x4, "long"), 0x2) <> 0 Then Return 2
 		Return 1
 	Next
 	Return 0
 EndFunc
 
 Func Leveler_QuestInLog($a_i_QuestID)
+	If $a_i_QuestID = 0 Then Return False
+	If Quest_GetQuestInfo($a_i_QuestID, "HasQuest") Then Return True
 	Return Leveler_QuestLogMatch($a_i_QuestID) <> 0
 EndFunc
 
 Func Leveler_QuestReadyForReward($a_i_QuestID)
+	If Quest_GetQuestInfo($a_i_QuestID, "CanReward") Then Return True
 	Return Leveler_QuestLogMatch($a_i_QuestID) = 2
 EndFunc
 
-; Still needs NPC work. Reward-ready (bit 0x2) is not finished for #317.
-; #317 stays active while it is in the log, even after a secondary is assigned.
+; #317 and #318 stay active until the NPC hand-in removes them from the log.
+Func Leveler_QuestNeedsTurnIn($a_i_QuestID)
+	If $a_i_QuestID = $QUEST_SECONDARY Then Return True
+	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return True
+	Return False
+EndFunc
+
 Func Leveler_QuestLogActive($a_i_QuestID)
-	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_QuestInLog($a_i_QuestID)
+	If Leveler_QuestNeedsTurnIn($a_i_QuestID) Then Return Leveler_QuestInLog($a_i_QuestID)
+	If Quest_GetQuestInfo($a_i_QuestID, "IsIncomplete") Then Return True
 	Return Leveler_QuestLogMatch($a_i_QuestID) = 1
 EndFunc
 
 Func Leveler_QuestLogCompleted($a_i_QuestID)
 	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
+	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
 	Return Leveler_QuestReadyForReward($a_i_QuestID)
 EndFunc
 
 Func Leveler_QuestLogStateValue($a_i_QuestID)
 	If $a_i_QuestID = 0 Then Return 0
+	Local $l_i_State = Quest_GetQuestInfo($a_i_QuestID, "LogState")
+	If $l_i_State <> 0 Then Return $l_i_State
 	Local $l_p_Log = World_GetWorldInfo("QuestLog")
 	Local $l_i_Size = World_GetWorldInfo("QuestLogSize")
-	If $l_p_Log = 0 Or $l_i_Size <= 0 Then Return Quest_GetQuestInfo($a_i_QuestID, "LogState")
+	If $l_p_Log = 0 Or $l_i_Size <= 0 Then Return 0
 	Local $i
 	For $i = 0 To $l_i_Size - 1
 		Local $l_p_Entry = $l_p_Log + ($i * 0x34)
@@ -129,8 +269,12 @@ Func Leveler_LogQuestState($a_i_QuestID, $a_s_Label = "")
 	Local $l_i_Match = Leveler_QuestLogMatch($a_i_QuestID)
 	Local $l_i_State = Leveler_QuestLogStateValue($a_i_QuestID)
 	Local $l_s_State = "not in log"
-	If $l_i_Match = 1 Then $l_s_State = "ACTIVE"
-	If $l_i_Match = 2 Then $l_s_State = "in log, reward ready (not turned in)"
+	If $l_i_Match = 0 And Leveler_QuestFinished($a_i_QuestID) Then $l_s_State = "completed (handed in)"
+	If $l_i_Match = 1 Then $l_s_State = "ACTIVE (complete dialog not taken)"
+	If $l_i_Match = 2 Then $l_s_State = "in log, reward ready (complete dialog not taken)"
+	If $a_i_QuestID = $QUEST_FORMAL_INTRO And $l_i_Match <> 0 Then
+		$l_s_State = "ACTIVE (needs Kayao Accept 0x17, LogState=0x" & Hex($l_i_State, 8) & ")"
+	EndIf
 	If $a_i_QuestID = $QUEST_SECONDARY Then
 		If $l_i_Match <> 0 Then
 			$l_s_State = "ACTIVE (needs Togo complete, LogState=0x" & Hex($l_i_State, 8) & ")"
@@ -181,57 +325,78 @@ Func Leveler_StepQuestID($a_i_Step)
 	Return 0
 EndFunc
 
-; True if the quest ID is anywhere in the log, including a turned-in entry.
 Func Leveler_HasQuest($a_i_QuestID)
+	If $a_i_QuestID = 0 Then Return False
+	If Quest_GetQuestInfo($a_i_QuestID, "HasQuest") Then Return True
+	Return Leveler_QuestInLog($a_i_QuestID)
+EndFunc
+
+; Still in the quest log, including reward-ready. IsCompleted is not a hand-in.
+Func Leveler_QuestNeedsHandIn($a_i_QuestID)
+	If $a_i_QuestID = 0 Then Return False
 	If Leveler_QuestInLog($a_i_QuestID) Then Return True
-	Return Quest_GetQuestInfo($a_i_QuestID, "HasQuest") = True
+	If Leveler_QuestReadyForReward($a_i_QuestID) Then Return True
+	If Quest_GetQuestInfo($a_i_QuestID, "HasQuest") Then Return True
+	Return False
 EndFunc
 
-; True only while the quest is still in progress.
 Func Leveler_HasIncompleteQuest($a_i_QuestID)
-	If $a_i_QuestID = $QUEST_SECONDARY Then
-		If Leveler_QuestInLog($a_i_QuestID) Then Return True
-		If Leveler_HasPostXunlaiProgress() Then Return False
-		If Leveler_HasSecondaryProfession() And Leveler_CharacterGold() < $XUNLAI_GOLD_COST Then Return True
-		Return False
-	EndIf
-	If Leveler_QuestLogActive($a_i_QuestID) Then Return True
-	If Not Leveler_HasQuest($a_i_QuestID) Then Return False
-	If Leveler_QuestFinished($a_i_QuestID) Then Return False
-	Return True
+	Return Leveler_QuestNeedsHandIn($a_i_QuestID)
 EndFunc
 
-Func Leveler_IsCurrentQuest($a_i_QuestID)
-	Return Quest_GetQuestInfo($a_i_QuestID, "IsCurrentQuest") = True
+; True in an explorable / mission. False in towns and while loading.
+Func Leveler_IsOutpost()
+	If Map_GetInstanceInfo("IsLoading") Then Return False
+	Return Map_GetInstanceInfo("IsOutpost") = True
 EndFunc
 
-Func Leveler_QuestLoopCondition($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap)
-	Switch $a_s_Mode
-		Case "complete"
-			Return Leveler_HasIncompleteQuest($a_i_QuestID)
-		Case "step"
-			If Map_GetMapID() <> $a_i_StartMap Then Return False
-			Return Leveler_NpcHasQuestMarker($a_i_NpcModel)
-		Case "skip"
-			Return Map_GetMapID() = $a_i_StartMap
-		Case Else
-			Return Not Leveler_HasQuest($a_i_QuestID) And Not Leveler_QuestFinished($a_i_QuestID)
+; After a Start/restart only: quest in the log, not in town, and this map belongs to that step.
+Func Leveler_ShouldResumeExplorable($a_i_QuestID = 0, $a_i_Step = -1)
+	If Not $g_b_ExplorableResume Then Return False
+	If Leveler_IsOutpost() Then Return False
+	If Map_GetInstanceInfo("IsLoading") Then Return False
+	If Not Map_GetInstanceInfo("IsExplorable") Then Return False
+	If $a_i_Step < 0 Then $a_i_Step = $g_i_Step
+	If $a_i_Step >= 0 And Not Leveler_StepAllowsMap($a_i_Step, Map_GetMapID()) Then Return False
+	If $a_i_QuestID = 0 Then Return Leveler_StepHasActiveQuest($a_i_Step)
+	Return Leveler_QuestNeedsHandIn($a_i_QuestID)
+EndFunc
+
+; Any quest this step is running. Used to stay in explorables after a disconnect.
+Func Leveler_StepHasActiveQuest($a_i_Step)
+	Switch $a_i_Step
+		Case $LEVELER_STEP_PARTY
+			Return Leveler_QuestNeedsHandIn($QUEST_FORMING_A_PARTY)
+		Case $LEVELER_STEP_SECONDARY, $LEVELER_STEP_TO_CHO
+			Return Leveler_QuestNeedsHandIn($QUEST_SECONDARY) Or Leveler_QuestNeedsHandIn($QUEST_FORMAL_INTRO)
+		Case $LEVELER_STEP_ATTR_1
+			Return Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE)
+		Case $LEVELER_STEP_TENGU
+			Return Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU)
+		Case $LEVELER_STEP_THREAT
+			Return Leveler_QuestNeedsHandIn($QUEST_THREAT_GROWS) Or Leveler_QuestNeedsHandIn($QUEST_JOURNEY_MASTER)
+		Case $LEVELER_STEP_ROAD
+			Return Leveler_QuestNeedsHandIn($QUEST_JOURNEY_MASTER) Or Leveler_QuestNeedsHandIn($QUEST_ROAD_LESS)
+		Case $LEVELER_STEP_TO_MARKET, $LEVELER_STEP_BURDEN
+			Return Leveler_QuestNeedsHandIn($QUEST_MASTERS_BURDEN)
+		Case $LEVELER_STEP_CURE
+			Return Leveler_QuestNeedsHandIn($QUEST_SEARCH_CURE)
+		Case $LEVELER_STEP_TO_BOREAL
+			Return Leveler_QuestNeedsHandIn($QUEST_EARTH_MOVE)
+		Case $LEVELER_STEP_TO_EOTN
+			Return Leveler_QuestNeedsHandIn($QUEST_EARTH_MOVE) Or Leveler_QuestNeedsHandIn($QUEST_AGAINST_DESTROYERS)
+		Case $LEVELER_STEP_ATTR_2
+			Return Leveler_QuestNeedsHandIn($QUEST_UNWELCOME)
+		Case $LEVELER_STEP_KILROY
+			Return Leveler_QuestNeedsHandIn($QUEST_PUNCH_CLOWN)
+		Case $LEVELER_STEP_TO_LA
+			Return Leveler_QuestNeedsHandIn($QUEST_CHAOS_KRYTA)
+		Case $LEVELER_STEP_TO_KAMADAN
+			Return Leveler_QuestNeedsHandIn($QUEST_SUNSPEARS_CANTHA)
+		Case $LEVELER_STEP_UNLOCK_OLIAS
+			Return Leveler_QuestNeedsHandIn($QUEST_OLIAS)
 	EndSwitch
-EndFunc
-
-Func Leveler_QuestSuccessCondition($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap)
-	Switch $a_s_Mode
-		Case "complete"
-			If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
-			If Leveler_QuestFinished($a_i_QuestID) Then Return True
-			If Not Leveler_HasQuest($a_i_QuestID) Then Return True
-			Return Not Leveler_HasIncompleteQuest($a_i_QuestID)
-		Case "step", "skip"
-			If Map_GetMapID() <> $a_i_StartMap Then Return True
-			Return Not Leveler_NpcHasQuestMarker($a_i_NpcModel)
-		Case Else
-			Return Leveler_HasQuest($a_i_QuestID) Or Leveler_QuestFinished($a_i_QuestID)
-	EndSwitch
+	Return False
 EndFunc
 
 Func Leveler_NpcHasQuestMarker($a_i_NpcModel)

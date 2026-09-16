@@ -15,31 +15,44 @@ Func Leveler_HasFormalOrLater()
 	If Leveler_HasQuest($QUEST_FORMAL_INTRO) Then Return True
 	If Leveler_QuestFinished($QUEST_FORMAL_INTRO) Then Return True
 	If Leveler_HasPostXunlaiProgress() Then Return True
+	; Skills / Cho happen after #318 is accepted. Do not send them back to Togo.
+	If Leveler_HasSecondaryProfession() And Not Leveler_QuestInLog($QUEST_SECONDARY) And Leveler_ZhaoDiSkillsUnlocked() Then Return True
 	Return False
 EndFunc
 
 ; #317 gold is granted on Togo's complete dialog, not when the secondary is assigned.
+; Once #317 has left the log the gold may already be spent on Xunlai / crafts.
 Func Leveler_SecondaryRewardTaken()
 	If Leveler_QuestInLog($QUEST_SECONDARY) Then Return False
-	If Leveler_HasPostXunlaiProgress() Then Return True
 	If Not Leveler_HasSecondaryProfession() Then Return False
-	If Leveler_CharacterGold() < $XUNLAI_GOLD_COST Then Return False
 	Return True
 EndFunc
 
-; Leave Unlock Secondary only after #317 is turned in and #318 is accepted.
+; Leave Unlock Secondary only after #317 is turned in and #318 is accepted or later.
 Func Leveler_SecondaryStepReadyToLeave()
 	If Not Leveler_HasSecondaryProfession() Then Return False
-	If Not Leveler_SecondaryRewardTaken() Then Return False
+	If Leveler_QuestInLog($QUEST_SECONDARY) Then Return False
 	If Not Leveler_HasFormalOrLater() Then Return False
 	Return True
 EndFunc
 
+; Formal Introduction is finished only after Kayao's Accept removes it from the log.
+Func Leveler_FormalIntroductionTurnedIn()
+	If Leveler_QuestInLog($QUEST_FORMAL_INTRO) Then Return False
+	If Leveler_HasPostXunlaiProgress() Then Return True
+	If Quest_GetQuestInfo($QUEST_FORMAL_INTRO, "IsCompleted") Then Return True
+	Local $l_i_Map = Map_GetMapID()
+	If Leveler_HasSecondaryProfession() And ($l_i_Map = $MAP_CHO_OUTPOST Or $l_i_Map = $MAP_RAN_MUSU Or $l_i_Map = $MAP_CHO_EXPLORABLE) Then Return True
+	Return False
+EndFunc
+
 Func Leveler_QuestFinished($a_i_QuestID)
 	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
-	If Leveler_QuestLogActive($a_i_QuestID) Then Return False
-	If Leveler_QuestReadyForReward($a_i_QuestID) Then Return True
+	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
+	If $a_i_QuestID = $QUEST_ROAD_LESS Then Return Leveler_RoadLessTraveledDone()
+	If Leveler_QuestNeedsHandIn($a_i_QuestID) Then Return False
 	If Quest_GetQuestInfo($a_i_QuestID, "IsCompleted") Then Return True
+	If Leveler_IsQuestDone($a_i_QuestID) Then Return True
 	Return False
 EndFunc
 
@@ -195,11 +208,15 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 		Leveler_MarkQuestDone($QUEST_SECONDARY)
 		Leveler_MarkQuestDone($QUEST_FORMING_A_PARTY)
 	EndIf
-	If Leveler_QuestProgress($QUEST_WARNING_TENGU) Or Leveler_QuestProgress($QUEST_THREAT_GROWS) Or Leveler_QuestProgress($QUEST_JOURNEY_MASTER) Or Leveler_QuestProgress($QUEST_ROAD_LESS) Then
-		Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
+	If Not Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then
+		If Leveler_QuestProgress($QUEST_WARNING_TENGU) Or Leveler_QuestFinished($QUEST_WARNING_TENGU) Or Leveler_QuestProgress($QUEST_THREAT_GROWS) Or Leveler_QuestProgress($QUEST_JOURNEY_MASTER) Or Leveler_QuestProgress($QUEST_ROAD_LESS) Then
+			Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
+		EndIf
 	EndIf
-	If Leveler_QuestProgress($QUEST_THREAT_GROWS) Or Leveler_QuestProgress($QUEST_JOURNEY_MASTER) Or Leveler_QuestProgress($QUEST_ROAD_LESS) Then
-		Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
+	If Not Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then
+		If Leveler_QuestFinished($QUEST_WARNING_TENGU) Or Leveler_QuestProgress($QUEST_THREAT_GROWS) Or Leveler_QuestProgress($QUEST_JOURNEY_MASTER) Or Leveler_QuestProgress($QUEST_ROAD_LESS) Then
+			Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
+		EndIf
 	EndIf
 	If Leveler_QuestProgress($QUEST_JOURNEY_MASTER) Or Leveler_QuestProgress($QUEST_ROAD_LESS) Then
 		Leveler_MarkQuestDone($QUEST_THREAT_GROWS)
@@ -230,11 +247,6 @@ Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
 	Leveler_MarkQuestDone($a_i_QuestID)
 	Out("[Step] " & $a_s_Name & " already completed")
 	Return True
-EndFunc
-
-Func Leveler_FormingAPartyDone()
-	If Leveler_HasIncompleteQuest($QUEST_FORMING_A_PARTY) Then Return False
-	Return Leveler_IsQuestDone($QUEST_FORMING_A_PARTY) Or Leveler_QuestFinished($QUEST_FORMING_A_PARTY)
 EndFunc
 
 Func Leveler_OnOverlook()
@@ -273,22 +285,49 @@ Func Leveler_InterruptSkillsUnlocked()
 	Return True
 EndFunc
 
-; Early trainer done. Used by status / PrepareForBattle. Not Cry of Frustration.
-Func Leveler_SkillsUnlocked()
-	Return Leveler_ZhaoDiSkillsUnlocked()
-EndFunc
-
 Func Leveler_Skills2Unlocked()
-	If Not Account_IsSkillUnlocked($SKILL_POWER_SPIKE) Then Return False
-	If Leveler_IsMesmer() And Not Account_IsSkillUnlocked($SKILL_BACKFIRE) Then Return False
+	If Not Leveler_InterruptSkillsUnlocked() Then Return False
+	If Leveler_HasMesmer() And Not World_IsSkillLearnt($SKILL_BACKFIRE) Then Return False
 	Return True
 EndFunc
 
 Func Leveler_HasLaterQuest()
-	If Leveler_HasIncompleteQuest($QUEST_WARNING_TENGU) Then Return True
-	If Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Then Return True
-	If Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Then Return True
-	If Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Then Return True
+	If Leveler_HasQuest($QUEST_WARNING_TENGU) Or Leveler_HasIncompleteQuest($QUEST_WARNING_TENGU) Then Return True
+	If Leveler_HasQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Then Return True
+	If Leveler_HasQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Then Return True
+	If Leveler_HasQuest($QUEST_ROAD_LESS) Or Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Then Return True
+	Return False
+EndFunc
+
+; This character already left the Shing Jea armor crafter. Do not rerun monastery crafts.
+Func Leveler_PastMonasteryArmor()
+	If Leveler_HasMonasteryArmor() Then Return True
+	If Leveler_HasSeitungArmor() Then Return True
+	If Leveler_QuestProgress($QUEST_LOST_TREASURE) Then Return True
+	If Leveler_HasLaterQuest() Then Return True
+	If Leveler_IsQuestDone($QUEST_ROAD_LESS) Then Return True
+	Local $l_i_Map = Map_GetMapID()
+	If $l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_SAOSHANG Or $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU Or $l_i_Map = $MAP_ZEN_OP Then Return True
+	Return False
+EndFunc
+
+; The Road Less Traveled is done only after the Seitung Harbor hand-in. Journey still in the log is not enough.
+Func Leveler_RoadLessTraveledDone()
+	If Leveler_QuestNeedsHandIn($QUEST_ROAD_LESS) Then Return False
+	If Leveler_HasQuest($QUEST_JOURNEY_MASTER) Then Return False
+	If Leveler_QuestNeedsHandIn($QUEST_JOURNEY_MASTER) Then Return False
+	If Map_GetMapID() = $MAP_PANJIANG Or Map_GetMapID() = $MAP_TSUMEI Or Map_GetMapID() = $MAP_SUNQUA_VALE Or Map_GetMapID() = $MAP_KINYA Then Return False
+	If Map_IsMapUnlocked($MAP_SEITUNG) Then Return True
+	If Map_GetMapID() = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") Then Return True
+	Return False
+EndFunc
+
+Func Leveler_LostTreasureAlreadyDone()
+	If Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then Return False
+	If Quest_GetQuestInfo($QUEST_LOST_TREASURE, "IsCompleted") Then Return True
+	If Leveler_IsQuestDone($QUEST_LOST_TREASURE) Then Return True
+	If Leveler_QuestFinished($QUEST_THREAT_GROWS) Or Leveler_HasQuest($QUEST_THREAT_GROWS) Then Return True
+	If Leveler_HasQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasQuest($QUEST_ROAD_LESS) Then Return True
 	Return False
 EndFunc
 
@@ -304,7 +343,6 @@ Func Leveler_StatusCheck()
 	Local $l_b_ToZenPath = $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU
 	Local $l_b_ShingJea = Map_IsMapUnlocked($MAP_SHING_JEA) Or $l_i_Map = $MAP_SHING_JEA Or $l_b_Cho Or $l_b_RanMusu Or $l_b_Seitung
 	Local $l_b_SeitungArmor = Leveler_HasSeitungArmor()
-	Local $l_b_Skill61 = Leveler_Skills2Unlocked()
 	Local $l_b_Marketplace = Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_i_Map = $MAP_KAINENG_DOCKS Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN Or $l_i_Map = $MAP_KAINENG
 	Local $l_b_Kaineng = Map_IsMapUnlocked($MAP_KAINENG) Or $l_i_Map = $MAP_KAINENG
 	Local $l_b_MaxArmor = Leveler_HasMaxArmor()
@@ -335,31 +373,64 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_OVERLOOK] = $l_b_ShingJea And Not Leveler_OnOverlook()
 	$g_ab_StepDone[$LEVELER_STEP_PARTY] = (Not Leveler_QuestLogActive($QUEST_FORMING_A_PARTY)) And (Leveler_QuestLogCompleted($QUEST_FORMING_A_PARTY) Or Leveler_HasSecondaryProfession() Or Leveler_HasQuest($QUEST_SECONDARY) Or Leveler_HasQuest($QUEST_FORMAL_INTRO))
 	$g_ab_StepDone[$LEVELER_STEP_SECONDARY] = Leveler_SecondaryStepReadyToLeave()
-	Leveler_LogQuestState($QUEST_FORMING_A_PARTY, "Forming A Party")
-	Leveler_LogQuestState($QUEST_SECONDARY, "Choose Secondary")
-	Leveler_LogQuestState($QUEST_FORMAL_INTRO, "Formal Introduction")
 	Out("[Status] Profession " & Leveler_PrimaryProfession() & "/" & Leveler_SecondaryProfession() & "  Gold " & Leveler_CharacterGold() & "  Secondary step done=" & $g_ab_StepDone[$LEVELER_STEP_SECONDARY])
 	$g_ab_StepDone[$LEVELER_STEP_XUNLAI] = Leveler_XunlaiUnlocked()
-	$g_ab_StepDone[$LEVELER_STEP_WEAPON] = Leveler_HasCraftedWeapon() And Leveler_IsModelEquipped($MODEL_CLAIRVOYANT_STAFF)
-	$g_ab_StepDone[$LEVELER_STEP_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMonasteryPieces()) Or $l_b_SeitungArmor
-	$g_ab_StepDone[$LEVELER_STEP_DESTROY] = Not Leveler_HasStarterArmor() And (Leveler_HasMonasteryArmor() Or $l_b_SeitungArmor)
+	; After Road / Seitung, do not send this character back to the monastery weapon/armor crafts.
+	Local $l_b_PastMonArmor = Leveler_PastMonasteryArmor()
+	$g_ab_StepDone[$LEVELER_STEP_WEAPON] = (Leveler_HasCraftedWeapon() And Leveler_IsModelEquipped($MODEL_CLAIRVOYANT_STAFF)) Or $l_b_PastMonArmor
+	$g_ab_StepDone[$LEVELER_STEP_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMonasteryPieces()) Or $l_b_PastMonArmor
+	$g_ab_StepDone[$LEVELER_STEP_DESTROY] = (Not Leveler_HasStarterArmor() And (Leveler_HasMonasteryArmor() Or $l_b_SeitungArmor)) Or $l_b_PastMonArmor
 	$g_ab_StepDone[$LEVELER_STEP_BAGS] = Leveler_HasExtendedBags()
 	$g_ab_StepDone[$LEVELER_STEP_SKILLS] = Leveler_ZhaoDiSkillsUnlocked() Or Leveler_QuestProgress($QUEST_LOST_TREASURE) Or Leveler_HasLaterQuest()
-	$g_ab_StepDone[$LEVELER_STEP_TO_CHO] = $l_b_Cho Or $l_b_RanMusu Or $l_b_Seitung
+	$g_ab_StepDone[$LEVELER_STEP_TO_CHO] = $l_b_RanMusu Or $l_b_Seitung Or ($l_b_Cho And Not Leveler_HasIncompleteQuest($QUEST_FORMAL_INTRO) And Leveler_FormalIntroductionTurnedIn())
 	$g_ab_StepDone[$LEVELER_STEP_CHO_MISSION] = $l_b_RanMusu Or $l_b_Seitung Or $l_b_TsumeiPath
 
-	$g_ab_StepDone[$LEVELER_STEP_ATTR_1] = (Leveler_IsQuestDone($QUEST_LOST_TREASURE) Or (Not Leveler_HasIncompleteQuest($QUEST_LOST_TREASURE) And (Leveler_HasLaterQuest() Or $l_b_Seitung Or $l_b_TsumeiPath))) And $l_i_Map <> $MAP_CHO_EXPLORABLE
-	$g_ab_StepDone[$LEVELER_STEP_TENGU] = Leveler_IsQuestDone($QUEST_WARNING_TENGU) Or (Not Leveler_HasIncompleteQuest($QUEST_WARNING_TENGU) And (Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Or $l_b_Seitung Or $l_b_TsumeiPath))
-	$g_ab_StepDone[$LEVELER_STEP_THREAT] = (Leveler_IsQuestDone($QUEST_THREAT_GROWS) Or (Not Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) And (Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Or $l_b_Seitung))) And $l_i_Map <> $MAP_TSUMEI And $l_i_Map <> $MAP_PANJIANG
-	$g_ab_StepDone[$LEVELER_STEP_ROAD] = Leveler_IsQuestDone($QUEST_ROAD_LESS) Or $l_b_SeitungArmor Or (($l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU Or $l_i_Map = $MAP_ZEN_OP) And Not Leveler_HasIncompleteQuest($QUEST_ROAD_LESS))
+	$g_ab_StepDone[$LEVELER_STEP_ATTR_1] = Leveler_LostTreasureAlreadyDone()
+	If Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then
+		$g_ab_StepDone[$LEVELER_STEP_TENGU] = False
+	ElseIf Leveler_QuestFinished($QUEST_WARNING_TENGU) Or Quest_GetQuestInfo($QUEST_WARNING_TENGU, "IsCompleted") Then
+		$g_ab_StepDone[$LEVELER_STEP_TENGU] = True
+		Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
+	ElseIf Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then
+		$g_ab_StepDone[$LEVELER_STEP_TENGU] = True
+		Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
+		Out("[Status] Warning the Tengu is already out of the log. Logging it completed and staying on Lost Treasure.")
+	Else
+		$g_ab_StepDone[$LEVELER_STEP_TENGU] = Leveler_IsQuestDone($QUEST_WARNING_TENGU) Or Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Or $l_b_Seitung Or $l_b_TsumeiPath
+		If $g_ab_StepDone[$LEVELER_STEP_TENGU] Then Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
+	EndIf
+	If Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) And Leveler_NearLostTreasureHandIn() Then
+		Out("[Status] Already at Raitahn Nem hand-in " & Round($LOST_CHO_END_X) & ", " & Round($LOST_CHO_END_Y) & ". Will send dialog 0x17 without replaying the escort.")
+	EndIf
+	Leveler_LogActiveQuests()
+	If $g_b_ExplorableResume And Not Leveler_IsOutpost() And Map_GetInstanceInfo("IsExplorable") Then
+		Out("[Status] Restart recovery: not in an outpost (map " & $l_i_Map & "). Will resume only if this map belongs to the current quest.")
+	EndIf
+	Out("[Status] Lost Treasure step done=" & $g_ab_StepDone[$LEVELER_STEP_ATTR_1] & "  Tengu step done=" & $g_ab_StepDone[$LEVELER_STEP_TENGU])
+	If Leveler_QuestNeedsHandIn($QUEST_THREAT_GROWS) Then
+		$g_ab_StepDone[$LEVELER_STEP_THREAT] = False
+	ElseIf Leveler_HasQuest($QUEST_JOURNEY_MASTER) Or Leveler_QuestNeedsHandIn($QUEST_JOURNEY_MASTER) Or Leveler_QuestNeedsHandIn($QUEST_ROAD_LESS) Or $l_b_Seitung Then
+		$g_ab_StepDone[$LEVELER_STEP_THREAT] = True
+		Leveler_MarkQuestDone($QUEST_THREAT_GROWS)
+	Else
+		$g_ab_StepDone[$LEVELER_STEP_THREAT] = Leveler_IsQuestDone($QUEST_THREAT_GROWS) Or Leveler_QuestFinished($QUEST_THREAT_GROWS)
+	EndIf
+	If Leveler_QuestNeedsHandIn($QUEST_ROAD_LESS) Or Leveler_HasQuest($QUEST_JOURNEY_MASTER) Then
+		$g_ab_StepDone[$LEVELER_STEP_ROAD] = False
+	Else
+		$g_ab_StepDone[$LEVELER_STEP_ROAD] = Leveler_RoadLessTraveledDone()
+	EndIf
 	$g_ab_StepDone[$LEVELER_STEP_SEITUNG] = Leveler_ArmorSetEquipped(Leveler_GetSeitungPieces()) Or $l_b_MaxArmor
+	If Not $g_ab_StepDone[$LEVELER_STEP_SEITUNG] And $g_ab_StepDone[$LEVELER_STEP_ROAD] Then
+		Out("[Status] Road is handed in. Next armor craft is Seitung Harbor, not monastery.")
+	EndIf
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_MON] = $l_b_SeitungArmor And (Not Leveler_HasMonasteryArmor() Or $l_b_ZenOp Or $l_b_ToZenPath)
 	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp Or $l_b_ToZenPath
-	; Skill 61 is Leech Signet from Zhao Di. Do not mark this later trainer done from that.
-	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = $l_b_Marketplace
 	$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or ($l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Not $l_b_ToZenPath)
 	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = (Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) And $l_i_Map <> $MAP_KAINENG_DOCKS
 	$g_ab_StepDone[$LEVELER_STEP_TO_KC] = $l_b_Kaineng
+	; Michiko in Kaineng Center. Zhao Di Leech Signet (61) must not skip this.
+	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = Leveler_Skills2Unlocked()
 	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $l_b_MaxArmor And (Not $l_b_SeitungArmor Or Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_SEARCH_CURE) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN))
 	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_BROTHER_TOSAI) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN)
@@ -389,6 +460,21 @@ Func Leveler_StatusCheck()
 	Out("[Status] Map " & $l_i_Map & "  Next step: " & $l_i_Next & " — " & $g_as_StepNames[$l_i_Next])
 	Leveler_RefreshStepList($l_i_Next)
 	Return $l_i_Next
+EndFunc
+
+Func Leveler_LogActiveQuests()
+	Local $l_ai_Ids[8] = [$QUEST_FORMING_A_PARTY, $QUEST_SECONDARY, $QUEST_FORMAL_INTRO, $QUEST_LOST_TREASURE, $QUEST_WARNING_TENGU, $QUEST_THREAT_GROWS, $QUEST_JOURNEY_MASTER, $QUEST_ROAD_LESS]
+	Local $l_as_Names[8] = ["Forming A Party", "Choose Secondary", "Formal Introduction", "Lost Treasure", "Warning the Tengu", "The Threat Grows", "Journey of the Master", "The Road Less Traveled"]
+	Local $i
+	Local $l_b_Any = False
+	For $i = 0 To 7
+		If Leveler_QuestInLog($l_ai_Ids[$i]) Then
+			If Not $l_b_Any Then Out("[Status] Quests still in the log:")
+			$l_b_Any = True
+			Leveler_LogQuestState($l_ai_Ids[$i], $l_as_Names[$i])
+		EndIf
+	Next
+	If Not $l_b_Any Then Out("[Status] No Phase 1 quests are in the log")
 EndFunc
 
 Func Leveler_FirstIncompleteStep()

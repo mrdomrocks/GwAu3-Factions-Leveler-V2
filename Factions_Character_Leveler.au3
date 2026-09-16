@@ -148,10 +148,13 @@ Func StartBot()
 	$g_b_LevelerPaused = False
 	$g_b_LevelerFailed = False
 	$g_b_NeedStatusCheck = True
+	$g_b_LostTreasureToTenguOnce = False
+	$g_b_ExplorableResume = True
 	Leveler_RefreshQuestFlags(True)
 
 	Out("Initialized for: " & Player_GetCharName())
 	Out("Map: " & Map_GetMapID() & "  Pos: " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")))
+	If Not Leveler_IsOutpost() Then Out("Restart recovery is on. Will resume the current quest here if it is in the log.")
 	Out("Core ready. Returning to the run loop.")
 EndFunc
 
