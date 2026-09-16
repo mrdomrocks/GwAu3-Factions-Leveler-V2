@@ -331,6 +331,22 @@ Func Wine_EnterLooksStarted($a_i_StartMap)
 	Return False
 EndFunc
 
+Func Wine_LevelerOverlayHold()
+	If Not IsDeclared("g_h_MainGui") Then Return
+	If $g_h_MainGui = 0 Then Return
+	WinSetOnTop($g_h_MainGui, "", 0)
+	WinSetState($g_h_MainGui, "", @SW_HIDE)
+EndFunc
+
+Func Wine_LevelerOverlayRestore()
+	If Not IsDeclared("g_h_MainGui") Then Return
+	If $g_h_MainGui = 0 Then Return
+	WinSetState($g_h_MainGui, "", @SW_SHOW)
+	If IsDeclared("g_h_OnTopCheckbox") And BitAND(GUICtrlRead($g_h_OnTopCheckbox), $GUI_CHECKED) Then
+		WinSetOnTop($g_h_MainGui, "", 1)
+	EndIf
+EndFunc
+
 Func Wine_EnterChallenge()
 	If $g_b_WineEnterSent Then
 		Out("Wine enter: mission load already started this attach; not clicking again.")
@@ -345,15 +361,17 @@ Func Wine_EnterChallenge()
 	EndIf
 
 	Local $iStart = Map_GetMapID()
+	Wine_LevelerOverlayHold()
 	WinActivate($hWnd)
 	Sleep(250)
-	Out("Wine enter: UI click top-center Enter Mission (no queue packet, no Ui_EnterChallenge).")
+	Out("Wine enter: UI click top-bar Enter Mission pill (overlay hidden).")
 
 	ControlSend($hWnd, "", "", "{ENTER}")
 	Sleep(900)
 	If Wine_EnterLooksStarted($iStart) Then
 		$g_b_WineEnterSent = True
 		Out("Wine enter: {ENTER} started the mission load")
+		Wine_LevelerOverlayRestore()
 		Return True
 	EndIf
 
@@ -367,16 +385,16 @@ Func Wine_EnterChallenge()
 	If $iW < 200 Then $iW = 800
 	If $iH < 200 Then $iH = 600
 	Local $iCx = Int($iW / 2)
-	Out("Wine enter: Gw client " & $iW & "x" & $iH & " top-center " & $iCx & ",80-ish")
-
-	; Stock Factions outpost Enter Mission is the top-center banner, not the
-	; left party column. On wine-gw 1272x713 that is ~636,57–135.
-	Local $aiX[8] = [$iCx, $iCx, $iCx, $iCx - 50, $iCx + 50, $iCx - 90, $iCx + 90, $iCx]
-	Local $aiY[8] = [Int($iH * 0.08), Int($iH * 0.11), Int($iH * 0.14), Int($iH * 0.12), Int($iH * 0.12), Int($iH * 0.16), Int($iH * 0.16), Int($iH * 0.19)]
+	; Screenshot: small blue pill on the top HUD row (same row as district),
+	; centered, above the On-Top leveler. On 1272x713 that is ~636,20–60.
+	Out("Wine enter: Gw client " & $iW & "x" & $iH & " pill at " & $iCx & ",20-60")
+	Local $aiX[8] = [$iCx, $iCx, $iCx, $iCx, $iCx - 40, $iCx + 40, $iCx - 70, $iCx + 70]
+	Local $aiY[8] = [22, 30, 38, 48, 36, 36, 44, 44]
 	Local $i = 0
 	For $i = 0 To 7
 		If Wine_EnterLooksStarted($iStart) Then
 			$g_b_WineEnterSent = True
+			Wine_LevelerOverlayRestore()
 			Return True
 		EndIf
 		Wine_ClientClick($hWnd, $aiX[$i], $aiY[$i])
@@ -385,6 +403,7 @@ Func Wine_EnterChallenge()
 	ControlSend($hWnd, "", "", "{ENTER}")
 	Sleep(400)
 	If Wine_EnterLooksStarted($iStart) Then $g_b_WineEnterSent = True
+	Wine_LevelerOverlayRestore()
 	Return True
 EndFunc
 
