@@ -311,16 +311,111 @@ EndFunc
 ; Queue enters (Ui_EnterChallenge / PARTY_ENTER_CHALLENGE 0xA5) both started
 ; a load then dumped this wine-gw client to character select. Click the
 ; visible Enter Mission button instead — no PacketSend, no EnterMission stub.
-Func Wine_ClientClick($a_h_Wnd, $a_i_X, $a_i_Y)
-	If $a_h_Wnd = 0 Then Return
+;
+; wine-gw: ClientToScreen(636,22) -> (636,52) landed ABOVE the Gw window
+; (xdotool X=5 Y=59 1272x713). Do not trust ClientToScreen; post client
+; WM_LBUTTON* / ControlClick, and only MouseClick a point inside WinGetPos.
+
+Func Wine_WindowClass($a_h_Wnd)
+	If $a_h_Wnd = 0 Then Return ""
+	Local $a = DllCall("user32.dll", "int", "GetClassNameA", "hwnd", $a_h_Wnd, "str", "", "int", 256)
+	If IsArray($a) Then Return $a[2]
+	Return ""
+EndFunc
+
+; Prefer ArenaNet_Dx_Window_Class (the game client), not the frame.
+Func Wine_GwClientHwnd($a_h_Wnd)
+	If $a_h_Wnd = 0 Then $a_h_Wnd = $g_h_GWWindow
+	If $a_h_Wnd = 0 Then $a_h_Wnd = Wine_FindGwHwnd($g_i_GWProcessId)
+	If $a_h_Wnd = 0 Then Return 0
+	If Wine_WindowClass($a_h_Wnd) = $GC_S_CLASS_DX_WINDOW Then Return $a_h_Wnd
+	Local $iPid = Number(WinGetProcess($a_h_Wnd))
+	Local $aClass = WinList("[CLASS:" & $GC_S_CLASS_DX_WINDOW & "]")
+	If IsArray($aClass) Then
+		Local $i = 1
+		For $i = 1 To $aClass[0][0]
+			If $iPid > 0 And WinGetProcess($aClass[$i][1]) <> $iPid Then ContinueLoop
+			Return $aClass[$i][1]
+		Next
+	EndIf
+	Return $a_h_Wnd
+EndFunc
+
+; Client (x,y) -> screen using WinGetPos + frame metrics. Rejects ClientToScreen
+; when that point is outside the window rect (Wine's typical miss).
+Func Wine_ClientToScreenSafe($a_h_Wnd, $a_i_X, $a_i_Y)
+	Local $aOut[2] = [0, 0]
+	If $a_h_Wnd = 0 Then Return $aOut
+	Local $aPos = WinGetPos($a_h_Wnd)
+	Local $aCli = WinGetClientSize($a_h_Wnd)
+	Local $iL = 0
+	Local $iT = 0
+	Local $iW = 0
+	Local $iH = 0
+	If IsArray($aPos) Then
+		$iL = Number($aPos[0])
+		$iT = Number($aPos[1])
+		$iW = Number($aPos[2])
+		$iH = Number($aPos[3])
+	EndIf
+	Local $iCw = $iW
+	Local $iCh = $iH
+	If IsArray($aCli) Then
+		$iCw = Number($aCli[0])
+		$iCh = Number($aCli[1])
+	EndIf
+	Local $iBorder = 0
+	Local $iTitle = 0
+	If $iW > $iCw And $iH > $iCh Then
+		$iBorder = Int(($iW - $iCw) / 2)
+		$iTitle = $iH - $iCh - $iBorder
+		If $iTitle < 0 Then $iTitle = 0
+	EndIf
+	Local $iSx = $iL + $iBorder + $a_i_X
+	Local $iSy = $iT + $iTitle + $a_i_Y
+
 	Local $tPt = DllStructCreate("int;int")
 	DllStructSetData($tPt, 1, $a_i_X)
 	DllStructSetData($tPt, 2, $a_i_Y)
 	DllCall("user32.dll", "bool", "ClientToScreen", "hwnd", $a_h_Wnd, "ptr", DllStructGetPtr($tPt))
-	Local $iSx = DllStructGetData($tPt, 1)
-	Local $iSy = DllStructGetData($tPt, 2)
-	Out("Wine enter: click client " & $a_i_X & "," & $a_i_Y & " -> screen " & $iSx & "," & $iSy)
-	MouseClick("left", $iSx, $iSy, 1, 0)
+	Local $iCtsX = Number(DllStructGetData($tPt, 1))
+	Local $iCtsY = Number(DllStructGetData($tPt, 2))
+	If $iW > 0 And $iH > 0 And $iCtsX >= $iL And $iCtsX < $iL + $iW And $iCtsY >= $iT And $iCtsY < $iT + $iH Then
+		$aOut[0] = $iCtsX
+		$aOut[1] = $iCtsY
+		Return $aOut
+	EndIf
+	If $iCtsX <> 0 Or $iCtsY <> 0 Then
+		Out("Wine enter: ClientToScreen " & $iCtsX & "," & $iCtsY & " is outside Gw " & $iL & "," & $iT & " " & $iW & "x" & $iH & "; using WinGetPos " & $iSx & "," & $iSy)
+	EndIf
+	$aOut[0] = $iSx
+	$aOut[1] = $iSy
+	Return $aOut
+EndFunc
+
+Func Wine_PostClientClick($a_h_Wnd, $a_i_X, $a_i_Y)
+	If $a_h_Wnd = 0 Then Return
+	Local $iLp = BitOR(BitAND($a_i_X, 0xFFFF), BitShift(BitAND($a_i_Y, 0xFFFF), -16))
+	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0200, "wparam", 0, "lparam", $iLp)
+	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0201, "wparam", 1, "lparam", $iLp)
+	Sleep(40)
+	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0202, "wparam", 0, "lparam", $iLp)
+EndFunc
+
+Func Wine_ClientClick($a_h_Wnd, $a_i_X, $a_i_Y)
+	If $a_h_Wnd = 0 Then Return
+	Local $hCli = Wine_GwClientHwnd($a_h_Wnd)
+	If $hCli = 0 Then $hCli = $a_h_Wnd
+	Out("Wine enter: client click " & $a_i_X & "," & $a_i_Y & " hwnd=" & $hCli & " class=" & Wine_WindowClass($hCli))
+	Wine_PostClientClick($hCli, $a_i_X, $a_i_Y)
+	ControlClick($hCli, "", "", "left", 1, $a_i_X, $a_i_Y)
+	Local $aScr = Wine_ClientToScreenSafe($hCli, $a_i_X, $a_i_Y)
+	If $aScr[0] <> 0 Or $aScr[1] <> 0 Then
+		Out("Wine enter: validated screen " & $aScr[0] & "," & $aScr[1])
+		Local $iMode = Opt("MouseCoordMode", 1)
+		MouseClick("left", $aScr[0], $aScr[1], 1, 0)
+		Opt("MouseCoordMode", $iMode)
+	EndIf
 EndFunc
 
 Func Wine_EnterLooksStarted($a_i_StartMap)
@@ -374,20 +469,17 @@ Func Wine_EnterChallenge()
 	EndIf
 
 	Local $iStart = Map_GetMapID()
+	Local $hCli = Wine_GwClientHwnd($hWnd)
+	If $hCli <> 0 Then $hWnd = $hCli
 	Wine_LevelerOverlayHold()
+	WinSetOnTop($hWnd, "", 1)
 	WinActivate($hWnd)
-	Sleep(250)
-	Out("Wine enter: UI click top-bar Enter Mission pill (overlay hidden).")
+	WinWaitActive($hWnd, "", 2)
+	DllCall("user32.dll", "bool", "SetForegroundWindow", "hwnd", $hWnd)
+	DllCall("user32.dll", "bool", "BringWindowToTop", "hwnd", $hWnd)
+	Sleep(400)
 
-	ControlSend($hWnd, "", "", "{ENTER}")
-	Sleep(900)
-	If Wine_EnterLooksStarted($iStart) Then
-		$g_b_WineEnterSent = True
-		Out("Wine enter: {ENTER} started the mission load")
-		Wine_LevelerOverlayRestore()
-		Return True
-	EndIf
-
+	Local $aPos = WinGetPos($hWnd)
 	Local $aSz = WinGetClientSize($hWnd)
 	Local $iW = 800
 	Local $iH = 600
@@ -397,27 +489,53 @@ Func Wine_EnterChallenge()
 	EndIf
 	If $iW < 200 Then $iW = 800
 	If $iH < 200 Then $iH = 600
+	Local $sPos = "?"
+	If IsArray($aPos) Then $sPos = $aPos[0] & "," & $aPos[1] & " " & $aPos[2] & "x" & $aPos[3]
 	Local $iCx = Int($iW / 2)
-	; Screenshot: small blue pill on the top HUD row (same row as district),
-	; centered, above the On-Top leveler. On 1272x713 that is ~636,20–60.
-	Out("Wine enter: Gw client " & $iW & "x" & $iH & " pill at " & $iCx & ",20-60")
-	Local $aiX[8] = [$iCx, $iCx, $iCx, $iCx, $iCx - 40, $iCx + 40, $iCx - 70, $iCx + 70]
-	Local $aiY[8] = [22, 30, 38, 48, 36, 36, 44, 44]
-	Local $i = 0
-	For $i = 0 To 7
-		If Wine_EnterLooksStarted($iStart) Then
-			$g_b_WineEnterSent = True
-			Wine_LevelerOverlayRestore()
-			Return True
-		EndIf
-		Wine_ClientClick($hWnd, $aiX[$i], $aiY[$i])
-		Sleep(700)
+	; Pill is mid-top HUD, just below the title, same row as district.
+	; Do not use ClientToScreen-only Y=20–60 — those mapped above the window.
+	Out("Wine enter: hwnd=" & $hWnd & " class=" & Wine_WindowClass($hWnd) & " pos=" & $sPos & " client=" & $iW & "x" & $iH & " pill " & $iCx & ",12-80 (overlay hidden)")
+
+	ControlSend($hWnd, "", "", "{ENTER}")
+	Sleep(700)
+	If Wine_EnterLooksStarted($iStart) Then
+		$g_b_WineEnterSent = True
+		Out("Wine enter: {ENTER} started the mission load")
+		WinSetOnTop($hWnd, "", 0)
+		Wine_LevelerOverlayRestore()
+		Return True
+	EndIf
+
+	Local $aiY[7] = [18, 28, 40, 52, 64, 80, 24]
+	Local $aiXOff[3] = [0, -40, 40]
+	Local $iY = 0
+	Local $iX = 0
+	For $iY = 0 To 6
+		For $iX = 0 To 2
+			If Wine_EnterLooksStarted($iStart) Then
+				$g_b_WineEnterSent = True
+				Out("Wine enter: click started the mission load")
+				WinSetOnTop($hWnd, "", 0)
+				Wine_LevelerOverlayRestore()
+				Return True
+			EndIf
+			Wine_ClientClick($hWnd, $iCx + $aiXOff[$iX], $aiY[$iY])
+			Sleep(450)
+		Next
 	Next
 	ControlSend($hWnd, "", "", "{ENTER}")
-	Sleep(400)
-	If Wine_EnterLooksStarted($iStart) Then $g_b_WineEnterSent = True
+	Sleep(600)
+	If Wine_EnterLooksStarted($iStart) Then
+		$g_b_WineEnterSent = True
+		Out("Wine enter: {ENTER} started the mission load")
+		WinSetOnTop($hWnd, "", 0)
+		Wine_LevelerOverlayRestore()
+		Return True
+	EndIf
+	WinSetOnTop($hWnd, "", 0)
 	Wine_LevelerOverlayRestore()
-	Return True
+	Out("Wine enter: clicks did not start a load (still map " & Map_GetMapID() & "). Not latching; will retry next step.")
+	Return False
 EndFunc
 
 Func Wine_FreeAsmAlloc($a_p)

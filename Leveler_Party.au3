@@ -355,7 +355,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Out("Exiting Outpost")
 	If Wine_IsWine() Then
 		If Not Wine_EnterChallenge() Then
-			Out("[Step] Cannot enter " & $a_s_Name & ": no Gw window for Enter Mission click.")
+			Out("[Step] Cannot enter " & $a_s_Name & ": Enter Mission click did not start a load.")
 			Return False
 		EndIf
 		If Not Leveler_WaitWineMission($a_i_MapID, $l_i_StartMap) Then
