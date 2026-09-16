@@ -2,6 +2,12 @@
 
 Func Leveler_ExecuteStep($a_i_Step)
 	If $g_b_LevelerPaused Then Return False
+	If Wine_IsWine() Then
+		If Not Wine_EnsureCommandQueue() Then
+			Wine_LogCommandGap()
+			Return False
+		EndIf
+	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	If Leveler_IsWiped() Then

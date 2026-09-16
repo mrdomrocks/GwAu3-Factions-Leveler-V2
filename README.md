@@ -31,7 +31,8 @@ Under Wine the client window title is often `Guild Wars Reforged`, not `Guild Wa
 - Detects Wine (`ntdll.wine_get_version`, `HKCU\Software\Wine`, `WINEPREFIX`) or honors `ForceWineCompat=1`.
 - Sets `g_b_ScannerUseLocal`, scanner timeout, and skips the GitHub updater before any scan.
 - Skips `Scanner_GetLoggedCharNames` on Wine. That call `Memory_Close()`s the process and can cache a **0/78** local pattern scan (`ScanAgentBasePtr`, `ScanMyIDPtr`, `ScanEngineHook`, `ScanMoveFunc`, `ScanBasePointerPtr`), after which the patched scanner skips the critical rescan.
-- **Start calls `Core_Initialize` immediately** from the button (same as stock V2 / other GwAu3 bots). No delayed main-loop queue, no 4KB salvage scan, no Engine JMP inject.
+- **Start calls `Core_Initialize` immediately** from the button (same as stock V2 / other GwAu3 bots). No delayed main-loop queue, no Start-time salvage, no five-JMP `Assembler_ModifyMemory`.
+- The first leveling step lazily runs `Wine_EnsureCommandQueue`: a read-only 4KB `.text` scan, then **one Engine JMP** and a small command page that includes `CommandEnterMission` / `CommandMove` / `CommandDialog` / `CommandPacketSend`. Start stays Running even if that install has not happened yet.
 - Attaches **by Gw.exe PID** when the title is `Guild Wars Reforged` (window PID first, then `ProcessList`). Character name is still preferred when several clients are running and the memory charname matches.
 - Does not rename the Guild Wars window, and does not use `Core_AutoStart`'s `Guild Wars - <char>` title check.
 
@@ -52,6 +53,7 @@ Native Windows is unchanged unless `ForceWineCompat=1`.
 2. Click Start. The log should say `Initializing and attaching to PID …` then stock `End of Initialization` / `Initialized for: <name>`.
 3. If attach reports 0/78, the API Wine patches are missing or a previous 0/78 result was cached — restart AutoIt3.
 4. Status check uses the current map and later quests as a floor. At Zen Daijun (213) with Enter Mission, next step must be **Zen Daijun Mission**, not Forming A Party, even when AgentBase is 0.
+5. At 213, the first Zen Daijun Mission tick should log `Wine: single Engine JMP planted` (or reuse Core's page) with a non-zero `QueueBase` and `CommandEnterMission`, then `Ui_EnterChallenge` should load explorable **246**. If the Engine site is already `E9` from an older inject and QueueBase is still 0, restart `Gw.exe` and Start again. Do not claim a full Wine leveling-loop success until that enter is confirmed live.
 
 ## Scope
 

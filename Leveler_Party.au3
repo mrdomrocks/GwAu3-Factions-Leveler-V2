@@ -260,6 +260,15 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 
 	Out("Let's do " & $a_s_Name)
 	Out("Exiting Outpost")
+	If Wine_IsWine() Then
+		If Not Wine_EnsureCommandQueue() Then
+			Out("[Step] Cannot enter " & $a_s_Name & ": Wine QueueBase/EnterMission is not live.")
+			Wine_LogCommandGap()
+			Return False
+		EndIf
+		Out("[Step] Wine queue live. QueueBase=" & Hex(Number($g_p_QueueBase), 8) & _
+				" CommandEnterMission=" & Hex(Number(Memory_GetValue("CommandEnterMission")), 8))
+	EndIf
 	; Arborstone enter. False = EnterMission(1) and instant-DCs on this client.
 	Ui_EnterChallenge(True)
 	If Not Map_WaitMapLoading($l_i_StartMap, 1) Then
