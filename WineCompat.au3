@@ -333,10 +333,9 @@ EndFunc
 
 Func Wine_EnterChallenge()
 	If $g_b_WineEnterSent Then
-		Out("Wine enter: already clicked Enter Mission this attach; not sending again.")
+		Out("Wine enter: mission load already started this attach; not clicking again.")
 		Return True
 	EndIf
-	$g_b_WineEnterSent = True
 
 	Local $hWnd = $g_h_GWWindow
 	If $hWnd = 0 Then $hWnd = Wine_FindGwHwnd($g_i_GWProcessId)
@@ -348,11 +347,12 @@ Func Wine_EnterChallenge()
 	Local $iStart = Map_GetMapID()
 	WinActivate($hWnd)
 	Sleep(250)
-	Out("Wine enter: UI click Enter Mission (no queue packet, no Ui_EnterChallenge).")
+	Out("Wine enter: UI click top-center Enter Mission (no queue packet, no Ui_EnterChallenge).")
 
 	ControlSend($hWnd, "", "", "{ENTER}")
 	Sleep(900)
 	If Wine_EnterLooksStarted($iStart) Then
+		$g_b_WineEnterSent = True
 		Out("Wine enter: {ENTER} started the mission load")
 		Return True
 	EndIf
@@ -366,19 +366,25 @@ Func Wine_EnterChallenge()
 	EndIf
 	If $iW < 200 Then $iW = 800
 	If $iH < 200 Then $iH = 600
-	Out("Wine enter: Gw client " & $iW & "x" & $iH)
+	Local $iCx = Int($iW / 2)
+	Out("Wine enter: Gw client " & $iW & "x" & $iH & " top-center " & $iCx & ",80-ish")
 
-	; Party-window Enter Mission sits in the left column, lower half.
-	Local $aiX[8] = [90, 110, 70, 130, Int($iW * 0.11), Int($iW * 0.14), Int($iW * 0.08), Int($iW * 0.50)]
-	Local $aiY[8] = [Int($iH * 0.70), Int($iH * 0.64), Int($iH * 0.76), Int($iH * 0.58), Int($iH * 0.72), Int($iH * 0.80), Int($iH * 0.68), Int($iH * 0.88)]
+	; Stock Factions outpost Enter Mission is the top-center banner, not the
+	; left party column. On wine-gw 1272x713 that is ~636,57–135.
+	Local $aiX[8] = [$iCx, $iCx, $iCx, $iCx - 50, $iCx + 50, $iCx - 90, $iCx + 90, $iCx]
+	Local $aiY[8] = [Int($iH * 0.08), Int($iH * 0.11), Int($iH * 0.14), Int($iH * 0.12), Int($iH * 0.12), Int($iH * 0.16), Int($iH * 0.16), Int($iH * 0.19)]
 	Local $i = 0
 	For $i = 0 To 7
-		If Wine_EnterLooksStarted($iStart) Then Return True
+		If Wine_EnterLooksStarted($iStart) Then
+			$g_b_WineEnterSent = True
+			Return True
+		EndIf
 		Wine_ClientClick($hWnd, $aiX[$i], $aiY[$i])
 		Sleep(700)
 	Next
 	ControlSend($hWnd, "", "", "{ENTER}")
 	Sleep(400)
+	If Wine_EnterLooksStarted($iStart) Then $g_b_WineEnterSent = True
 	Return True
 EndFunc
 

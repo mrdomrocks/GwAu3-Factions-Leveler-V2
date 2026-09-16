@@ -53,7 +53,7 @@ Native Windows is unchanged unless `ForceWineCompat=1`.
 2. Click Start. The log should say `Initializing and attaching to PID …` then stock `End of Initialization` / `Initialized for: <name>`.
 3. If attach reports 0/78, the API Wine patches are missing or a previous 0/78 result was cached — restart AutoIt3.
 4. Status check uses the current map and later quests as a floor. At Zen Daijun (213) with Enter Mission, next step must be **Zen Daijun Mission**, not Forming A Party, even when AgentBase is 0.
-5. At 213, Wine clicks the visible **Enter Mission** button (and `{ENTER}`). It does **not** enqueue `Ui_EnterChallenge` or `PARTY_ENTER_CHALLENGE 0xA5` — both of those started a load then dumped this wine-gw client to character select. Skill/hench packets are skipped before that click (same DC risk). Success is explorable type 1 on **246** (or 213 if Zen keeps the outpost id). The command queue is only armed later, when Map_Move needs it. Do not claim a full Wine leveling-loop success until that enter is confirmed live.
+5. At 213, Wine clicks the **top-center Enter Mission** banner (`{ENTER}`, then client `636,57` / `636,78` / `636,100` / `586,86` / `686,86` / `546,114` / `726,114` / `636,135` on the live 1272×713 window). It does **not** click the left party column, and does not enqueue `Ui_EnterChallenge` or `0xA5`. Success is explorable **246**. Do not claim a full Wine leveling-loop success until that enter is confirmed live.
 
 ## Scope
 
