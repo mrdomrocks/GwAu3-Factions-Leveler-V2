@@ -4,6 +4,7 @@ Opt("GUICloseOnESC", False)
 Opt("ExpandVarStrings", 1)
 
 #include "../../API/_GwAu3.au3"
+#include "WineCompat.au3"
 #include "Leveler_Const.au3"
 #include "Leveler_Move.au3"
 #include "Leveler_Quest.au3"
@@ -16,6 +17,7 @@ Opt("ExpandVarStrings", 1)
 Global Const $GC_B_LOAD_LOGGED_CHARS = True
 
 $DLL_PATH = @ScriptDir & "\..\..\API\Plugins\Pathfinder\GWPathfinder.dll"
+Wine_ApplyRuntimeGuards()
 
 #Region Declarations
 Global $g_i_ProcessID = ""
@@ -45,7 +47,8 @@ GUICtrlCreateGroup("Factions Leveler  -  Phase 1-5 (through Vaettir NPC)", 8, 8,
 Global $g_h_NameCombo
 If $GC_B_LOAD_LOGGED_CHARS Then
 	$g_h_NameCombo = GUICtrlCreateCombo($g_s_MainCharName, 24, 32, 180, 25, BitOR($CBS_DROPDOWN, $CBS_AUTOHSCROLL))
-	GUICtrlSetData(-1, Scanner_GetLoggedCharNames())
+	; Wine: do not call Scanner_GetLoggedCharNames — it Memory_Close()s and can cache 0/78.
+	If Not Wine_IsWine() Then GUICtrlSetData(-1, Scanner_GetLoggedCharNames())
 Else
 	$g_h_NameCombo = GUICtrlCreateInput($g_s_MainCharName, 24, 32, 180, 25)
 EndIf
@@ -93,10 +96,22 @@ GUISetState(@SW_SHOW)
 Out("Factions Character Leveler (Phase 1-5)")
 Out("Port of the Py4GW Factions bot through attribute quest 2, Kryta, Elona, and Vaettir unlock.")
 Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
-Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
+If Wine_IsWine() Then
+	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID. Window title is often Guild Wars Reforged.")
+	Out("Scanner_GetLoggedCharNames is skipped on Wine so a timed local scan cannot cache 0/78 before Start.")
+Else
+	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
+EndIf
 Out("")
 
-Core_AutoStart()
+If Wine_IsWine() Then
+	If $g_bAutoStart And $g_s_MainCharName <> "" Then
+		Sleep(2000)
+		StartBot()
+	EndIf
+Else
+	Core_AutoStart()
+EndIf
 
 While 1
 	Sleep(80)
@@ -117,23 +132,13 @@ While 1
 WEnd
 
 Func StartBot()
-	Local $l_s_MainCharName = GUICtrlRead($g_h_NameCombo)
-	If $l_s_MainCharName = "" Then
-		If Core_Initialize(ProcessExists("gw.exe"), True) = 0 Then
-			MsgBox(0, "Error", "Guild Wars is not running.")
-			_Exit()
+	If Not Leveler_AttachToGw() Then
+		If Wine_IsWine() Then
+			Out("Attach failed. Leave the character in-world, click Refresh, then Start. Do not Exit so you can retry.")
+			Return
 		EndIf
-	ElseIf $g_i_ProcessID Then
-		Local $l_i_ProcIdInt = Number($g_i_ProcessID, 2)
-		If Core_Initialize($l_i_ProcIdInt, True) = 0 Then
-			MsgBox(0, "Error", "Could not find that process ID.")
-			_Exit()
-		EndIf
-	Else
-		If Core_Initialize($l_s_MainCharName, True) = 0 Then
-			MsgBox(0, "Error", "Could not find a Guild Wars client named '" & $l_s_MainCharName & "'")
-			_Exit()
-		EndIf
+		MsgBox(0, "Error", "Could not attach to Guild Wars.")
+		_Exit()
 	EndIf
 
 	GUICtrlSetState($g_h_NameCombo, $GUI_DISABLE)
@@ -156,6 +161,123 @@ Func StartBot()
 	Out("Map: " & Map_GetMapID() & "  Pos: " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")))
 	If Not Leveler_IsOutpost() Then Out("Restart recovery is on. Will resume the current quest here if it is in the log.")
 	Out("Core ready. Returning to the run loop.")
+EndFunc
+
+; Attach by character name on Windows. On Wine the client title is often
+; "Guild Wars Reforged", so Core_Initialize(name) plus Scanner_GetLoggedCharNames
+; can cache a 0/78 local scan; attach by Gw.exe PID instead.
+Func Leveler_AttachToGw()
+	Wine_ApplyRuntimeGuards()
+	Local $l_s_Name = StringStripWS(GUICtrlRead($g_h_NameCombo), 3)
+	Local $l_b_ChangeTitle = Not Wine_IsWine()
+	Local $l_v_Hwnd = 0
+
+	If $g_i_ProcessID Then
+		Out("Initializing and attaching to PID " & $g_i_ProcessID & " (" & Wine_RuntimeLabel() & ")")
+		$l_v_Hwnd = Core_Initialize(Number($g_i_ProcessID, 2), $l_b_ChangeTitle)
+		Return Leveler_AttachLooksLive($l_v_Hwnd)
+	EndIf
+
+	If Not Wine_IsWine() Then
+		If $l_s_Name = "" Then
+			Local $l_i_Pid = ProcessExists("gw.exe")
+			If $l_i_Pid = 0 Then
+				Out("Guild Wars is not running.")
+				Return False
+			EndIf
+			$l_v_Hwnd = Core_Initialize($l_i_Pid, $l_b_ChangeTitle)
+		Else
+			$l_v_Hwnd = Core_Initialize($l_s_Name, $l_b_ChangeTitle)
+		EndIf
+		If $l_v_Hwnd = 0 Then
+			If $l_s_Name <> "" Then
+				Out("Could not find a Guild Wars client named '" & $l_s_Name & "'")
+			Else
+				Out("Guild Wars is not running.")
+			EndIf
+			Return False
+		EndIf
+		Return True
+	EndIf
+
+	; Wine: PID-first. Do not Core_Initialize(name) first — a failed named
+	; attach can record 0/78 and skip the critical rescan.
+	Local $l_a_List = ProcessList("gw.exe")
+	If @error Or Not IsArray($l_a_List) Or $l_a_List[0][0] < 1 Then
+		Local $l_i_Fallback = Wine_FindGwPid()
+		If $l_i_Fallback = 0 Then
+			Out("Wine: no Gw.exe process found.")
+			Return False
+		EndIf
+		Out("Initializing and attaching to PID " & $l_i_Fallback & " (" & Wine_RuntimeLabel() & ")")
+		$l_v_Hwnd = Core_Initialize($l_i_Fallback, $l_b_ChangeTitle)
+		Return Leveler_AttachLooksLive($l_v_Hwnd)
+	EndIf
+
+	Out("Wine: found " & $l_a_List[0][0] & " Gw.exe process(es); attaching by PID (" & Wine_RuntimeLabel() & ")")
+	If $l_s_Name <> "" Then Out("Preferring character '" & $l_s_Name & "' when several clients are running.")
+
+	Local $l_i_LivePid = 0
+	For $i = 1 To $l_a_List[0][0]
+		Local $l_i_Pid = Number($l_a_List[$i][1])
+		Out("Initializing and attaching to PID " & $l_i_Pid)
+		$l_v_Hwnd = Core_Initialize($l_i_Pid, $l_b_ChangeTitle)
+		If Not Leveler_AttachLooksLive($l_v_Hwnd) Then
+			Out("Scanner failed (error " & @error & ") on PID " & $l_i_Pid)
+			ContinueLoop
+		EndIf
+		Local $l_s_Got = StringStripWS(Player_GetCharName(), 3)
+		If $l_s_Name <> "" And $l_s_Got <> "" And StringCompare($l_s_Got, $l_s_Name) <> 0 Then
+			Out("PID " & $l_i_Pid & " is '" & $l_s_Got & "', not '" & $l_s_Name & "'; trying next.")
+			$l_i_LivePid = $l_i_Pid
+			ContinueLoop
+		EndIf
+		Return True
+	Next
+
+	If $l_i_LivePid <> 0 Then
+		Out("No PID matched '" & $l_s_Name & "'; re-attaching to PID " & $l_i_LivePid)
+		$l_v_Hwnd = Core_Initialize($l_i_LivePid, $l_b_ChangeTitle)
+		Return Leveler_AttachLooksLive($l_v_Hwnd)
+	EndIf
+	Return False
+EndFunc
+
+Func Leveler_AttachLooksLive($a_v_Hwnd)
+	If $a_v_Hwnd <> 0 And $a_v_Hwnd <> "" Then Return True
+	If Not Wine_IsWine() Then Return False
+	; Scanner_GetHwnd can miss Guild Wars Reforged even when memory attach worked.
+	If $g_h_GWProcess <> 0 And $g_p_BasePointer Then
+		Local $l_h_Win = Wine_FindGwHwnd($g_i_GWProcessId)
+		If $l_h_Win <> 0 Then $g_h_GWWindow = $l_h_Win
+		Return True
+	EndIf
+	Return False
+EndFunc
+
+; On Wine, Scanner_GetLoggedCharNames Memory_Close()s the process and the local
+; scanner can cache 0/78 (AgentBase/MyID/Engine/Move/BasePointer missing).
+Func Leveler_RefreshCharCombo()
+	Wine_ApplyRuntimeGuards()
+	Local $l_s_Keep = StringStripWS(GUICtrlRead($g_h_NameCombo), 3)
+	If Wine_IsWine() Then
+		Local $l_a_List = ProcessList("gw.exe")
+		Local $l_i_Count = 0
+		If Not @error And IsArray($l_a_List) Then $l_i_Count = $l_a_List[0][0]
+		Out("Wine refresh: " & $l_i_Count & " Gw.exe process(es). Start attaches by PID; window title is often Guild Wars Reforged.")
+		If $l_i_Count >= 1 Then
+			For $i = 1 To $l_i_Count
+				Local $l_h_Win = Wine_FindGwHwnd(Number($l_a_List[$i][1]))
+				Local $l_s_Title = ""
+				If $l_h_Win <> 0 Then $l_s_Title = WinGetTitle($l_h_Win)
+				Out("  " & $l_a_List[$i][0] & " PID " & $l_a_List[$i][1] & "  " & $l_s_Title)
+			Next
+		EndIf
+		If $l_s_Keep <> "" Then GUICtrlSetData($g_h_NameCombo, $l_s_Keep)
+		Return
+	EndIf
+	GUICtrlSetData($g_h_NameCombo, "")
+	GUICtrlSetData($g_h_NameCombo, Scanner_GetLoggedCharNames())
 EndFunc
 
 Func TogglePause()
@@ -246,8 +368,7 @@ Func GuiButtonHandler()
 			TogglePause()
 
 		Case $g_h_RefreshButton
-			GUICtrlSetData($g_h_NameCombo, "")
-			GUICtrlSetData($g_h_NameCombo, Scanner_GetLoggedCharNames())
+			Leveler_RefreshCharCombo()
 
 		Case $g_h_OnTopCheckbox
 			If GetChecked($g_h_OnTopCheckbox) Then
