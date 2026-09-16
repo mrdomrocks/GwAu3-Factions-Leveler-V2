@@ -98,8 +98,8 @@ Out("Factions Character Leveler (Phase 1-5)")
 Out("Port of the Py4GW Factions bot through attribute quest 2, Kryta, Elona, and Vaettir unlock.")
 Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 If Wine_IsWine() Then
-	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID from the main loop (not the Start click).")
-	Out("Scanner_GetLoggedCharNames is skipped on Wine. Start uses a chunked .text scan instead of the API 20s local timeout.")
+	Out("Runtime: " & Wine_RuntimeLabel() & " — read-only attach by Gw.exe PID (no engine hooks).")
+	Out("Scanner_GetLoggedCharNames is skipped on Wine. Start probes .text first8, then a 4KB read-only scan.")
 Else
 	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
 EndIf
@@ -145,6 +145,19 @@ Func StartBot()
 		EndIf
 		MsgBox(0, "Error", "Could not attach to Guild Wars.")
 		_Exit()
+	EndIf
+
+	If Wine_IsWine() And $g_b_WineReadOnlyAttach Then
+		Local $sName = ""
+		If $g_p_CharName <> 0 Then $sName = StringStripWS(Player_GetCharName(), 3)
+		If $sName <> "" Then WinSetTitle($g_h_MainGui, "", $sName & " - " & $GC_S_BOT_TITLE)
+		GUICtrlSetState($g_h_StartButton, $GUI_ENABLE)
+		GUICtrlSetData($g_h_StartButton, "Start")
+		GUICtrlSetState($g_h_RefreshButton, $GUI_ENABLE)
+		Out("Read-only attach ok. AgentBase=" & Hex($g_p_AgentBase) & " BasePointer=" & Hex($g_p_BasePointer))
+		If $sName <> "" Then Out("Charname: " & $sName)
+		Out("Wine: no engine hooks and no memory writes. Bot loop not started. Gw.exe should still be running.")
+		Return
 	EndIf
 
 	GUICtrlSetState($g_h_NameCombo, $GUI_DISABLE)
@@ -242,7 +255,8 @@ Func Leveler_AttachToGw()
 	Local $p = 1
 	For $p = 1 To $l_ai_Pids[0]
 		If Leveler_InitializePidWine($l_ai_Pids[$p], $l_b_ChangeTitle) Then
-			Local $l_s_Got = StringStripWS(Player_GetCharName(), 3)
+			Local $l_s_Got = ""
+			If $g_p_CharName <> 0 Then $l_s_Got = StringStripWS(Player_GetCharName(), 3)
 			If $l_s_Name <> "" And $l_s_Got <> "" And StringCompare($l_s_Got, $l_s_Name) <> 0 Then
 				Out("PID " & $l_ai_Pids[$p] & " is '" & $l_s_Got & "', not '" & $l_s_Name & "'; trying next.")
 				$l_i_LivePid = $l_ai_Pids[$p]
@@ -260,29 +274,18 @@ Func Leveler_AttachToGw()
 EndFunc
 
 Func Leveler_InitializePidWine($a_i_Pid, $a_b_ChangeTitle)
+	#forceref $a_b_ChangeTitle
 	Wine_ApplyRuntimeGuards()
 	Wine_ResetScannerState()
-	Out("Initializing and attaching to PID " & $a_i_Pid & " via chunked .text scan (" & Wine_RuntimeLabel() & ")")
-	Out("Skipping the API's 20s per-byte local scan (it times out ~0.5MB into 5.4MB and caches 0/78).")
+	Out("Initializing and attaching to PID " & $a_i_Pid & " (read-only 4KB scan, " & Wine_RuntimeLabel() & ")")
+	Out("No Core_Initialize, no VirtualAllocEx, no Assembler_ModifyMemory.")
 
 	If Not Wine_PreparePid($a_i_Pid) Then
-		Out("Wine: Memory_Open/sections failed on PID " & $a_i_Pid)
+		Out("Wine: Memory_Open/sections/first8 probe failed on PID " & $a_i_Pid)
 		Return False
 	EndIf
-	Wine_ProbeGwMemory()
-	If Wine_TrySalvageInit($a_b_ChangeTitle) Then Return True
-
-	; Fallback: Core_Initialize may still allocate the GwAu3 header / inject.
-	; Clear the timed-scan miss cache first so it does not skip a rescan.
-	Out("Chunked salvage missed critical patterns; falling back to Core_Initialize")
-	Wine_ClearScanCacheFlags()
-	Local $l_v_Hwnd = Core_Initialize($a_i_Pid, $a_b_ChangeTitle)
-	Local $iErr = @error
-	If Leveler_AttachLooksLive($l_v_Hwnd) Then Return True
-	Out("Scanner failed (error " & $iErr & ") on PID " & $a_i_Pid)
-	Wine_ProbeGwMemory()
-	Wine_ClearScanCacheFlags()
-	If Wine_EnsureGwOpen($a_i_Pid) And Wine_TrySalvageInit($a_b_ChangeTitle) Then Return True
+	If Wine_TrySalvageInit(False) Then Return True
+	Out("Wine read-only attach failed on PID " & $a_i_Pid)
 	Return False
 EndFunc
 
@@ -404,7 +407,7 @@ Func GuiButtonHandler()
 				; scan was dying. The old leveler attaches from its main loop.
 				$g_b_StartRequested = True
 				GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
-				Out("Start queued. Attach will run on the next main-loop tick (Wine chunked .text scan). GUI may freeze for several seconds.")
+				Out("Start queued. Read-only attach on the next main-loop tick (4KB probes, no writes).")
 			Else
 				StartBot()
 			EndIf
