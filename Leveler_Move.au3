@@ -162,22 +162,32 @@ Func Leveler_LeaveChoExplorableToRanMusu()
 	Return Leveler_WaitUntilMapReady()
 EndFunc
 
+Func Leveler_MapTravelTo($a_i_MapID)
+	If Wine_IsWine() Then
+		; LoadFinished JMP is not planted; skip Map_WaitMapIsLoaded and poll instance memory.
+		Map_TravelTo($a_i_MapID, Map_GetCharacterInfo("Language"), Map_GetCharacterInfo("Region"), 0, False)
+		Return Leveler_WaitUntilMapReady() And Map_GetMapID() = $a_i_MapID
+	EndIf
+	Return Map_TravelTo($a_i_MapID)
+EndFunc
+
 ; $a_b_Rezone True = leave and re-enter the outpost so we spawn at the portal
 ; instead of pathing across town from the last NPC (bag merchant, crafter, ...).
 Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 	If Map_GetMapID() = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
 		If Not $a_b_Rezone Then Return True
 		Out("[Move] Rezoning map " & $a_i_MapID & " to reset position")
-		If Map_RndTravel($a_i_MapID, True, True) Then Return True
+		If Wine_IsWine() Then
+			If Map_RndTravel($a_i_MapID, False, True) Then Return Leveler_WaitUntilMapReady()
+		Else
+			If Map_RndTravel($a_i_MapID, True, True) Then Return True
+		EndIf
 		Out("[Move] Rezone failed; walking from the current position")
 		Return True
 	EndIf
 	If Map_GetInstanceInfo("IsExplorable") Then
 		Out("[Move] Leaving explorable map " & Map_GetMapID() & " to travel to " & $a_i_MapID)
-		If Map_TravelTo($a_i_MapID) Then
-			If Not Leveler_WaitUntilMapReady() Then Return False
-			If Map_GetMapID() = $a_i_MapID Then Return True
-		EndIf
+		If Leveler_MapTravelTo($a_i_MapID) Then Return True
 		Chat_SendChat("resign", "/")
 		Sleep(1200)
 		If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
@@ -186,7 +196,7 @@ Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 		If Not Leveler_WaitUntilMapReady() Then Return False
 	EndIf
 	Out("[Move] Travel to map " & $a_i_MapID)
-	If Not Map_TravelTo($a_i_MapID) Then Return False
+	If Not Leveler_MapTravelTo($a_i_MapID) Then Return False
 	Return Leveler_WaitUntilMapReady() And Map_GetMapID() = $a_i_MapID
 EndFunc
 

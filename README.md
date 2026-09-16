@@ -31,13 +31,19 @@ Under Wine the client window title is often `Guild Wars Reforged`, not `Guild Wa
 - Detects Wine (`ntdll.wine_get_version`, `HKCU\Software\Wine`, `WINEPREFIX`) or honors `ForceWineCompat=1`.
 - Sets `g_b_ScannerUseLocal` and skips the GitHub updater (so the API does not hang on update checks).
 - Skips `Scanner_GetLoggedCharNames` on Wine (`Memory_Close()` / cached 0/78).
-- Queues Start onto the **main loop**. Wine attach is **read-only**:
+- Queues Start onto the **main loop**. Attach is **read-only first**, then an **experimental single Engine JMP**:
   - 4KB PE header + **8-byte `.text` probe**. If `first8` is all zeros, **stop** (no further RPM).
-  - Then a **4KB** `ReadProcessMemory` walk for five critical patterns only (AgentBase, MyID, Engine, Move, BasePointer), yielding every 32KB.
-  - **No** full-section RPM, **no** `VirtualAllocEx`, **no** `WriteProcessMemory`, **no** `Assembler_ModifyMemory`, **no** `Core_Initialize` fallback.
-  - On success, pointers are **read** and logged. The bot loop starts only if `Wine_CommandsReady()` (a live `g_p_QueueBase`). After a fresh client launch that is false.
+  - Then a **4KB** `ReadProcessMemory` walk for five critical patterns (AgentBase, MyID, Engine, Move, BasePointer).
+  - Pointers are **read** and logged. Gw.exe should still be alive here (cd758c0).
+  - Then a second 4KB walk for PacketSend / PacketLocation / Dialog / Interact (and InstanceInfo/Region if present).
+  - `VirtualAllocEx` **one** RWX allocation for the command queue + `CommandMove` / `CommandPacketSend` / `CommandDialog` / `CommandInteract` + RegularFlow `MainProc` only.
+  - Exactly **one** 5-byte `E9` at Engine (`MainStart`) after the site 5 bytes are `8B EC D9 45 08` and `+0x22` still matches `568B3085F67478…`. Tries scan result, result-1, result+1.
+  - **No** `Assembler_ModifyMemory`. **No** Render / LoadFinished / Trader / TradePartner JMPs. **No** five-JMP fallback if verify or alloc fails — abort with log lines, leave `g_p_QueueBase` at 0.
+  - `Leveler_ExecuteStep` / the bot loop start only if `Wine_CommandsReady()` (live `g_p_QueueBase` after the JMP sticks).
 - Attaches **by the window's PID first**, then `ProcessList("gw.exe")`.
 - Does not rename the Guild Wars window, and does not use `Core_AutoStart`'s `Guild Wars - <char>` title check.
+
+**This Wine inject is experimental and can still crash Gw.exe.** Native Windows still uses full `Core_Initialize`. Do not treat a green Start as a proven live bot run until wine-gw retests.
 
 Optional `Config/leveler.ini` next to the script (defaults apply if the file is missing):
 
@@ -50,33 +56,24 @@ ScannerTimeoutMs=15000
 
 Native Windows is unchanged unless `ForceWineCompat=1`.
 
-### Why Start does not run the leveling loop on Wine
+### Why this is not the a3ceeb0 five-JMP path
 
-cd758c0 proved `ReadProcessMemory` of `.text` is safe (AgentBase live, Gw.exe stayed up). The a3ceeb0 crash matches **writes**: `VirtualAllocEx` plus `Assembler_ModifyMemory` planting five `E9` JMPs (`MainStart`, `TraderStart`, `RenderingMod`, `LoadFinishedStart`, `TradePartnerStart`).
+cd758c0 proved `ReadProcessMemory` of `.text` is safe (AgentBase live, Gw.exe stayed up). a3ceeb0 crashed after `Assembler_ModifyMemory` planted five `E9` JMPs (`MainStart`, `TraderStart`, `RenderingMod`, `LoadFinishedStart`, `TradePartnerStart`).
 
-GwAu3 has no read-only packet/UI path. `Map_Move`, `Ui_Dialog`, `Core_SendPacket`, interact, and skills all `Core_Enqueue` → `WriteProcessMemory` into `$g_p_QueueBase`. That buffer lives in Gw and is drained on the **game thread** by the Engine hook. Calling `Move`/`PacketSend` from AutoIt's thread (or `CreateRemoteThread`) is the hang/crash the local scanner was written to avoid. Wiring Start to `Leveler_ExecuteStep` with only AgentBase would write to a null queue and can kill the client again.
+GwAu3 still has no read-only packet/UI path: `Map_Move`, `Ui_Dialog`, and `Core_SendPacket` all `Core_Enqueue` into `$g_p_QueueBase`, drained on the game thread by the Engine hook. This change plants **only that Engine JMP** after verifying site bytes. The other four detours are skipped. LoadFinished waits on Wine use `Leveler_WaitUntilMapReady` (instance/agent polling) instead of the `MapIsLoaded` flag.
 
-`Leveler_ExecuteStep` therefore returns immediately on Wine unless `Wine_CommandsReady()`.
+If site bytes do not match or `VirtualAllocEx` fails, Start stays at read-only attach and the bot loop does **not** start. There is no fallback to planting all five JMPs.
 
-### Least-dangerous hook (not implemented, not live-tested)
+Skills, trader, and other command stubs are **not** in this page. A step that needs them can enqueue a null command pointer — pause and report rather than expecting a full native run.
 
-Smaller than full `Assembler_ModifyMemory`:
-
-1. Keep the read-only 4KB scan (already has Engine + Move).
-2. Also resolve PacketSend, PacketLocation, Dialog (same 4KB walk).
-3. `VirtualAllocEx` **one** new RWX page (not `.text`) for the queue + `CommandMove` / `CommandPacketSend` / `CommandDialog` / a tiny `MainProc`.
-4. `WriteProcessMemory` into that **new page only**.
-5. One 5-byte `E9` at Engine (`MainStart`) after verifying the site still matches `568B3085F67478…`. Save original bytes.
-6. Skip Render / LoadFinished / Trader / TradePartner detours (those extra JMPs are not required for move/dialog; LoadFinished can be replaced by polling instance memory later).
-
-Do not enable this on Start until a dedicated wine-gw retest. Native Windows still uses full `Core_Initialize`.
-
-### Verify attach
+### Verify on wine-gw (retest; do not claim live success from this PR)
 
 1. Character in-world under Wine. Refresh should list a `Gw.exe` PID (title may be `Guild Wars Reforged`) and must **not** print `0/78`.
-2. Click Start. The log should say `Start queued` then `Initializing and attaching to PID … (read-only 4KB scan)`. Expect `Wine probe: … first8=` with **non-zero** code bytes, then `Wine 4KB scan: found 5/5`, then `Read-only attach ok` and `Bot loop not started`.
-3. **Gw.exe must still be running** after Start. If `first8` is all zeros, attach aborts before the scan.
-4. Do not expect a running leveler on Wine yet. `Map_Move` / `Ui_Dialog` need the Engine command queue; that inject is not enabled after the a3ceeb0 crash.
+2. Click Start. Log should say `Start queued`, then `Initializing and attaching to PID … (read-only 4KB first, then one Engine JMP)`.
+3. **Read-only ok:** `Wine probe: … first8=` with **non-zero** code bytes, `Wine 4KB scan: found 5/5`, `Read-only attach ok`, AgentBase/BasePointer logged. **Gw.exe must still be running.**
+4. **Single JMP:** `Wine Engine candidate … site5= … +22= …`, `Wine Engine site before JMP:`, `QueueBase=`, `Wine Engine site after JMP:` starting with `E9`, then **`Wine: single Engine JMP planted`**. The bot loop may start (`Wine command queue is live`). Confirm the log does **not** mention Trader/Render/LoadFinished/TradePartner detours being planted, and does **not** call `Assembler_ModifyMemory`.
+5. **Abort path:** if site 5 bytes are not `8B EC D9 45 08`, pattern mismatch, or `VirtualAllocEx failed`, expect `Wine inject abort: …` / `single Engine JMP inject aborted` and `Bot loop not started`. Gw.exe should still be running. Do not retry with a five-JMP build.
+6. If the JMP planted, the leveler may **attempt** a step (`Leveler_ExecuteStep`). That is not proof the bot completed a quest. Watch whether Gw.exe stays up. Pause immediately on a crash or odd client state.
 
 ## Scope
 

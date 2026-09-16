@@ -2,7 +2,7 @@
 
 Func Leveler_ExecuteStep($a_i_Step)
 	If Wine_IsWine() And Not Wine_CommandsReady() Then
-		Out("[Step] Wine command queue is not installed; not calling Map_Move/Ui_Dialog.")
+		Out("[Step] Wine command queue is not live (no single Engine JMP); not calling Map_Move/Ui_Dialog.")
 		Return False
 	EndIf
 	If $g_b_LevelerPaused Then Return False

@@ -98,8 +98,8 @@ Out("Factions Character Leveler (Phase 1-5)")
 Out("Port of the Py4GW Factions bot through attribute quest 2, Kryta, Elona, and Vaettir unlock.")
 Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 If Wine_IsWine() Then
-	Out("Runtime: " & Wine_RuntimeLabel() & " — read-only attach by Gw.exe PID (no engine hooks).")
-	Out("Scanner_GetLoggedCharNames is skipped on Wine. Start probes .text first8, then a 4KB read-only scan.")
+	Out("Runtime: " & Wine_RuntimeLabel() & " — read-only attach first, then experimental single Engine JMP.")
+	Out("Scanner_GetLoggedCharNames is skipped on Wine. Start probes .text first8, 4KB scan, then one Engine JMP if the site matches.")
 Else
 	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
 EndIf
@@ -157,7 +157,8 @@ Func StartBot()
 		Out("Read-only attach ok. AgentBase=" & Hex($g_p_AgentBase) & " BasePointer=" & Hex($g_p_BasePointer))
 		If $sName <> "" Then Out("Charname: " & $sName)
 		If Wine_CommandsReady() Then
-			Out("Wine command queue is present; starting the leveler loop.")
+			Out("Wine command queue is live (single Engine JMP). Starting the leveler loop.")
+			Out("This path is experimental and can still crash Gw.exe. The other four detours were not planted.")
 			GUICtrlSetState($g_h_NameCombo, $GUI_DISABLE)
 			GUICtrlSetState($g_h_RefreshButton, $GUI_DISABLE)
 			GUICtrlSetState($g_h_PauseButton, $GUI_ENABLE)
@@ -296,8 +297,8 @@ Func Leveler_InitializePidWine($a_i_Pid, $a_b_ChangeTitle)
 	#forceref $a_b_ChangeTitle
 	Wine_ApplyRuntimeGuards()
 	Wine_ResetScannerState()
-	Out("Initializing and attaching to PID " & $a_i_Pid & " (read-only 4KB scan, " & Wine_RuntimeLabel() & ")")
-	Out("No Core_Initialize, no VirtualAllocEx, no Assembler_ModifyMemory.")
+	Out("Initializing and attaching to PID " & $a_i_Pid & " (read-only 4KB first, then one Engine JMP, " & Wine_RuntimeLabel() & ")")
+	Out("No Core_Initialize, no Assembler_ModifyMemory, no Render/LoadFinished/Trader/TradePartner JMPs.")
 
 	If Not Wine_PreparePid($a_i_Pid) Then
 		Out("Wine: Memory_Open/sections/first8 probe failed on PID " & $a_i_Pid)
@@ -426,7 +427,7 @@ Func GuiButtonHandler()
 				; scan was dying. The old leveler attaches from its main loop.
 				$g_b_StartRequested = True
 				GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
-				Out("Start queued. Read-only attach on the next main-loop tick (4KB probes, no writes).")
+				Out("Start queued. Read-only 4KB attach first, then one Engine JMP if the site verifies.")
 			Else
 				StartBot()
 			EndIf

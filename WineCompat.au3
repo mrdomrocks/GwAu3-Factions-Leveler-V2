@@ -7,8 +7,11 @@
 ;   $g_b_IsWine, $g_b_ForceWineCompat, $g_b_ScannerUseLocal, $g_i_ScannerTimeoutMs
 ; Set those before any Scanner_* / Core_Initialize call.
 ;
-; Wine attach is READ-ONLY: 8-byte .text probe, then 4KB RPM for five critical
-; patterns. No VirtualAllocEx, no WriteProcessMemory, no Assembler_ModifyMemory.
+; Wine attach is read-only first: 8-byte .text probe, then 4KB RPM for five
+; critical patterns (AgentBase/MyID/Engine/Move/BasePointer). After that bind,
+; Wine_TryMinimalEngineHook may VirtualAllocEx one RWX page and plant exactly
+; one Engine JMP. It never calls Assembler_ModifyMemory and never plants the
+; Render / LoadFinished / Trader / TradePartner detours.
 
 If Not IsDeclared("g_b_IsWine") Then Global $g_b_IsWine = False
 If Not IsDeclared("g_b_WineChecked") Then Global $g_b_WineChecked = False
@@ -20,6 +23,8 @@ If Not IsDeclared("g_b_SkipUpdater") Then Global $g_b_SkipUpdater = True
 If Not IsDeclared("g_s_ResumeIni") Then Global $g_s_ResumeIni = @ScriptDir & "\Config\leveler.ini"
 If Not IsDeclared("g_b_StartRequested") Then Global $g_b_StartRequested = False
 If Not IsDeclared("g_b_WineReadOnlyAttach") Then Global $g_b_WineReadOnlyAttach = False
+If Not IsDeclared("g_b_WineMinimalHook") Then Global $g_b_WineMinimalHook = False
+If Not IsDeclared("g_p_WineAsmAlloc") Then Global $g_p_WineAsmAlloc = 0
 
 Func Wine_IsWine()
 	If $g_b_WineChecked Then Return $g_b_IsWine
@@ -111,7 +116,20 @@ Func Wine_ResetScannerState()
 	If IsDeclared("g_p_GwAu3Cmd") Then $g_p_GwAu3Cmd = 0
 	If IsDeclared("g_ap_ScanResults") Then $g_ap_ScanResults = 0
 	If IsDeclared("g_p_ASMMemory") Then $g_p_ASMMemory = 0
+	If IsDeclared("g_amx2_Labels") Then
+		ReDim $g_amx2_Labels[1][2]
+		$g_amx2_Labels[0][0] = 0
+	EndIf
+	If IsDeclared("g_p_QueueBase") Then $g_p_QueueBase = 0
+	If IsDeclared("g_i_QueueCounter") Then $g_i_QueueCounter = 0
+	If IsDeclared("g_i_QueueSize") Then $g_i_QueueSize = 0
+	If IsDeclared("g_p_MapIsLoaded") Then $g_p_MapIsLoaded = 0
+	If IsDeclared("g_i_ASMSize") Then $g_i_ASMSize = 0
+	If IsDeclared("g_i_ASMCodeOffset") Then $g_i_ASMCodeOffset = 0
+	If IsDeclared("g_s_ASMCode") Then $g_s_ASMCode = ""
 	$g_b_WineReadOnlyAttach = False
+	$g_b_WineMinimalHook = False
+	$g_p_WineAsmAlloc = 0
 	Wine_ClearScanCacheFlags()
 	If $g_h_GWProcess <> 0 Then Memory_Close()
 EndFunc
@@ -242,7 +260,7 @@ Func Wine_EnsureGwOpen($a_i_Pid)
 EndFunc
 
 ; Open process, map PE sections (4KB header read), require live .text first8.
-; No charname full-section RPM, no VirtualAllocEx, no writes.
+; No charname full-section RPM. Writes happen only later in Wine_TryMinimalEngineHook.
 Func Wine_PreparePid($a_i_Pid)
 	$g_b_WineReadOnlyAttach = False
 	If Not Wine_EnsureGwOpen($a_i_Pid) Then Return False
@@ -292,6 +310,9 @@ Func Wine_TrySalvageInit($a_b_ChangeTitle = False)
 	$g_ap_ScanResults = $aResults
 	If Not Wine_BindReadOnly($aResults) Then Return False
 	$g_b_WineReadOnlyAttach = True
+	If Not Wine_TryMinimalEngineHook($aResults) Then
+		Out("Wine: single Engine JMP inject aborted; command queue not live. Render/LoadFinished/Trader/TradePartner JMPs were not planted.")
+	EndIf
 	Return True
 EndFunc
 
@@ -370,10 +391,314 @@ Func Wine_CommandsReady()
 EndFunc
 
 Func Wine_LogCommandGap()
-	Out("Wine cannot run Leveler_ExecuteStep yet: Map_Move / Ui_Dialog / Core_SendPacket need the GwAu3 command queue.")
-	Out("That queue is a VirtualAllocEx page inside Gw.exe plus a 5-byte JMP at Engine (MainStart).")
-	Out("a3ceeb0 planted that JMP (and four more: Render, LoadFinished, Trader, TradePartner) and Gw.exe exited.")
-	Out("Least-dangerous next inject (not enabled, not live-tested): one new RWX page for queue + CommandMove/PacketSend/Dialog only; one Engine JMP after verifying site bytes; skip the other four detours.")
+	Out("Wine command queue is not live (single Engine JMP inject did not succeed).")
+	Out("Map_Move / Ui_Dialog / Core_SendPacket were not armed. Render/LoadFinished/Trader/TradePartner JMPs were not planted.")
+EndFunc
+
+; Extra 4KB needles for the inject only. First scan stays the proven five.
+Func Wine_RegisterInjectPatterns()
+	Scanner_AddPattern('PacketSend', 'C747540000000081E6', -0x4F, 'Func')
+	Scanner_AddPattern('PacketLocation', '83C40433C08BE55DC3A1', 0xB, 'Ptr')
+	Scanner_AddPattern('Dialog', '894B248B4B2883E900', 0x16, 'Func')
+	Scanner_AddPattern('Interact', '894B248B4B2883E900', 0x26, 'Func')
+	Scanner_AddPattern('InstanceInfo', '6A2C50E80000000083C408C7', 0xE, 'Ptr')
+	Scanner_AddPattern('Region', '6A548D46248908', -0x3, 'Ptr')
+EndFunc
+
+Func Wine_CompactHex($a_s_Hex)
+	Return StringUpper(StringReplace(StringStripWS(String($a_s_Hex), 8), " ", ""))
+EndFunc
+
+Func Wine_PatternMatchesHex($a_s_Hay, $a_s_Pat)
+	Local $sHay = Wine_CompactHex($a_s_Hay)
+	Local $sPat = Wine_CompactHex($a_s_Pat)
+	If $sHay = "" Or $sPat = "" Then Return False
+	If Mod(StringLen($sPat), 2) = 1 Then Return False
+	If StringLen($sHay) < StringLen($sPat) Then Return False
+	Local $i = 1
+	For $i = 1 To StringLen($sPat) Step 2
+		Local $sWant = StringMid($sPat, $i, 2)
+		If $sWant = "00" Then ContinueLoop
+		If StringMid($sHay, $i, 2) <> $sWant Then Return False
+	Next
+	Return True
+EndFunc
+
+Func Wine_ResolveFuncStart($a_p_Site)
+	If $a_p_Site = 0 Then Return 0
+	Local $aiOff[3] = [0, -1, 1]
+	Local $i = 0
+	For $i = 0 To 2
+		Local $p = $a_p_Site + $aiOff[$i]
+		If Wine_CompactHex(Wine_ReadBytesHex($p, 3)) = "558BEC" Then Return $p
+	Next
+	If Wine_IsUserPtr($a_p_Site) Then Return $a_p_Site
+	Return 0
+EndFunc
+
+Func Wine_ResolveCallTarget($a_p_Site)
+	If $a_p_Site = 0 Then Return 0
+	Local $aiOff[3] = [0, -1, 1]
+	Local $i = 0
+	For $i = 0 To 2
+		Local $p = $a_p_Site + $aiOff[$i]
+		If Wine_CompactHex(Wine_ReadBytesHex($p, 1)) <> "E8" Then ContinueLoop
+		Local $pT = Scanner_GetCallTargetAddress($p)
+		If Wine_IsUserPtr($pT) Then Return $pT
+	Next
+	Return 0
+EndFunc
+
+Func Wine_FreeAsmAlloc($a_p)
+	If $a_p = 0 Or $g_h_GWProcess = 0 Then Return
+	DllCall($g_h_Kernel32, "bool", "VirtualFreeEx", "handle", $g_h_GWProcess, "ptr", $a_p, "ulong_ptr", 0, "dword", 0x8000)
+EndFunc
+
+Func Wine_InjectAbort($a_s_Reason, $a_p_Alloc = 0)
+	Out("Wine inject abort: " & $a_s_Reason)
+	If $a_p_Alloc <> 0 Then Wine_FreeAsmAlloc($a_p_Alloc)
+	$g_p_WineAsmAlloc = 0
+	$g_b_WineMinimalHook = False
+	If IsDeclared("g_p_QueueBase") Then $g_p_QueueBase = 0
+	Return False
+EndFunc
+
+; Verify Engine hook site: pattern 568B3085F67478... at candidate+0x22, and the
+; 5 bytes at the candidate match the MainExit epilogue (8B EC D9 45 08).
+; Try scan result, result-1, result+1 (Wine 4KB scan has no ASM P-1).
+Func Wine_FindEngineHookSite($a_p_Engine)
+	If $a_p_Engine = 0 Then Return 0
+	Local Const $sPat = "568B3085F67478EB038D4900D9460C"
+	Local Const $sEpi = "8BECD94508"
+	Local $aiOff[3] = [0, -1, 1]
+	Local $pPatOnly = 0
+	Local $sPatFive = ""
+	Local $i = 0
+	For $i = 0 To 2
+		Local $pCand = $a_p_Engine + $aiOff[$i]
+		Local $sFive = Wine_ReadBytesHex($pCand, 5)
+		Local $sAt22 = Wine_ReadBytesHex($pCand + 0x22, 15)
+		Out("Wine Engine candidate " & Hex($pCand) & " d=" & $aiOff[$i] & " site5=" & $sFive & " +22=" & $sAt22)
+		If Not Wine_PatternMatchesHex($sAt22, $sPat) Then ContinueLoop
+		Local $sFiveC = Wine_CompactHex($sFive)
+		If StringLeft($sFiveC, 2) = "E9" Then
+			Out("Wine inject abort: Engine site already starts with E9 at " & Hex($pCand))
+			Return 0
+		EndIf
+		If $sFiveC = $sEpi Then Return $pCand
+		If $pPatOnly = 0 Then
+			$pPatOnly = $pCand
+			$sPatFive = $sFive
+		EndIf
+	Next
+	If $pPatOnly <> 0 Then
+		Out("Wine inject abort: Engine pattern matched at " & Hex($pPatOnly) & " but site 5 bytes are " & $sPatFive & " (expected 8B EC D9 45 08)")
+		Return 0
+	EndIf
+	Out("Wine inject abort: Engine pattern 568B3085F67478... not found at result/result-1/result+1")
+	Return 0
+EndFunc
+
+Func Wine_AssembleMinimalEngine()
+	_('SavedIndex/4')
+	_('QueueCounter/4')
+	_('MapIsLoaded/4')
+	_('QueueBase/' & (256 * 256))
+
+	_('MainProc:')
+	_('pushad')
+	_('pushfd')
+	_('RegularFlow:')
+	_('mov eax,dword[QueueCounter]')
+	_('mov ecx,eax')
+	_('shl eax,8')
+	_('add eax,QueueBase')
+	_('mov ebx,dword[eax]')
+	_('test ebx,ebx')
+	_('jz MainExit')
+	_('mov dword[SavedIndex],ecx')
+	_('mov dword[eax],0')
+	_('jmp ebx')
+
+	_('CommandReturn:')
+	_('mov ecx,dword[SavedIndex]')
+	_('mov edx,dword[QueueCounter]')
+	_('cmp edx,ecx')
+	_('jnz MainExit')
+	_('mov eax,ecx')
+	_('inc eax')
+	_('cmp eax,QueueSize')
+	_('jnz MainSkipReset')
+	_('xor eax,eax')
+	_('MainSkipReset:')
+	_('mov dword[QueueCounter],eax')
+
+	_('MainExit:')
+	_('popfd')
+	_('popad')
+	_('mov ebp,esp')
+	_('fld st(0),dword[ebp+8]')
+	_('ljmp MainReturn')
+
+	_('CommandPacketSend:')
+	_('lea edx,dword[eax+8]')
+	_('push edx')
+	_('mov ebx,dword[eax+4]')
+	_('push ebx')
+	_('mov eax,dword[PacketLocation]')
+	_('push eax')
+	_('call PacketSend')
+	_('pop eax')
+	_('pop ebx')
+	_('pop edx')
+	_('ljmp CommandReturn')
+
+	_('CommandMove:')
+	_('lea eax,dword[eax+4]')
+	_('push eax')
+	_('call Move')
+	_('pop eax')
+	_('ljmp CommandReturn')
+
+	_('CommandDialog:')
+	_('push dword[eax+4]')
+	_('call Dialog')
+	_('add esp,4')
+	_('ljmp CommandReturn')
+
+	_('CommandInteract:')
+	_('push dword[eax+4]')
+	_('call Interact')
+	_('add esp,4')
+	_('ljmp CommandReturn')
+EndFunc
+
+; After read-only bind: one RWX page for queue + Move/PacketSend/Dialog stubs,
+; then exactly one Engine JMP. No Assembler_ModifyMemory. No five-JMP fallback.
+Func Wine_TryMinimalEngineHook($a_ap_FirstResults)
+	$g_b_WineMinimalHook = False
+	If IsDeclared("g_p_QueueBase") Then $g_p_QueueBase = 0
+	Out("Wine inject: resolving PacketSend/PacketLocation/Dialog/Interact (still read-only 4KB).")
+	Wine_RegisterInjectPatterns()
+	Local $aExtra = Wine_ScanPatternsChunked()
+	If Not IsArray($aExtra) Then Return Wine_InjectAbort("extra 4KB scan failed")
+
+	Local $pMove = Wine_ResolveFuncStart(Scanner_GetScanResult('Move', $a_ap_FirstResults, 'Func'))
+	Local $pPacketSend = Wine_ResolveFuncStart(Scanner_GetScanResult('PacketSend', $aExtra, 'Func'))
+	Local $pPacketLoc = Wine_ReadLivePtr(Scanner_GetScanResult('PacketLocation', $aExtra, 'Ptr'))
+	Local $pDialog = Wine_ResolveCallTarget(Scanner_GetScanResult('Dialog', $aExtra, 'Func'))
+	Local $pInteract = Wine_ResolveCallTarget(Scanner_GetScanResult('Interact', $aExtra, 'Func'))
+	Local $pInst = Wine_ReadLivePtr(Scanner_GetScanResult('InstanceInfo', $aExtra, 'Ptr'))
+	Local $pRegion = Wine_ReadLivePtr(Scanner_GetScanResult('Region', $aExtra, 'Ptr'))
+	Out("Wine inject targets: Move=" & Hex($pMove) & " PacketSend=" & Hex($pPacketSend) & _
+			" PacketLocation=" & Hex($pPacketLoc) & " Dialog=" & Hex($pDialog) & " Interact=" & Hex($pInteract))
+
+	If $pMove = 0 Then Return Wine_InjectAbort("Move func not resolved")
+	If $pPacketSend = 0 Then Return Wine_InjectAbort("PacketSend func not resolved")
+	If $pPacketLoc = 0 Then Return Wine_InjectAbort("PacketLocation ptr not resolved")
+	If $pDialog = 0 Then Return Wine_InjectAbort("Dialog call target not resolved")
+	If $pInteract = 0 Then Return Wine_InjectAbort("Interact call target not resolved")
+
+	If $pInst <> 0 Then
+		$g_p_InstanceInfo = $pInst
+		Memory_SetValue('InstanceInfo', Ptr($pInst))
+		Out("Wine inject: InstanceInfo=" & Hex($pInst))
+	Else
+		Out("Wine inject: InstanceInfo not found (map-type reads may be wrong; not aborting inject)")
+	EndIf
+	If $pRegion <> 0 Then
+		$g_p_Region = $pRegion
+		Memory_SetValue('Region', Ptr($pRegion))
+	EndIf
+
+	Local $pEngine = Scanner_GetScanResult('Engine', $a_ap_FirstResults, 'Hook')
+	Out("Wine Engine scan result=" & Hex($pEngine))
+	Local $pHook = Wine_FindEngineHookSite($pEngine)
+	If $pHook = 0 Then Return False
+
+	Local $sBefore = Wine_ReadBytesHex($pHook, 5)
+	Out("Wine Engine site before JMP: " & Hex($pHook) & " bytes=" & $sBefore)
+
+	Memory_SetValue('Move', Ptr($pMove))
+	Memory_SetValue('PacketSend', Ptr($pPacketSend))
+	Memory_SetValue('PacketLocation', Ptr($pPacketLoc))
+	Memory_SetValue('Dialog', Ptr($pDialog))
+	Memory_SetValue('Interact', Ptr($pInteract))
+	Memory_SetValue('MainStart', Ptr($pHook))
+	Memory_SetValue('MainReturn', Ptr($pHook + 5))
+	Memory_SetValue('QueueSize', 0x100)
+	$g_p_PacketLocation = $pPacketLoc
+
+	$g_i_ASMSize = 0
+	$g_i_ASMCodeOffset = 0
+	$g_s_ASMCode = ""
+	Wine_AssembleMinimalEngine()
+	Local $iAlloc = Int($g_i_ASMSize) + 0x1000
+	If $iAlloc < 0x11000 Then $iAlloc = 0x11000
+	Out("Wine inject: VirtualAllocEx " & $iAlloc & " bytes RWX for queue+stubs (ASMSize=" & Int($g_i_ASMSize) & ")")
+
+	Local $avAlloc = DllCall($g_h_Kernel32, "ptr", "VirtualAllocEx", _
+			"handle", $g_h_GWProcess, _
+			"ptr", 0, _
+			"ulong_ptr", $iAlloc, _
+			"dword", 0x3000, _
+			"dword", 0x40)
+	If @error Or Not IsArray($avAlloc) Or $avAlloc[0] = 0 Then
+		Return Wine_InjectAbort("VirtualAllocEx failed")
+	EndIf
+	Local $pAlloc = $avAlloc[0]
+	If Not Wine_IsUserPtr($pAlloc) Then Return Wine_InjectAbort("VirtualAllocEx returned non-user ptr " & Hex($pAlloc), $pAlloc)
+	$g_p_WineAsmAlloc = $pAlloc
+	$g_p_ASMMemory = $pAlloc
+	Out("Wine inject: Queue/ASM page at " & Hex($pAlloc))
+
+	Assembler_CompleteASMCode()
+	If $g_s_ASMCode = "" Then Return Wine_InjectAbort("Assembler_CompleteASMCode produced no bytes", $pAlloc)
+	Memory_WriteBinary($g_s_ASMCode, $g_p_ASMMemory + $g_i_ASMCodeOffset)
+
+	Local $pQueue = Memory_GetValue('QueueBase')
+	Local $pMain = Memory_GetValue('MainProc')
+	Local $pCmdMove = Memory_GetValue('CommandMove')
+	Local $pCmdPkt = Memory_GetValue('CommandPacketSend')
+	Local $pCmdDlg = Memory_GetValue('CommandDialog')
+	If Not Wine_IsUserPtr($pQueue) Then Return Wine_InjectAbort("QueueBase label is not a user ptr", $pAlloc)
+	If Not Wine_IsUserPtr($pMain) Then Return Wine_InjectAbort("MainProc label is not a user ptr", $pAlloc)
+	If Not Wine_IsUserPtr($pCmdMove) Then Return Wine_InjectAbort("CommandMove label is not a user ptr", $pAlloc)
+	If Not Wine_IsUserPtr($pCmdPkt) Then Return Wine_InjectAbort("CommandPacketSend label is not a user ptr", $pAlloc)
+	If Not Wine_IsUserPtr($pCmdDlg) Then Return Wine_InjectAbort("CommandDialog label is not a user ptr", $pAlloc)
+	Out("Wine inject: QueueBase=" & Hex($pQueue) & " MainProc=" & Hex($pMain))
+
+	; Re-check site after writing the new page only (must still be original bytes).
+	Local $sMid = Wine_ReadBytesHex($pHook, 5)
+	If Wine_CompactHex($sMid) <> Wine_CompactHex($sBefore) Then
+		Return Wine_InjectAbort("Engine site bytes changed before JMP (have " & $sMid & ", want " & $sBefore & ")", $pAlloc)
+	EndIf
+	If Not Wine_PatternMatchesHex(Wine_ReadBytesHex($pHook + 0x22, 15), "568B3085F67478EB038D4900D9460C") Then
+		Return Wine_InjectAbort("Engine +0x22 pattern no longer matches; not planting JMP", $pAlloc)
+	EndIf
+
+	Memory_WriteDetour('MainStart', 'MainProc')
+	Local $sAfter = Wine_ReadBytesHex($pHook, 5)
+	Out("Wine Engine site after JMP: " & Hex($pHook) & " bytes=" & $sAfter)
+	If StringLeft(Wine_CompactHex($sAfter), 2) <> "E9" Then
+		If Wine_CompactHex($sBefore) <> "" Then Memory_WriteBinary(Wine_CompactHex($sBefore), $pHook)
+		Return Wine_InjectAbort("JMP did not stick (after=" & $sAfter & "); restored original site bytes", $pAlloc)
+	EndIf
+
+	$g_p_SavedIndex = Memory_GetValue('SavedIndex')
+	$g_p_MapIsLoaded = Memory_GetValue('MapIsLoaded')
+	$g_i_QueueCounter = 0
+	$g_i_QueueSize = 0x100 - 1
+	$g_p_QueueBase = $pQueue
+	DllStructSetData($g_d_Packet, 1, Memory_GetValue('CommandPacketSend'))
+	DllStructSetData($g_d_InviteGuild, 1, Memory_GetValue('CommandPacketSend'))
+	DllStructSetData($g_d_Move, 1, Memory_GetValue('CommandMove'))
+	DllStructSetData($g_d_Dialog, 1, Memory_GetValue('CommandDialog'))
+	DllStructSetData($g_d_Interact, 1, Memory_GetValue('CommandInteract'))
+	$g_b_WineMinimalHook = True
+	Out("Wine: single Engine JMP planted. QueueBase=" & Hex($g_p_QueueBase) & " MainStart=" & Hex($pHook) & " MainProc=" & Hex($pMain))
+	Out("Wine: skipped Render/LoadFinished/Trader/TradePartner detours (not Assembler_ModifyMemory).")
+	Return True
 EndFunc
 
 Func Wine_ScanPatternsChunked()
@@ -442,7 +767,7 @@ Func Wine_ScanPatternsChunked()
 		$iUsable += 1
 	Next
 
-	Out("Wine 4KB scan: .text " & $iTextSize & " bytes, " & $iUsable & " critical patterns (read-only)")
+	Out("Wine 4KB scan: .text " & $iTextSize & " bytes, " & $iUsable & " patterns (read-only)")
 	Local $hScan = TimerInit()
 	Local $iChunk = 4096
 	Local $iOverlap = $iMaxPat
