@@ -45,7 +45,12 @@ EndFunc
 ; Outposts never fight. Returns True if we arrived or the map changed.
 Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_LevelerPaused Then Return False
-	If Leveler_IsWiped() Then Return False
+	If $g_b_KilroyMode Then
+		Leveler_HandleKilroyDeath()
+		If Agent_GetAgentInfo(-2, "IsDead") Then Return True
+	ElseIf Leveler_IsWiped() Then
+		Return False
+	EndIf
 
 	If Leveler_ShouldFightHere() Then
 		$a_b_Combat = True
@@ -69,14 +74,19 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_SpiritRiftWatch Then $l_s_Callback = "Leveler_InterruptSpiritRifts"
 
 	Local $l_b_Ok = False
-	If Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
+	If Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Or $g_b_KilroyMode Then
 		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 30000, $a_b_Combat)
 	Else
 		$l_b_Ok = Pathfinder_MoveTo($a_f_X, $a_f_Y, -1, $l_v_Obstacles, $l_i_Aggro, $LEVELER_FIGHT_RANGE_OUT, 0, $l_s_Callback)
 	EndIf
 
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
-	If Leveler_IsWiped() Then Return False
+	If $g_b_KilroyMode Then
+		Leveler_HandleKilroyDeath()
+		If Agent_GetAgentInfo(-2, "IsDead") Then Return True
+	ElseIf Leveler_IsWiped() Then
+		Return False
+	EndIf
 	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
 	Return $l_b_Ok
 EndFunc
@@ -85,7 +95,15 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If Leveler_IsWiped() Then Return False
+		If $g_b_KilroyMode Then
+			Leveler_HandleKilroyDeath()
+			If Agent_GetAgentInfo(-2, "IsDead") Then
+				Sleep(200)
+				ContinueLoop
+			EndIf
+		ElseIf Leveler_IsWiped() Then
+			Return False
+		EndIf
 		If Map_GetMapID() <> $l_i_StartMap Then Return True
 		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
 		If $a_b_Combat Then Leveler_CombatTick()
@@ -219,9 +237,12 @@ Func Leveler_StepOutpost($a_i_Step)
 		Case $LEVELER_STEP_TO_EOTN
 			If Map_IsMapUnlocked($MAP_EOTN) Then Return $MAP_EOTN
 			Return $MAP_BOREAL
-		Case $LEVELER_STEP_EOTN_POOL, $LEVELER_STEP_FARM_20, $LEVELER_STEP_TO_GUNNAR
+		Case $LEVELER_STEP_EOTN_POOL
 			Return $MAP_EOTN
-		Case $LEVELER_STEP_KILROY, $LEVELER_STEP_TO_LA, $LEVELER_STEP_TO_LONGEYE
+		Case $LEVELER_STEP_TO_GUNNAR
+			If Map_IsMapUnlocked($MAP_GUNNAR) Then Return $MAP_GUNNAR
+			Return $MAP_EOTN
+		Case $LEVELER_STEP_KILROY, $LEVELER_STEP_FARM_20, $LEVELER_STEP_TO_LA, $LEVELER_STEP_TO_LONGEYE
 			If $a_i_Step = $LEVELER_STEP_TO_LA And Map_IsMapUnlocked($MAP_LIONS_ARCH) Then Return $MAP_LIONS_ARCH
 			If $a_i_Step = $LEVELER_STEP_TO_LONGEYE And Map_IsMapUnlocked($MAP_LONGEYE) Then Return $MAP_LONGEYE
 			Return $MAP_GUNNAR
@@ -289,15 +310,15 @@ Func Leveler_StepAllowsMap($a_i_Step, $a_i_Map)
 			Return $a_i_Map = $MAP_ICE_CLIFF
 		Case $LEVELER_STEP_EOTN_POOL
 			Return $a_i_Map = $MAP_HOM
-		Case $LEVELER_STEP_FARM_20
-			Return $a_i_Map = $MAP_HOM Or $a_i_Map = $MAP_AB
-		Case $LEVELER_STEP_ATTR_2
-			Return $a_i_Map = $MAP_ZEN_EXP
 		Case $LEVELER_STEP_TO_GUNNAR
 			If Map_IsMapUnlocked($MAP_GUNNAR) Then Return $a_i_Map = $MAP_GUNNAR
-			Return $a_i_Map = $MAP_NORRHART
+			Return $a_i_Map = $MAP_NORRHART Or $a_i_Map = $MAP_ICE_CLIFF
 		Case $LEVELER_STEP_KILROY
 			Return $a_i_Map = $MAP_KILROY
+		Case $LEVELER_STEP_FARM_20
+			Return $a_i_Map = $MAP_FRONIS Or $a_i_Map = $MAP_KILROY
+		Case $LEVELER_STEP_ATTR_2
+			Return $a_i_Map = $MAP_ZEN_EXP
 		Case $LEVELER_STEP_TO_LA
 			If Map_IsMapUnlocked($MAP_LIONS_ARCH) Then Return $a_i_Map = $MAP_LIONS_ARCH
 			Return $a_i_Map = $MAP_BEJUNKAN Or $a_i_Map = $MAP_LIONS_GATE
@@ -602,7 +623,9 @@ EndFunc
 
 ; One UtilityAI fight tick at the player's current position.
 Func Leveler_CombatTick()
+	If $g_b_KilroyMode Then Leveler_HandleKilroyDeath()
 	If Not Leveler_ShouldFightHere() Then Return
+	If Agent_GetAgentInfo(-2, "IsDead") Then Return
 	If Not Leveler_PrepareCombatAI() Then Return
 	UAI_Fight(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $LEVELER_AGGRO, $LEVELER_FIGHT_RANGE_OUT)
 EndFunc
@@ -1014,13 +1037,13 @@ Func Leveler_EquipItemByModel($a_i_Model)
 	Return True
 EndFunc
 
-; Punchout death: refill energy with slot 8 unless max energy is already high, then bail to Gunnar's.
+; Punchout KO: STAND UP! (slot 8) until energy is full. Unlock bails at high max energy; the farm stays in the lair.
 Func Leveler_HandleKilroyDeath()
 	If Not $g_b_KilroyMode Then Return False
 	If Not Agent_GetAgentInfo(-2, "IsDead") Then Return False
 
 	Local $l_i_MaxEnergy = Agent_GetAgentInfo(-2, "MaxEnergy")
-	If $l_i_MaxEnergy >= 80 Then
+	If $l_i_MaxEnergy >= 80 And Not $g_b_FarmMode Then
 		Out("[Kilroy] High-energy death. Returning to Gunnar's Hold.")
 		$g_b_KilroyMode = False
 		Sleep(800)
@@ -1055,21 +1078,21 @@ Func Leveler_RecoverWipe()
 				Map_WaitMapLoading()
 			EndIf
 		EndIf
-		Out("[Recover] Kilroy wipe handled. Retrying Punch the Clown.")
+		Out("[Recover] Kilroy wipe handled. Retrying punch-out.")
 		Return True
 	EndIf
 	If $g_b_FarmMode Then
-		Out("[Recover] Wiped during AB farm. Waiting, then returning to Eye of the North.")
+		Out("[Recover] Wiped during Kilroy farm. Waiting, then returning to Gunnar's Hold.")
 		Sleep(8000)
-		If Map_GetMapID() <> $MAP_EOTN And Map_GetMapID() <> $MAP_HOM Then
-			If Not Leveler_Travel($MAP_EOTN) Then
+		If Map_GetMapID() <> $MAP_GUNNAR Then
+			If Not Leveler_Travel($MAP_GUNNAR) Then
 				Chat_SendChat("resign", "/")
 				Sleep(1200)
 				If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
 				Map_WaitMapLoading()
 			EndIf
 		EndIf
-		Out("[Recover] Farm wipe handled. Retrying AB prepare.")
+		Out("[Recover] Farm wipe handled. Retrying Kilroy punch-out.")
 		Return True
 	EndIf
 

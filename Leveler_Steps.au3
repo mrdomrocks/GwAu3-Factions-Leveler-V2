@@ -72,14 +72,14 @@ Func Leveler_ExecuteStep($a_i_Step)
 			$l_b_Ok = Leveler_Step_ToEyeOfTheNorth()
 		Case $LEVELER_STEP_EOTN_POOL
 			$l_b_Ok = Leveler_Step_UnlockEotnPool()
-		Case $LEVELER_STEP_FARM_20
-			$l_b_Ok = Leveler_Step_FarmUntil20()
-		Case $LEVELER_STEP_ATTR_2
-			$l_b_Ok = Leveler_Step_AnUnwelcomeGuest()
 		Case $LEVELER_STEP_TO_GUNNAR
 			$l_b_Ok = Leveler_Step_ToGunnarsHold()
 		Case $LEVELER_STEP_KILROY
 			$l_b_Ok = Leveler_Step_UnlockKilroy()
+		Case $LEVELER_STEP_FARM_20
+			$l_b_Ok = Leveler_Step_FarmUntil20()
+		Case $LEVELER_STEP_ATTR_2
+			$l_b_Ok = Leveler_Step_AnUnwelcomeGuest()
 		Case $LEVELER_STEP_TO_LA
 			$l_b_Ok = Leveler_Step_ToLionsArch()
 		Case $LEVELER_STEP_TO_KAMADAN
@@ -1716,38 +1716,123 @@ Func Leveler_Step_FarmUntil20()
 	Local $l_i_Level = Leveler_PlayerLevel()
 	If $l_i_Level >= 20 Then
 		$g_b_FarmMode = False
+		$g_b_KilroyMode = False
 		Out("[Farm] Already level " & $l_i_Level)
 		Return True
 	EndIf
 
 	$g_b_FarmMode = True
-	Out("=== " & $g_s_CurrentHeader & " (level " & $l_i_Level & ") ===")
+	$g_b_KilroyMode = True
+	Out("=== " & $g_s_CurrentHeader & " (Kilroy punch-out, level " & $l_i_Level & ") ===")
 
-	If Map_GetMapID() = $MAP_AB Then
-		If Not Leveler_RunAbPath() Then Return False
+	If Map_GetMapID() = $MAP_FRONIS Then
+		If Not Leveler_RunPunchOutDungeon() Then Return False
 	Else
-		Party_LeaveGroup(True)
-		Sleep(400)
-		If Map_GetMapID() <> $MAP_HOM Then
-			If Not Leveler_Travel($MAP_EOTN) Then Return False
-			Party_LeaveGroup(True)
-			Sleep(300)
-			If Not Leveler_MoveAndExit(-4873.00, 5284.00, $MAP_HOM, False) Then Return False
-		EndIf
-		If Not Leveler_EquipKeiranBow() Then Return False
-		If Not Leveler_EnterAbQuest() Then Return False
-		If Not Leveler_RunAbPath() Then Return False
+		If Not Leveler_EnterPunchOutExtravaganza() Then Return False
+		If Not Leveler_RunPunchOutDungeon() Then Return False
+	EndIf
+
+	If Map_GetMapID() <> $MAP_GUNNAR Then
+		If Not Leveler_Travel($MAP_GUNNAR) Then Return False
+	EndIf
+	If Leveler_HasQuest($QUEST_PUNCH_OUT) Then
+		Leveler_QuestLoop($QUEST_PUNCH_OUT, $KILROY_NPC_X, $KILROY_NPC_Y, $DIALOG_PUNCHOUT_COMPLETE, "complete")
+	EndIf
+	If Leveler_HasQuest($QUEST_THROWDOWN) Then
+		Ui_ActiveQuest($QUEST_THROWDOWN)
+		Sleep(200)
+		Quest_AbandonQuest($QUEST_THROWDOWN)
+		Sleep(300)
 	EndIf
 
 	$l_i_Level = Leveler_PlayerLevel()
 	Out("[Farm] End-of-run level: " & $l_i_Level)
 	If $l_i_Level >= 20 Then
 		$g_b_FarmMode = False
+		$g_b_KilroyMode = False
 		Out("[Farm] Reached level 20")
 		Return True
 	EndIf
-	; Stay on this step and start another AB run.
+	; Stay on this step and start another Punch-Out run.
 	Return False
+EndFunc
+
+; Punch the Clown is already done. Re-accept the repeatable Fronis lair quest and enter.
+Func Leveler_EnterPunchOutExtravaganza()
+	If Map_GetMapID() = $MAP_FRONIS Then Return True
+
+	If Map_GetMapID() <> $MAP_GUNNAR Then
+		If Not Leveler_Travel($MAP_GUNNAR) Then Return False
+	EndIf
+	Party_LeaveGroup(True)
+	Sleep(400)
+
+	If Leveler_HasQuest($QUEST_THROWDOWN) Then
+		Ui_ActiveQuest($QUEST_THROWDOWN)
+		Sleep(200)
+		Quest_AbandonQuest($QUEST_THROWDOWN)
+		Sleep(400)
+		Out("[Farm] Abandoned Throwdown so Punch-Out can be repeated")
+	EndIf
+
+	If Not Leveler_HasQuest($QUEST_PUNCH_OUT) Then
+		If Leveler_QuestFinished($QUEST_PUNCH_OUT) Then
+			; Kilroy only offers the quest again after a rezone.
+			If Not Leveler_Travel($MAP_EOTN) Then Return False
+			If Not Leveler_Travel($MAP_GUNNAR) Then Return False
+			Party_LeaveGroup(True)
+			Sleep(300)
+		EndIf
+		If Not Leveler_MoveAndDialog($KILROY_NPC_X, $KILROY_NPC_Y, $DIALOG_PUNCHOUT_ACCEPT, False) Then Return False
+		Sleep(600)
+		If Not Leveler_HasQuest($QUEST_PUNCH_OUT) Then
+			Ui_AcceptQuest($QUEST_PUNCH_OUT)
+			Sleep(500)
+		EndIf
+		If Not Leveler_HasQuest($QUEST_PUNCH_OUT) Then
+			Out("[Farm] Could not accept Punch-Out Extravaganza")
+			Return False
+		EndIf
+	EndIf
+
+	If Not Leveler_QuestLoop($QUEST_PUNCH_OUT, $KILROY_NPC_X, $KILROY_NPC_Y, $DIALOG_GENERIC_TALK, "step") Then
+		If Map_GetMapID() <> $MAP_FRONIS Then Return False
+	EndIf
+	If Not Leveler_WaitForMap($MAP_FRONIS, 20000) And Map_GetMapID() <> $MAP_FRONIS Then Return False
+	Return True
+EndFunc
+
+; Fight through Fronis Irontoe's Lair. STAND UP! is handled by KilroyMode.
+Func Leveler_RunPunchOutDungeon()
+	If Map_GetMapID() <> $MAP_FRONIS Then Return False
+	$g_b_KilroyMode = True
+	If Leveler_HasQuest($QUEST_PUNCH_OUT) Then Ui_ActiveQuest($QUEST_PUNCH_OUT)
+	Leveler_EquipItemByModel($MODEL_BRASS_KNUCKLES)
+	If Not Leveler_WaitMs(1500) Then Return False
+
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 900000
+		If $g_b_LevelerPaused Then Return False
+		If Map_GetInstanceInfo("IsOutpost") Then Return True
+		If Map_GetMapID() <> $MAP_FRONIS Then Return True
+		Leveler_HandleKilroyDeath()
+		If Agent_GetAgentInfo(-2, "IsDead") Then
+			Sleep(200)
+			ContinueLoop
+		EndIf
+
+		Local $l_f_X = 0
+		Local $l_f_Y = 0
+		Leveler_FillQuestMarker($QUEST_PUNCH_OUT, $l_f_X, $l_f_Y)
+		If $l_f_X = 0 And $l_f_Y = 0 Then
+			Leveler_CombatTick()
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		Leveler_MoveTo($l_f_X, $l_f_Y, True)
+		Sleep(200)
+	WEnd
+	Return Map_GetInstanceInfo("IsOutpost") Or Map_GetMapID() <> $MAP_FRONIS
 EndFunc
 
 Func Leveler_RunAbPath()
@@ -1963,18 +2048,23 @@ EndFunc
 Func Leveler_Step_UnlockKilroy()
 	$g_s_CurrentHeader = "Unlock Kilroy Stonekin"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_HasQuest($QUEST_PUNCH_OUT) Or Leveler_QuestProgress($QUEST_THROWDOWN) Then
+		Leveler_MarkQuestDone($QUEST_PUNCH_CLOWN)
+		Out("[Step] Punch the Clown already finished (Punch-Out path is open)")
+		Return True
+	EndIf
 	If Leveler_SkipIfQuestDone($QUEST_PUNCH_CLOWN, "Punch the Clown") Then Return True
 
 	If Not Leveler_Travel($MAP_GUNNAR) Then Return False
 	$g_b_KilroyMode = True
 	If Not Leveler_HasQuest($QUEST_PUNCH_CLOWN) Then
-		If Not Leveler_QuestLoop($QUEST_PUNCH_CLOWN, 17341.00, -4796.00, $DIALOG_PUNCH_ACCEPT, "accept") Then
+		If Not Leveler_QuestLoop($QUEST_PUNCH_CLOWN, $KILROY_NPC_X, $KILROY_NPC_Y, $DIALOG_PUNCH_ACCEPT, "accept") Then
 			$g_b_KilroyMode = False
 			Return False
 		EndIf
 	EndIf
 	If Map_GetMapID() <> $MAP_KILROY Then
-		If Not Leveler_QuestLoop($QUEST_PUNCH_CLOWN, 17341.00, -4796.00, $DIALOG_GENERIC_TALK, "step") Then
+		If Not Leveler_QuestLoop($QUEST_PUNCH_CLOWN, $KILROY_NPC_X, $KILROY_NPC_Y, $DIALOG_GENERIC_TALK, "step") Then
 			If Map_GetMapID() <> $MAP_KILROY Then
 				$g_b_KilroyMode = False
 				Return False
@@ -1991,7 +2081,7 @@ Func Leveler_Step_UnlockKilroy()
 		$g_b_KilroyMode = False
 		Return False
 	EndIf
-	Leveler_MoveTo(19290.50, -11552.23, True)
+	Leveler_MoveTo($KILROY_PUNCH_X, $KILROY_PUNCH_Y, True)
 	If Not Leveler_WaitUntilOutpost(180000) Then
 		$g_b_KilroyMode = False
 		Return False
@@ -2003,12 +2093,11 @@ Func Leveler_Step_UnlockKilroy()
 			Return False
 		EndIf
 	EndIf
-	If Not Leveler_QuestLoop($QUEST_PUNCH_CLOWN, 17341.00, -4796.00, $DIALOG_PUNCH_COMPLETE, "complete") Then
+	If Not Leveler_QuestLoop($QUEST_PUNCH_CLOWN, $KILROY_NPC_X, $KILROY_NPC_Y, $DIALOG_PUNCH_COMPLETE, "complete") Then
 		$g_b_KilroyMode = False
 		Return False
 	EndIf
 	$g_b_KilroyMode = False
-	Leveler_EquipItemByModel($MODEL_KEIRAN_BOW)
 	Out("[Step] Kilroy Stonekin unlocked")
 	Return True
 EndFunc

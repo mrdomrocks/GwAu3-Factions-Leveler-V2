@@ -389,6 +389,8 @@ Func Leveler_StepHasActiveQuest($a_i_Step)
 			Return Leveler_QuestNeedsHandIn($QUEST_UNWELCOME)
 		Case $LEVELER_STEP_KILROY
 			Return Leveler_QuestNeedsHandIn($QUEST_PUNCH_CLOWN)
+		Case $LEVELER_STEP_FARM_20
+			Return Leveler_QuestNeedsHandIn($QUEST_PUNCH_OUT)
 		Case $LEVELER_STEP_TO_LA
 			Return Leveler_QuestNeedsHandIn($QUEST_CHAOS_KRYTA)
 		Case $LEVELER_STEP_TO_KAMADAN

@@ -31,10 +31,10 @@ Global Const $LEVELER_STEP_UNLOCK_MOX = 26
 Global Const $LEVELER_STEP_TO_BOREAL = 27
 Global Const $LEVELER_STEP_TO_EOTN = 28
 Global Const $LEVELER_STEP_EOTN_POOL = 29
-Global Const $LEVELER_STEP_FARM_20 = 30
-Global Const $LEVELER_STEP_ATTR_2 = 31
-Global Const $LEVELER_STEP_TO_GUNNAR = 32
-Global Const $LEVELER_STEP_KILROY = 33
+Global Const $LEVELER_STEP_TO_GUNNAR = 30
+Global Const $LEVELER_STEP_KILROY = 31
+Global Const $LEVELER_STEP_FARM_20 = 32
+Global Const $LEVELER_STEP_ATTR_2 = 33
 Global Const $LEVELER_STEP_TO_LA = 34
 Global Const $LEVELER_STEP_TO_KAMADAN = 35
 Global Const $LEVELER_STEP_TO_DOCKS = 36
@@ -77,10 +77,10 @@ Global $g_as_StepNames[$LEVELER_STEP_COUNT] = [ _
 		"To Boreal Station", _
 		"To Eye of the North", _
 		"Unlock Eye of the North Pool", _
-		"Farm Until Level 20", _
-		"Quest: An Unwelcome Guest", _
 		"To Gunnar's Hold", _
 		"Unlock Kilroy Stonekin", _
+		"Farm Until Level 20", _
+		"Quest: An Unwelcome Guest", _
 		"To Lion's Arch", _
 		"To Kamadan", _
 		"To Consulate Docks", _
@@ -124,6 +124,8 @@ Global Const $MAP_AB = 849
 Global Const $MAP_NORRHART = 548
 Global Const $MAP_GUNNAR = 644
 Global Const $MAP_KILROY = 703
+; Fronis Irontoe's Lair. Game_link:Mission_704.
+Global Const $MAP_FRONIS = 704
 Global Const $MAP_LIONS_ARCH = 55
 Global Const $MAP_BEJUNKAN = 290
 Global Const $MAP_LIONS_GATE = 415
@@ -157,6 +159,9 @@ Global Const $QUEST_NORTHERN_ALLIES = 905
 Global Const $QUEST_KNOWLEDGEABLE_ASURA = 915
 Global Const $QUEST_UNWELCOME = 348
 Global Const $QUEST_NORNBEAR = 808
+; Punch the Clown (858) unlocks Kilroy. Punch-Out Extravaganza (856) is the repeatable farm.
+Global Const $QUEST_PUNCH_OUT = 856
+Global Const $QUEST_THROWDOWN = 857
 Global Const $QUEST_PUNCH_CLOWN = 858
 Global Const $QUEST_CHAOS_KRYTA = 479
 Global Const $QUEST_SUNSPEARS_CANTHA = 724
@@ -256,8 +261,14 @@ Global Const $DIALOG_UNWELCOME_ACCEPT = 0x815C01
 Global Const $DIALOG_UNWELCOME_COMPLETE = 0x815C07
 Global Const $DIALOG_ZEN_SKIP = 0x80000B
 Global Const $DIALOG_NORNBEAR_ACCEPT = 0x832801
+Global Const $DIALOG_PUNCHOUT_ACCEPT = 0x835801
+Global Const $DIALOG_PUNCHOUT_COMPLETE = 0x835807
 Global Const $DIALOG_PUNCH_ACCEPT = 0x835A01
 Global Const $DIALOG_PUNCH_COMPLETE = 0x835A07
+Global Const $KILROY_NPC_X = 17341.00
+Global Const $KILROY_NPC_Y = -4796.00
+Global Const $KILROY_PUNCH_X = 19290.50
+Global Const $KILROY_PUNCH_Y = -11552.23
 Global Const $DIALOG_CHAOS_ACCEPT = 0x81DF01
 Global Const $DIALOG_CHAOS_STEP1 = 0x81DF04
 Global Const $DIALOG_CHAOS_STEP3 = 0x85
