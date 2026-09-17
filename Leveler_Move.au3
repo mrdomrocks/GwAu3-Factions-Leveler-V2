@@ -616,6 +616,8 @@ EndFunc
 
 Func Leveler_ZenTogoIsDead()
 	If Not $g_b_SpiritRiftWatch And Not Leveler_WineLooksInZenMission() Then Return False
+	If Not Leveler_AgentMemoryLive() Then Return False
+	If Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
 	Local $l_i_Max = Agent_GetMaxAgents()
 	Local $i
 	For $i = 1 To $l_i_Max - 1
@@ -623,6 +625,7 @@ Func Leveler_ZenTogoIsDead()
 		If Not Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
 		Local $l_s_Name = Agent_GetAgentInfo($i, "Name")
 		Local $l_i_Model = Agent_GetAgentInfo($i, "PlayerNumber")
+		If $l_s_Name = "" And Not Leveler_IsTogoModel($l_i_Model) Then ContinueLoop
 		If Leveler_IsTogoModel($l_i_Model) Or StringInStr($l_s_Name, "Togo") Then Return True
 	Next
 	Return False
@@ -630,6 +633,17 @@ EndFunc
 
 Func Leveler_IsWiped()
 	If Leveler_MapLooksConnecting() Then Return False
+	; Wine: Togo (lvl20 Rt) in the party means we are in Zen, not at a wipe outpost.
+	; AgentBase=0 / Pos 0,0 / stale IsDefeated must not resign.
+	If Wine_IsWine() And Leveler_PartyHasZenMissionAllies() Then
+		If Not Leveler_AgentMemoryLive() Then Return False
+		If Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
+		If Not Agent_GetAgentInfo(-2, "IsDead") Then Return False
+		If Not Leveler_ZenTogoIsDead() Then Return False
+		Return True
+	EndIf
+	If Not Leveler_AgentMemoryLive() Then Return False
+	If Wine_IsWine() And Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
 	If Party_GetPartyContextInfo("IsDefeated") Then Return True
 	If Party_IsWiped() Then Return True
 	If Leveler_ZenTogoIsDead() Then Return True
@@ -1205,6 +1219,8 @@ EndFunc
 ; True once we are sitting in the mission outpost (213 / 214), not Connecting and not still in the instance.
 Func Leveler_AtWipeOutpost()
 	If Leveler_MapLooksConnecting() Then Return False
+	; 213 with Togo is the Zen instance, not the outpost after a wipe.
+	If Leveler_PartyHasZenMissionAllies() Or Leveler_InMissionInstance() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	If $l_i_Map <= 0 Then Return False
 	If Leveler_InstanceInfoTrusted() And Map_GetInstanceInfo("IsOutpost") Then Return True
@@ -1227,6 +1243,11 @@ Func Leveler_WaitReturnToOutpost($a_i_Timeout = 90000)
 			Cinematic_SkipCinematic()
 			Sleep(400)
 		EndIf
+		If Wine_IsWine() And Leveler_PartyHasZenMissionAllies() Then
+			$g_b_WipeReturnSent = False
+			Out("[Recover] Still in Zen with Togo (map " & Map_GetMapID() & "); aborting wipe wait.")
+			Return False
+		EndIf
 		If Leveler_AtWipeOutpost() Then
 			$g_b_WipeReturnSent = False
 			$g_b_WineEnterSent = False
@@ -1246,6 +1267,11 @@ EndFunc
 
 ; Resign once, Return-to-Outpost once, then wait. Repeating 0xA7 while Connecting hangs Gw at 0%.
 Func Leveler_ReturnWipeToOutpost()
+	If Wine_IsWine() And Leveler_PartyHasZenMissionAllies() Then
+		$g_b_WipeReturnSent = False
+		Out("[Recover] Togo is in the party; not resigning.")
+		Return False
+	EndIf
 	If Leveler_AtWipeOutpost() Then
 		$g_b_WipeReturnSent = False
 		$g_b_WineEnterSent = False
