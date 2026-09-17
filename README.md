@@ -57,6 +57,7 @@ Native Windows is unchanged unless `ForceWineCompat=1`.
 6. Already-inside Zen on Wine is **map/CurrentMapID 246** or Togo (lvl20 Rt) in the party. Stale `MissionObjectiveArraySize` on outpost 213 must **not** skip Enter Mission or start Escort Togo. On 213 without Togo, do **not** Travel/resign 213→213 when InstanceInfo flickers explorable — go straight to Enter Mission.
 7. The first step must log a live `QueueBase` (and `CommandMove`) after `Wine_EnsureCommandQueue`. `Map_Move` can then walk the mission path. Pathing/queue on Wine is validated live.
 8. Zen combat stays on Togo (do not walk off him). A wipe / Togo death resigns **once**, sends Return-to-Outpost **once**, and waits. Do not re-send 0xA7 while the client shows Connecting — that hangs at 0%. Success is a clean Zen outpost (213), then re-enter.
+9. After a held **246** (first live enter on wine-gw), wait for the world to settle before skill-bar writes, queue refresh, or the first Move. Do **not** re-inject Engine JMP if QueueBase is already live across the load. Do **not** keep PostMessage/MouseClick-ing once the load starts — that crashed Gw.
 
 ## Scope
 

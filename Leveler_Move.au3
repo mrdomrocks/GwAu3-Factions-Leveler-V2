@@ -58,7 +58,15 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 
 	Local $l_i_StartMap = Map_GetMapID()
 	If Wine_IsWine() Then
-		If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
+		If Wine_MapIsLoading() Then
+			Out("[Move] Map is loading; not injecting or walking yet")
+			Return False
+		EndIf
+		If Wine_QueueAlreadyLive() Then
+			Wine_RefreshQueueFromLabels()
+		Else
+			If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
+		EndIf
 	EndIf
 	Leveler_EnsurePathfinder()
 

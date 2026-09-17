@@ -3,7 +3,13 @@
 Func Leveler_ExecuteStep($a_i_Step)
 	If $g_b_LevelerPaused Then Return False
 	If Wine_IsWine() Then
-		If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
+		If Wine_MapIsLoading() Then
+			Out("[Recover] Map is loading; not touching Engine JMP")
+		ElseIf Wine_QueueAlreadyLive() Then
+			Wine_RefreshQueueFromLabels()
+		Else
+			If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
+		EndIf
 	EndIf
 	If Leveler_MapLooksConnecting() Then
 		Out("[Recover] Client is connecting; waiting for the outpost without sending packets.")
@@ -1277,7 +1283,7 @@ Func Leveler_Step_ZenDaijunMission()
 		If Wine_IsWine() Then $g_b_WineEnterSent = True
 		Out("[Step] Already inside Zen Daijun (map " & Map_GetMapID() & _
 				" current " & Leveler_LiveMapID() & ", Togo allies)")
-		Leveler_LoadZenSkillBar()
+		If Not Wine_IsWine() Then Leveler_LoadZenSkillBar()
 	Else
 		; Wine 213 without 246/Togo is the outpost. Do not Travel/resign on
 		; InstanceInfo IsOutpost flicker — that loops 213→213 and never enters.
@@ -1301,7 +1307,11 @@ Func Leveler_Step_ZenDaijunMission()
 		Out("[Step] Entering Zen Daijun")
 		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_EXP) Then Return False
 	EndIf
-	If Not Leveler_WaitUntilMapReady() Then Return False
+	If Wine_IsWine() Then
+		If Not Leveler_WaitWineWorldSettled() Then Return False
+	Else
+		If Not Leveler_WaitUntilMapReady() Then Return False
+	EndIf
 	Leveler_LoadZenSkillBar()
 	If Not Leveler_PrepareCombatAI() Then Return False
 	If Leveler_IsWiped() Then Return False

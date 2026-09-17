@@ -549,6 +549,22 @@ Func Wine_EnterChallenge()
 		Wine_LevelerOverlayRestore()
 		Return True
 	EndIf
+	; {ENTER} often starts the load while map is still 213. More PostMessage /
+	; MouseClick during DX reset crashes Gw. Stop input and wait for held 246.
+	If Wine_WaitLoadHint($iStart, 1200) Then
+		Out("Wine enter: load started after {ENTER}; waiting for held 246 (no more clicks)")
+		If Wine_WaitEnterEvidence($iStart, 45000) Then
+			$g_b_WineEnterSent = True
+			Out("Wine enter: held map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
+			WinSetOnTop($hWnd, "", 0)
+			Wine_LevelerOverlayRestore()
+			Return True
+		EndIf
+		WinSetOnTop($hWnd, "", 0)
+		Wine_LevelerOverlayRestore()
+		Out("Wine enter: load started but 246 did not hold. Not latching.")
+		Return False
+	EndIf
 
 	Local $aiY[6] = [22, 32, 42, 54, 68, 80]
 	Local $aiXOff[3] = [0, -40, 40]
@@ -556,6 +572,7 @@ Func Wine_EnterChallenge()
 	Local $iX = 0
 	For $iY = 0 To 5
 		For $iX = 0 To 2
+			If Wine_EnterLoadStarted($iStart) Or Wine_MapIsLoading() Then ExitLoop 2
 			Wine_ClientClick($hWnd, $iCx + $aiXOff[$iX], $aiY[$iY])
 			If Wine_WaitEnterEvidence($iStart, 1600) Then
 				$g_b_WineEnterSent = True
@@ -564,8 +581,23 @@ Func Wine_EnterChallenge()
 				Wine_LevelerOverlayRestore()
 				Return True
 			EndIf
+			If Wine_EnterLoadStarted($iStart) Or Wine_WaitLoadHint($iStart, 400) Then ExitLoop 2
 		Next
 	Next
+	If Wine_EnterLoadStarted($iStart) Or Wine_MapIsLoading() Or Wine_EnterMapEvidence($iStart) Then
+		Out("Wine enter: load started; waiting for held 246 (no more clicks)")
+		If Wine_WaitEnterEvidence($iStart, 45000) Then
+			$g_b_WineEnterSent = True
+			Out("Wine enter: held map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
+			WinSetOnTop($hWnd, "", 0)
+			Wine_LevelerOverlayRestore()
+			Return True
+		EndIf
+		WinSetOnTop($hWnd, "", 0)
+		Wine_LevelerOverlayRestore()
+		Out("Wine enter: load started but 246 did not hold. Not latching.")
+		Return False
+	EndIf
 	ControlSend($hWnd, "", "", "{ENTER}")
 	If Wine_WaitEnterEvidence($iStart, 2500) Then
 		$g_b_WineEnterSent = True
@@ -613,6 +645,51 @@ Func Wine_QueueWalkReady()
 	If Wine_EngineHookLive() Then Return True
 	If $g_p_WineExistingE9 <> 0 Then Return True
 	Return False
+EndFunc
+
+; Type 2 / map 0 / CurrentMapType 2. Do not inject or write skills here.
+Func Wine_MapIsLoading()
+	If Map_GetMapID() <= 0 Then Return True
+	If Number(Map_GetInstanceInfo("Type")) = 2 Then Return True
+	If Number(Map_GetCharacterInfo("CurrentMapType")) = 2 Then Return True
+	Return False
+EndFunc
+
+; Queue from this attach is still valid. Never plant a second Engine JMP.
+Func Wine_QueueAlreadyLive()
+	If Not Wine_CommandsReady() Then Return False
+	If Wine_EngineHookLive() Then Return True
+	If $g_p_WineExistingE9 <> 0 Then Return True
+	If $g_b_WineMinimalHook Then Return True
+	If $g_p_WineAsmAlloc <> 0 Then Return True
+	Return False
+EndFunc
+
+; Real map change off the outpost, or durable 246. Not a one-tick Type flicker.
+Func Wine_EnterLoadStarted($a_i_StartMap)
+	If Wine_EnterMapEvidence($a_i_StartMap) Then Return True
+	Local $iMap = Map_GetMapID()
+	If $iMap <= 0 Then Return True
+	If $iMap <> $a_i_StartMap And $iMap <> 213 And $iMap <> 214 Then Return True
+	Return False
+EndFunc
+
+; After {ENTER}: 246, left 213, or Type=2 held ~800ms. Used to stop the click storm.
+Func Wine_WaitLoadHint($a_i_StartMap, $a_i_Timeout = 2500)
+	Local $hAll = TimerInit()
+	Local $hT2 = 0
+	While TimerDiff($hAll) < $a_i_Timeout
+		If Wine_EnterMapEvidence($a_i_StartMap) Then Return True
+		If Wine_EnterLoadStarted($a_i_StartMap) Then Return True
+		If Wine_MapIsLoading() Then
+			If $hT2 = 0 Then $hT2 = TimerInit()
+			If TimerDiff($hT2) >= 800 Then Return True
+		Else
+			$hT2 = 0
+		EndIf
+		Sleep(200)
+	WEnd
+	Return Wine_EnterMapEvidence($a_i_StartMap) Or Wine_EnterLoadStarted($a_i_StartMap)
 EndFunc
 
 Func Wine_EnterMissionReady()
@@ -694,6 +771,17 @@ Func Wine_EnsureCommandQueue()
 	If Wine_QueueWalkReady() Then
 		$g_b_WineMinimalHook = True
 		Return True
+	EndIf
+	; Map load to 246 must not rewrite Engine JMP / QueueBase. Reuse the page.
+	If Wine_QueueAlreadyLive() Then
+		Out("Wine queue: QueueBase already live; not re-injecting Engine JMP (map " & Map_GetMapID() & ")")
+		Wine_WireCommandStructs()
+		$g_b_WineMinimalHook = True
+		Return True
+	EndIf
+	If Wine_MapIsLoading() Then
+		Out("Wine queue: map is loading; not injecting Engine JMP")
+		Return False
 	EndIf
 	If Wine_CommandsReady() Then
 		If Wine_PlantEngineJmpOnly() Then Return True
@@ -951,6 +1039,8 @@ EndFunc
 ; Core already allocated QueueBase + CommandEnterMission. Plant the missing
 ; Engine JMP only (MainStart was 0 so Assembler_ModifyMemory wrote at null).
 Func Wine_PlantEngineJmpOnly()
+	If Wine_QueueAlreadyLive() Then Return True
+	If Wine_MapIsLoading() Then Return False
 	Local $pMain = Wine_LabelUserPtr("MainProc")
 	If $pMain = 0 Then Return Wine_InjectAbort("JMP-only: MainProc label is not a user ptr")
 	Local $pEngine = Wine_ScanEngineOnly()
@@ -974,6 +1064,11 @@ Func Wine_PlantEngineJmpOnly()
 EndFunc
 
 Func Wine_InstallCommandQueue()
+	If Wine_QueueAlreadyLive() Then
+		Out("Wine inject: QueueBase already live; skipping a second Engine JMP")
+		Return True
+	EndIf
+	If Wine_MapIsLoading() Then Return False
 	Out("Wine inject: 4KB scan for Engine/Move/EnterMission/PacketSend/Dialog (read-only).")
 	Local $aSave = $g_amx2_Patterns
 	Scanner_ClearPatterns()

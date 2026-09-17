@@ -386,7 +386,41 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	EndIf
 	Sleep(2000)
 	Out("[Step] Mission instance loaded on map " & Map_GetMapID())
+	If Wine_IsWine() And Not Leveler_WaitWineWorldSettled() Then Return False
 	Return True
+EndFunc
+
+; After held 246 / Togo: wait out the load before skill bar, queue refresh, or Move.
+Func Leveler_WaitWineWorldSettled($a_i_Timeout = 25000)
+	If Not Wine_IsWine() Then Return True
+	Out("[Step] Wine: waiting for the mission world to settle before skill bar / queue / move")
+	Local $l_h_Timer = TimerInit()
+	Local $l_h_Held = 0
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Wine_MapIsLoading() Or Leveler_MapLooksConnecting() Then
+			$l_h_Held = 0
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+			If $l_h_Held = 0 Then $l_h_Held = TimerInit()
+			If TimerDiff($l_h_Held) >= 2500 Then
+				Sleep(1500)
+				Out("[Step] Wine: world settled (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & ")")
+				Return True
+			EndIf
+		Else
+			$l_h_Held = 0
+		EndIf
+		Sleep(250)
+	WEnd
+	If Leveler_InMissionInstance($MAP_ZEN_EXP) And Not Wine_MapIsLoading() Then
+		Out("[Step] Wine: world settle timed out but the instance is up (map " & Map_GetMapID() & ")")
+		Return True
+	EndIf
+	Out("[Step] Wine: world did not settle (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & ")")
+	Return False
 EndFunc
 
 ; Wine has no LoadFinished hook, so Map_WaitMapIsLoaded never completes.
