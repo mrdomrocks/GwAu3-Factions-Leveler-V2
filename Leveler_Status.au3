@@ -291,6 +291,18 @@ Func Leveler_Skills2Unlocked()
 	Return True
 EndFunc
 
+; Later bars drop Cry / Power Drain. Do not send a later character back to Kaineng.
+Func Leveler_PastSkills2Step()
+	If Leveler_HasMaxArmor() Then Return True
+	If Leveler_HasQuest($QUEST_SEARCH_CURE) Or Leveler_IsQuestDone($QUEST_SEARCH_CURE) Then Return True
+	If Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then Return True
+	If Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Then Return True
+	Local $l_i_Map = Map_GetMapID()
+	If Map_IsMapUnlocked($MAP_BOREAL) Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_TUNNELS Or $l_i_Map = $MAP_ICE_CLIFF Then Return True
+	If Map_IsMapUnlocked($MAP_EOTN) Or $l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM Or $l_i_Map = $MAP_AB Then Return True
+	Return False
+EndFunc
+
 Func Leveler_HasLaterQuest()
 	If Leveler_HasQuest($QUEST_WARNING_TENGU) Or Leveler_HasIncompleteQuest($QUEST_WARNING_TENGU) Then Return True
 	If Leveler_HasQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Then Return True
@@ -429,8 +441,9 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or ($l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Not $l_b_ToZenPath)
 	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = (Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) And $l_i_Map <> $MAP_KAINENG_DOCKS
 	$g_ab_StepDone[$LEVELER_STEP_TO_KC] = $l_b_Kaineng
-	; Michiko in Kaineng Center. Zhao Di Leech Signet (61) must not skip this.
-	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = Leveler_Skills2Unlocked()
+	; Michiko in Kaineng Center. Learnt is not enough; required skills must be on the bar.
+	; Past this step, later bars (Zen / inspire) omit Cry / Power Drain — do not rewind.
+	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = Leveler_Skills2Unlocked() And (Leveler_Skills2OnBar() Or Leveler_PastSkills2Step())
 	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $l_b_MaxArmor And (Not $l_b_SeitungArmor Or Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_SEARCH_CURE) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN))
 	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_BROTHER_TOSAI) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN)

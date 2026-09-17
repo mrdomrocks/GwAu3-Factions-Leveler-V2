@@ -408,6 +408,16 @@ Func Leveler_TrainerSkillsOnBar()
 	Return True
 EndFunc
 
+; Complete Skills Training: Cry, Power Drain, SoD, and Backfire if Mesmer.
+; Learnt in the skill window is not enough; they must be on the bar.
+Func Leveler_Skills2OnBar()
+	If Not Leveler_BarHasSkill($SKILL_CRY_OF_FRUSTRATION) Then Return False
+	If Not Leveler_BarHasSkill($SKILL_POWER_DRAIN) Then Return False
+	If Not Leveler_BarHasSkill($SKILL_SIGNET_OF_DISRUPTION) Then Return False
+	If Leveler_HasMesmer() And Not Leveler_BarHasSkill($SKILL_BACKFIRE) Then Return False
+	Return True
+EndFunc
+
 Func Leveler_BuySkillIfNeeded($a_i_SkillID)
 	If World_IsSkillLearnt($a_i_SkillID) Then Return True
 	Skill_BuySkillByID($a_i_SkillID)
@@ -452,6 +462,31 @@ Func Leveler_EquipTrainerSkills($a_b_CloseTrainer = True)
 	If World_IsSkillLearnt($SKILL_ENERGY_BURN) Then Leveler_PutSkillOnBar($l_i_Slot, $SKILL_ENERGY_BURN)
 	If Leveler_TrainerSkillsOnBar() Then Return True
 	Out("[Step] Zhao Di skills are not all on the bar yet. Slots: " & Skill_GetSkillbarInfo(1, "SkillID") & ", " & Skill_GetSkillbarInfo(2, "SkillID") & ", " & Skill_GetSkillbarInfo(3, "SkillID"))
+	Return False
+EndFunc
+
+; Load the interrupt / inspire template, then put this stage's skills on the bar.
+; Do not reuse EquipTrainerSkills here: that path never places Backfire, and later
+; Zen / inspire bars must not be rewritten with Cry / Power Drain forever.
+Func Leveler_ApplySkills2Bar($a_b_CloseTrainer = True)
+	$g_b_UAIReady = False
+	If $a_b_CloseTrainer Then Leveler_CloseTrainerWindow()
+	If Leveler_Skills2OnBar() Then
+		Out("[Step] Skills training bar is already equipped")
+		Return True
+	EndIf
+
+	Local $l_i_Kind = Leveler_CurrentSkillBarKind()
+	If $l_i_Kind <> $LEVELER_BAR_INTERRUPT And $l_i_Kind <> $LEVELER_BAR_INSPIRE Then $l_i_Kind = $LEVELER_BAR_INTERRUPT
+	Leveler_LoadProfessionSkillBar($l_i_Kind)
+	Sleep(600)
+	If Leveler_Skills2OnBar() Then Return True
+	Leveler_PutSkillOnBar(1, $SKILL_CRY_OF_FRUSTRATION)
+	Leveler_PutSkillOnBar(2, $SKILL_POWER_DRAIN)
+	Leveler_PutSkillOnBar(3, $SKILL_SIGNET_OF_DISRUPTION)
+	If Leveler_HasMesmer() Then Leveler_PutSkillOnBar(4, $SKILL_BACKFIRE)
+	If Leveler_Skills2OnBar() Then Return True
+	Out("[Step] Skills training skills are learnt but not all on the bar yet. Slots: " & Skill_GetSkillbarInfo(1, "SkillID") & ", " & Skill_GetSkillbarInfo(2, "SkillID") & ", " & Skill_GetSkillbarInfo(3, "SkillID") & ", " & Skill_GetSkillbarInfo(4, "SkillID"))
 	Return False
 EndFunc
 
