@@ -1342,7 +1342,7 @@ Func Leveler_Step_ZenDaijunMission()
 	EndIf
 	If Not Leveler_PrepareCombatAI() Then
 		If Wine_IsWine() And Leveler_WineHeldZenExplorable() Then
-			Out("[Step] Wine: combat cache failed; escorting anyway")
+			Out("[Step] Wine: combat cache not ready yet; escorting and retrying UtilityAI")
 		Else
 			Return False
 		EndIf

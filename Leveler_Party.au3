@@ -671,17 +671,17 @@ Func Leveler_PrepareCombatAI()
 	$g_b_CombatMode = True
 	Local $l_i_Map = Map_GetMapID()
 	If $l_i_Map <> $g_i_LastUAIMap Then $g_b_UAIReady = False
-	If Not Map_GetInstanceInfo("IsExplorable") And Not Leveler_InMissionInstance() Then
+
+	Local $l_b_InWorld = Leveler_InMissionInstance() Or Map_GetInstanceInfo("IsExplorable")
+	If Wine_IsWine() And Leveler_WineHeldZenExplorable() Then $l_b_InWorld = True
+	If Not $l_b_InWorld Then
 		$g_b_UAIReady = False
 		Return True
 	EndIf
 	If $g_b_UAIReady And $g_i_LastUAIMap = $l_i_Map Then Return True
-	; Wine InstanceInfo Type stays 0 in Zen. Cache_SkillBar refuses non-explorable
-	; and used to abort the step before Escort / Map_Move.
-	If Wine_IsWine() And (Leveler_InMissionInstance() Or Not Map_GetInstanceInfo("IsExplorable")) Then
-		Out("[Combat] Wine: skip Cache_SkillBar on map " & $l_i_Map & " (Type not explorable). Escort will still walk.")
-		Return True
-	EndIf
+
+	If Wine_IsWine() Then Return Leveler_WineCacheSkillBar()
+
 	If Not Cache_SkillBar() Then
 		Out("[Combat] Cache_SkillBar failed on map " & $l_i_Map)
 		Return False
@@ -689,6 +689,57 @@ Func Leveler_PrepareCombatAI()
 	$g_i_LastUAIMap = $l_i_Map
 	$g_b_UAIReady = True
 	Out("[Combat] UtilityAI skill bar cached on map " & $l_i_Map)
+	Return True
+EndFunc
+
+; Stock Cache_SkillBar returns False when InstanceInfo Type is not 1.
+; Wine Type often stays 0 inside Zen (held 246 or Togo+Vhang). Cache anyway.
+Func Leveler_WineCacheSkillBarForced()
+	UAI_CacheSkillBar()
+	Local $i
+	For $i = 1 To 8
+		$g_as_BestTargetCache[$i] = UAI_GetBestTargetFunc($i)
+		$g_as_CanUseCache[$i] = UAI_GetCanUseFunc($i)
+	Next
+	If $g_b_CacheWeaponSet Then UAI_DetermineWeaponSets()
+	Return True
+EndFunc
+
+Func Leveler_WineCacheSkillBarMarkOk($a_i_Map, $a_s_Extra = "")
+	$g_i_LastUAIMap = $a_i_Map
+	$g_b_UAIReady = True
+	$g_h_WineUAICacheAt = 0
+	Out("[Combat] UtilityAI skill bar cached on map " & $a_i_Map & _
+			" current " & Leveler_LiveMapID() & $a_s_Extra)
+	Return True
+EndFunc
+
+Func Leveler_WineCacheSkillBar()
+	Local $l_i_Map = Map_GetMapID()
+	If Cache_SkillBar() Then Return Leveler_WineCacheSkillBarMarkOk($l_i_Map)
+
+	Local $l_b_First = ($g_h_WineUAICacheAt = 0)
+	If $l_b_First Then
+		Local $l_h_Retry = TimerInit()
+		While TimerDiff($l_h_Retry) < 2500
+			If $g_b_LevelerPaused Then Return False
+			Sleep(350)
+			If Cache_SkillBar() Then Return Leveler_WineCacheSkillBarMarkOk($l_i_Map)
+		WEnd
+	ElseIf TimerDiff($g_h_WineUAICacheAt) < 4000 Then
+		Return True
+	EndIf
+
+	If Leveler_WineHeldZenExplorable() Or Leveler_InMissionInstance() Then
+		If Leveler_WineCacheSkillBarForced() Then
+			Return Leveler_WineCacheSkillBarMarkOk($l_i_Map, " (Type=" & Number(Map_GetInstanceInfo("Type")) & ")")
+		EndIf
+	EndIf
+
+	$g_h_WineUAICacheAt = TimerInit()
+	Out("[Combat] Cache_SkillBar failed on map " & $l_i_Map & " Type=" & Number(Map_GetInstanceInfo("Type")) & _
+			"; will retry during escort")
+	$g_b_UAIReady = False
 	Return True
 EndFunc
 
@@ -706,6 +757,9 @@ Func Leveler_CacheUtilityAIForMap($a_i_MapID)
 	If Map_GetMapID() <> $a_i_MapID Then
 		Out("[Combat] Wanted map " & $a_i_MapID & " for UtilityAI, now " & Map_GetMapID())
 		Return False
+	EndIf
+	If Wine_IsWine() And (Leveler_WineHeldZenExplorable() Or Leveler_InMissionInstance()) Then
+		Return Leveler_WineCacheSkillBar()
 	EndIf
 	If Not Map_GetInstanceInfo("IsExplorable") Then
 		Out("[Combat] Map " & $a_i_MapID & " is not explorable yet")

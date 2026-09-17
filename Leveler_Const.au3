@@ -364,6 +364,7 @@ Global $g_h_RiftCooldown = 0
 Global $g_s_CurrentHeader = ""
 Global $g_b_UAIReady = False
 Global $g_i_LastUAIMap = 0
+Global $g_h_WineUAICacheAt = 0
 Global $g_b_ConnectionLost = False
 ; One Return-to-Outpost packet per wipe. Re-sending while Connecting hangs Gw.
 Global $g_b_WipeReturnSent = False
