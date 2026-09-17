@@ -24,8 +24,10 @@ Func Leveler_ExecuteStep($a_i_Step)
 		If Not Leveler_WaitUntilMapReady() Then Return False
 		If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	EndIf
-	If Wine_IsWine() And Leveler_PartyHasZenMissionAllies() Then
+	If Wine_IsWine() And Leveler_WineHeldZenExplorable() And Leveler_PartyHasZenMissionAllies() Then
 		Out("[Step] Wine: Togo allies present (" & $g_s_ZenAllyDetect & "); not a wipe")
+	ElseIf Wine_IsWine() And Leveler_WineAtZenOutpost() Then
+		Out("[Step] Wine: Zen outpost map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "; not in-mission (Togo NPC does not skip Enter)")
 	ElseIf Wine_IsWine() And Leveler_WinePlayerClearlyAlive() Then
 		Out("[Step] Wine: player alive on map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "; not a wipe")
 	ElseIf Leveler_IsWiped() Then
@@ -1290,14 +1292,14 @@ EndFunc
 Func Leveler_Step_ZenDaijunMission()
 	$g_s_CurrentHeader = "Zen Daijun Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+	If Leveler_WineHeldZenExplorable() Or (Not Wine_IsWine() And Leveler_InMissionInstance($MAP_ZEN_EXP)) Then
 		If Wine_IsWine() Then $g_b_WineEnterSent = True
 		Out("[Step] Already inside Zen Daijun (map " & Map_GetMapID() & _
-				" current " & Leveler_LiveMapID() & ", Togo allies)")
+				" current " & Leveler_LiveMapID() & ")")
 		If Not Wine_IsWine() Then Leveler_LoadZenSkillBar()
 	Else
-		; Wine 213 without 246/Togo is the outpost. Do not Travel/resign on
-		; InstanceInfo IsOutpost flicker — that loops 213→213 and never enters.
+		; Wine 213 is the outpost even when Master Togo stands there.
+		; Do not Travel/resign on InstanceInfo IsOutpost flicker — that loops 213→213.
 		If Not Leveler_WineAtZenOutpost() Then
 			If Wine_IsWine() Then
 				If Map_GetMapID() <> $MAP_ZEN_OP And Number(Map_GetCharacterInfo("CurrentMapID")) <> $MAP_ZEN_OP Then
@@ -1323,19 +1325,19 @@ Func Leveler_Step_ZenDaijunMission()
 	Else
 		If Not Leveler_WaitUntilMapReady() Then Return False
 	EndIf
-	If Not (Wine_IsWine() And Leveler_InMissionInstance($MAP_ZEN_EXP)) Then
+	If Not (Wine_IsWine() And Leveler_WineHeldZenExplorable()) Then
 		Leveler_LoadZenSkillBar()
 	EndIf
 	If Not Leveler_PrepareCombatAI() Then
-		If Wine_IsWine() And Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+		If Wine_IsWine() And Leveler_WineHeldZenExplorable() Then
 			Out("[Step] Wine: combat cache failed; escorting anyway")
 		Else
 			Return False
 		EndIf
 	EndIf
 	If Leveler_IsWiped() Then Return False
-	; Wine: never escort on outpost 213. In-mission is held 246 or Togo (lvl20 Rt).
-	If Wine_IsWine() And Not Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+	; Wine: never escort on outpost 213. In-mission is held map/CurrentMapID 246.
+	If Wine_IsWine() And Not Leveler_WineHeldZenExplorable() Then
 		Out("[Step] Still on outpost (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & _
 				"); not escorting. Enter Mission must hold 246.")
 		Return False

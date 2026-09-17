@@ -1355,8 +1355,8 @@ EndFunc
 ; True once we are sitting in the mission outpost (213 / 214), not Connecting and not still in the instance.
 Func Leveler_AtWipeOutpost()
 	If Leveler_MapLooksConnecting() Then Return False
-	; 213 with Togo is the Zen instance, not the outpost after a wipe.
-	If Leveler_PartyHasZenMissionAllies() Or Leveler_InMissionInstance() Then Return False
+	; 213 with Togo NPC is the outpost. 246 with Togo is the instance.
+	If Leveler_WineHeldZenExplorable() Or Leveler_InMissionInstance() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	If $l_i_Map <= 0 Then Return False
 	If Leveler_InstanceInfoTrusted() And Map_GetInstanceInfo("IsOutpost") Then Return True
@@ -1379,9 +1379,9 @@ Func Leveler_WaitReturnToOutpost($a_i_Timeout = 90000)
 			Cinematic_SkipCinematic()
 			Sleep(400)
 		EndIf
-		If Wine_IsWine() And (Leveler_PartyHasZenMissionAllies() Or Leveler_WinePlayerClearlyAlive()) Then
+		If Wine_IsWine() And Leveler_WineHeldZenExplorable() And (Leveler_PartyHasZenMissionAllies() Or Leveler_WinePlayerClearlyAlive()) Then
 			$g_b_WipeReturnSent = False
-			Out("[Recover] Still in Zen with Togo/alive player (map " & Map_GetMapID() & "); aborting wipe wait.")
+			Out("[Recover] Still in Zen with Togo/alive player (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "); aborting wipe wait.")
 			Return False
 		EndIf
 		If Leveler_AtWipeOutpost() Then
@@ -1404,7 +1404,7 @@ EndFunc
 
 ; Resign once, Return-to-Outpost once, then wait. Repeating 0xA7 while Connecting hangs Gw at 0%.
 Func Leveler_ReturnWipeToOutpost()
-	If Wine_IsWine() And (Leveler_PartyHasZenMissionAllies() Or Leveler_WinePlayerClearlyAlive()) Then
+	If Wine_IsWine() And Leveler_WineHeldZenExplorable() And (Leveler_PartyHasZenMissionAllies() Or Leveler_WinePlayerClearlyAlive()) Then
 		$g_b_WipeReturnSent = False
 		Out("[Recover] Togo/alive player in Zen; not resigning.")
 		Return False

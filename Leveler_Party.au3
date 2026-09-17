@@ -317,25 +317,26 @@ Func Leveler_MapLooksConnecting()
 	Return False
 EndFunc
 
-Func Leveler_WineLooksInZenMission()
+; Held Zen instance only. Master Togo at outpost 213 is a town NPC and must
+; not count as in-mission (that skipped Enter Mission and escorted in town).
+Func Leveler_WineHeldZenExplorable()
 	If Leveler_MapLooksConnecting() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
-	If $l_i_Cur = $MAP_ZEN_EXP Or $l_i_Map = $MAP_ZEN_EXP Then Return True
-	; Outpost 213 keeps a stale MissionObjectiveArraySize (live: 2). Objectives
-	; / IsExplorable flicker must not skip Enter Mission.
-	If $l_i_Map = $MAP_ZEN_OP Or $l_i_Cur = $MAP_ZEN_OP Then
-		Return Leveler_PartyHasZenMissionAllies()
-	EndIf
-	Return False
+	Return $l_i_Map = $MAP_ZEN_EXP Or $l_i_Cur = $MAP_ZEN_EXP
 EndFunc
 
-; Wine: sitting at Zen 213 and not actually in the instance (no 246, no Togo).
+Func Leveler_WineLooksInZenMission()
+	Return Leveler_WineHeldZenExplorable()
+EndFunc
+
+; Wine: sitting at Zen 213 and not actually in the instance (no 246).
 ; InstanceInfo IsOutpost/IsExplorable flicker must not count as explorable.
+; Outpost Togo NPC is not proof of the mission.
 Func Leveler_WineAtZenOutpost()
 	If Not Wine_IsWine() Then Return False
 	If Leveler_MapLooksConnecting() Then Return False
-	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then Return False
+	If Leveler_WineHeldZenExplorable() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
 	Return $l_i_Map = $MAP_ZEN_OP Or $l_i_Cur = $MAP_ZEN_OP
@@ -350,11 +351,8 @@ Func Leveler_InMissionInstance($a_i_MapID = 0)
 	If $l_i_Cur = $MAP_ZEN_EXP Or $l_i_Map = $MAP_ZEN_EXP Then Return True
 	If $l_i_Cur = $MAP_CHO_EXPLORABLE Or $l_i_Map = $MAP_CHO_EXPLORABLE Then Return True
 
-	; Wine: 213 is the outpost unless Togo (lvl20 Rt) is actually in the party.
-	If Wine_IsWine() Then
-		If ($l_i_Map = $MAP_ZEN_OP Or $l_i_Cur = $MAP_ZEN_OP) And Leveler_PartyHasZenMissionAllies() Then Return True
-		Return False
-	EndIf
+	; Wine: outpost 213 + Togo NPC is the outpost. Require map/CurrentMapID 246.
+	If Wine_IsWine() Then Return False
 
 	If Leveler_WineLooksInZenMission() Then Return True
 
@@ -439,11 +437,11 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Return True
 EndFunc
 
-; After held 246 / Togo: wait out the load before skill bar, queue refresh, or Move.
+; After held 246: wait out the load before skill bar, queue refresh, or Move.
 Func Leveler_WaitWineWorldSettled($a_i_Timeout = 25000)
 	If Not Wine_IsWine() Then Return True
-	; Mid-mission Start: already standing in Zen with Togo. Do not block the GUI.
-	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+	; Mid-mission Start: already on 246. Do not block the GUI.
+	If Leveler_WineHeldZenExplorable() Then
 		Out("[Step] Wine: already in Zen (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "); skip settle wait")
 		Return True
 	EndIf
@@ -457,7 +455,7 @@ Func Leveler_WaitWineWorldSettled($a_i_Timeout = 25000)
 			Sleep(250)
 			ContinueLoop
 		EndIf
-		If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+		If Leveler_WineHeldZenExplorable() Then
 			If $l_h_Held = 0 Then $l_h_Held = TimerInit()
 			If TimerDiff($l_h_Held) >= 2500 Then
 				Sleep(1500)
@@ -469,7 +467,7 @@ Func Leveler_WaitWineWorldSettled($a_i_Timeout = 25000)
 		EndIf
 		Sleep(250)
 	WEnd
-	If Leveler_InMissionInstance($MAP_ZEN_EXP) And Not Wine_MapIsLoading() Then
+	If Leveler_WineHeldZenExplorable() And Not Wine_MapIsLoading() Then
 		Out("[Step] Wine: world settle timed out but the instance is up (map " & Map_GetMapID() & ")")
 		Return True
 	EndIf
@@ -478,8 +476,8 @@ Func Leveler_WaitWineWorldSettled($a_i_Timeout = 25000)
 EndFunc
 
 ; Wine has no LoadFinished hook, so Map_WaitMapIsLoaded never completes.
-; Type 2 is LOADING — keep waiting. Wine success is map 246 (or Togo in party),
-; not Type=explorable flicker on outpost 213. Fail on char-select.
+; Type 2 is LOADING — keep waiting. Wine success is map/CurrentMapID 246,
+; not Type=explorable flicker or Togo NPC on outpost 213. Fail on char-select.
 Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
 	Local $l_h_Timer = TimerInit()
 	Local $l_b_SawLoad = False
@@ -516,7 +514,7 @@ Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
 			Out("[Step] Mission instance confirmed (map " & $l_i_Map & " current " & Leveler_LiveMapID() & ")")
 			Return True
 		EndIf
-		; Wine: Type=explorable on outpost 213 is a flicker. Require 246 / Togo.
+		; Wine: Type=explorable on outpost 213 is a flicker. Require 246.
 		If Wine_IsWine() Then
 			If Wine_EnterMapEvidence($a_i_StartMap) Then
 				Out("[Step] Mission instance confirmed (map " & $l_i_Map & " current " & Leveler_LiveMapID() & ")")

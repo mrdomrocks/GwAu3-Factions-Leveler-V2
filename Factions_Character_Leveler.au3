@@ -99,7 +99,7 @@ Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 If Wine_IsWine() Then
 	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID. Window title is often Guild Wars Reforged.")
 	Out("Scanner_GetLoggedCharNames is skipped on Wine so a timed local scan cannot cache 0/78 before Start.")
-	Out("Start calls Core_Initialize immediately. The first step installs a one-JMP queue (QueueBase + CommandMove) and will not re-click Enter Mission if already inside Zen.")
+	Out("Start calls Core_Initialize immediately. The first step installs a one-JMP queue (QueueBase + CommandMove). At Zen outpost 213 it clicks Enter Mission; map/CurrentMapID 246 is already-inside.")
 	Out("Log file: " & @ScriptDir & "\Logs\leveler.log")
 Else
 	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
