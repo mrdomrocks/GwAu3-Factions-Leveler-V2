@@ -62,11 +62,7 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 			Out("[Move] Map is loading; not injecting or walking yet")
 			Return False
 		EndIf
-		If Wine_QueueAlreadyLive() Then
-			Wine_RefreshQueueFromLabels()
-		Else
-			If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
-		EndIf
+		If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
 	EndIf
 	; Wine mid-mission: Pathfinder_MoveTo infinite-waits when Agent X,Y are 0,
 	; and Initialize can block the GUI thread. Always Map_Move.
@@ -149,12 +145,41 @@ Func Leveler_DistToXY($a_f_X, $a_f_Y)
 	Return Sqrt($l_f_Dx * $l_f_Dx + $l_f_Dy * $l_f_Dy)
 EndFunc
 
+; When a direct Map_Move does not close (collision or a dead stub), walk a
+; short hop toward the dest. After a second freeze, step sideways.
+Func Leveler_WineStepToward($a_f_DestX, $a_f_DestY, ByRef $a_f_GoX, ByRef $a_f_GoY, $a_i_HopRound)
+	$a_f_GoX = $a_f_DestX
+	$a_f_GoY = $a_f_DestY
+	If $a_i_HopRound < 1 Then Return
+	Local $l_f_X = 0, $l_f_Y = 0
+	Leveler_LiveXY($l_f_X, $l_f_Y)
+	If $l_f_X = 0 And $l_f_Y = 0 Then Return
+	Local $l_f_Dx = $a_f_DestX - $l_f_X
+	Local $l_f_Dy = $a_f_DestY - $l_f_Y
+	Local $l_f_Dist = Sqrt($l_f_Dx * $l_f_Dx + $l_f_Dy * $l_f_Dy)
+	If $l_f_Dist <= 650 Then Return
+	Local $l_f_Step = 650
+	If $a_i_HopRound >= 2 And $l_f_Dist > 0 Then
+		Local $l_f_Nx = -$l_f_Dy / $l_f_Dist * 500
+		Local $l_f_Ny = $l_f_Dx / $l_f_Dist * 500
+		$a_f_GoX = $l_f_X + $l_f_Dx * 0.35 + $l_f_Nx
+		$a_f_GoY = $l_f_Y + $l_f_Dy * 0.35 + $l_f_Ny
+		Return
+	EndIf
+	$a_f_GoX = $l_f_X + $l_f_Dx * ($l_f_Step / $l_f_Dist)
+	$a_f_GoY = $l_f_Y + $l_f_Dy * ($l_f_Step / $l_f_Dist)
+EndFunc
+
 Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = False)
 	If Wine_IsWine() And $a_i_Timeout < 45000 Then $a_i_Timeout = 45000
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $l_h_Timer = TimerInit()
 	Local $l_i_LastLog = -5000
 	Local $l_i_Moves = 0
+	Local $l_f_LastX = 0, $l_f_LastY = 0
+	Local $l_b_HavePos = False
+	Local $l_h_Stuck = 0
+	Local $l_i_HopRound = 0
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
 		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
@@ -172,20 +197,51 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 			Out("[Move] Wine: pos still 0,0 after QueueBase-live moves; treating waypoint as arrived")
 			Return True
 		EndIf
+		If Wine_IsWine() And ($l_f_X <> 0 Or $l_f_Y <> 0) Then
+			If $l_b_HavePos Then
+				Local $l_f_Stay = Sqrt(($l_f_X - $l_f_LastX) * ($l_f_X - $l_f_LastX) + ($l_f_Y - $l_f_LastY) * ($l_f_Y - $l_f_LastY))
+				If $l_f_Stay < 25 Then
+					If $l_h_Stuck = 0 Then $l_h_Stuck = TimerInit()
+					If TimerDiff($l_h_Stuck) >= 7000 Then
+						$l_i_HopRound += 1
+						Wine_RefreshCommandMove("pos frozen at " & Round($l_f_X) & "," & Round($l_f_Y) & " for " & $l_i_HopRound)
+						$l_h_Stuck = TimerInit()
+					EndIf
+				Else
+					$l_h_Stuck = 0
+					If Leveler_DistToXY($a_f_X, $a_f_Y) < 400 Then $l_i_HopRound = 0
+				EndIf
+			EndIf
+			$l_f_LastX = $l_f_X
+			$l_f_LastY = $l_f_Y
+			$l_b_HavePos = True
+		EndIf
 		If $g_b_SpiritRiftWatch And Leveler_TogoNeedsHelp() Then
 			Leveler_FightWithTogo()
-			Sleep(250)
-			ContinueLoop
+			; Wine: still enqueue the waypoint. ContinueLoop used to skip Map_Move
+			; while standing on Togo, so pos froze at spawn (14283,8757).
+			If Not Wine_IsWine() Then
+				Sleep(250)
+				ContinueLoop
+			EndIf
 		EndIf
 		If $a_b_Combat Then Leveler_CombatTick()
-		Map_Move($a_f_X, $a_f_Y, 20)
-		$l_i_Moves += 1
+		If Wine_IsWine() Then
+			Local $l_f_GoX = $a_f_X, $l_f_GoY = $a_f_Y
+			Leveler_WineStepToward($a_f_X, $a_f_Y, $l_f_GoX, $l_f_GoY, $l_i_HopRound)
+			If $l_i_HopRound >= 1 And (Round($l_f_GoX) <> Round($a_f_X) Or Round($l_f_GoY) <> Round($a_f_Y)) Then
+				If TimerDiff($l_h_Timer) - $l_i_LastLog >= 4000 Then
+					Out("[Move] hop " & Round($l_f_GoX) & "," & Round($l_f_GoY) & " toward " & Round($a_f_X) & "," & Round($a_f_Y))
+				EndIf
+			EndIf
+			If Wine_MapMove($l_f_GoX, $l_f_GoY, 20) Then $l_i_Moves += 1
+		Else
+			Map_Move($a_f_X, $a_f_Y, 20)
+			$l_i_Moves += 1
+		EndIf
 		Sleep(250)
 	WEnd
-	If Wine_IsWine() And Wine_QueueWalkReady() And $l_i_Moves >= 20 Then
-		Out("[Move] Wine: MoveDirect timed out with live queue; treating waypoint as arrived")
-		Return True
-	EndIf
+	; Live pos that never closed is a CommandMove/pathing miss, not an arrival.
 	Return Leveler_DistToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
 EndFunc
 
@@ -784,7 +840,13 @@ Func Leveler_FightWithTogo()
 	If $l_i_Togo <> 0 Then
 		$l_f_X = Agent_GetAgentInfo($l_i_Togo, "X")
 		$l_f_Y = Agent_GetAgentInfo($l_i_Togo, "Y")
-		If Agent_GetDistance($l_i_Togo) > 400 Then Map_Move($l_f_X, $l_f_Y, 20)
+		If Agent_GetDistance($l_i_Togo) > 400 Then
+			If Wine_IsWine() Then
+				Wine_MapMove($l_f_X, $l_f_Y, 20)
+			Else
+				Map_Move($l_f_X, $l_f_Y, 20)
+			EndIf
+		EndIf
 	EndIf
 	UAI_Fight($l_f_X, $l_f_Y, $LEVELER_AGGRO, $LEVELER_FIGHT_RANGE_OUT)
 EndFunc

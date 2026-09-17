@@ -27,6 +27,8 @@ If Not IsDeclared("g_p_WineAsmAlloc") Then Global $g_p_WineAsmAlloc = 0
 If Not IsDeclared("g_p_WineExistingE9") Then Global $g_p_WineExistingE9 = 0
 If Not IsDeclared("g_b_WineEnterSent") Then Global $g_b_WineEnterSent = False
 If Not IsDeclared("g_h_WineQueueLastTry") Then Global $g_h_WineQueueLastTry = 0
+If Not IsDeclared("g_h_WineMoveLog") Then Global $g_h_WineMoveLog = 0
+If Not IsDeclared("g_h_WineRefreshAt") Then Global $g_h_WineRefreshAt = 0
 
 Func Wine_IsWine()
 	If $g_b_WineChecked Then Return $g_b_IsWine
@@ -757,6 +759,284 @@ Func Wine_WireCommandStructs()
 	EndIf
 EndFunc
 
+; Engine reads dword[QueueCounter] as the slot index. After a stub rewrite
+; AutoIt used to force $g_i_QueueCounter=0 while memory stayed mid-queue, so
+; Map_Move wrote slot 0 and Engine drained an empty slot — a silent no-op.
+Func Wine_SyncQueueCounter()
+	Local $pQC = Wine_LabelUserPtr("QueueCounter")
+	If $pQC = 0 Then Return
+	Local $iMem = Number(Memory_Read($pQC))
+	If $iMem < 0 Or $iMem > Number($g_i_QueueSize) Then $iMem = 0
+	If Number($g_i_QueueCounter) <> $iMem Then
+		If $g_h_WineMoveLog = 0 Or TimerDiff($g_h_WineMoveLog) >= 5000 Then
+			Out("[Move] QueueCounter AutoIt=" & $g_i_QueueCounter & " mem=" & $iMem & "; writing the slot Engine reads")
+		EndIf
+		$g_i_QueueCounter = $iMem
+	EndIf
+EndFunc
+
+Func Wine_ResetQueueHead()
+	Local $pQC = Wine_LabelUserPtr("QueueCounter")
+	If $pQC <> 0 Then Memory_Write($pQC, 0)
+	$g_i_QueueCounter = 0
+EndFunc
+
+Func Wine_EngineJmpTarget()
+	Local $pHook = Wine_LabelUserPtr("MainStart")
+	If $pHook = 0 Then $pHook = $g_p_WineExistingE9
+	If $pHook = 0 Then Return 0
+	Local $s = Wine_CompactHex(Wine_ReadBytesHex($pHook, 5))
+	If StringLeft($s, 2) <> "E9" Then
+		If $g_p_WineExistingE9 <> 0 And Number($g_p_WineExistingE9) <> Number($pHook) Then
+			$pHook = $g_p_WineExistingE9
+			$s = Wine_CompactHex(Wine_ReadBytesHex($pHook, 5))
+		EndIf
+		If StringLeft($s, 2) <> "E9" Then Return 0
+	EndIf
+	Local $pT = Scanner_GetCallTargetAddress($pHook)
+	If Wine_IsUserPtr($pT) Then Return $pT
+	Return 0
+EndFunc
+
+; CommandMove stub is lea eax,[eax+4]; push eax; call Move (8D 40 04 50 E8).
+Func Wine_CommandMoveReady()
+	Local $pCmd = Wine_LabelUserPtr("CommandMove")
+	If $pCmd = 0 Then Return False
+	If Not Wine_CommandsReady() Then Return False
+	Local $sStub = Wine_CompactHex(Wine_ReadBytesHex($pCmd, 5))
+	If StringLeft($sStub, 6) <> "8D4004" Then Return False
+	If StringMid($sStub, 7, 2) = "E8" Or StringMid($sStub, 9, 2) = "E8" Then
+		Local $pCall = $pCmd + 4
+		If Wine_CompactHex(Wine_ReadBytesHex($pCall, 1)) = "E8" Then
+			Local $pMove = Scanner_GetCallTargetAddress($pCall)
+			If Not Wine_IsUserPtr($pMove) Then Return False
+		EndIf
+	EndIf
+	Local $pJmp = Wine_EngineJmpTarget()
+	Local $pMain = Wine_LabelUserPtr("MainProc")
+	If $pJmp <> 0 And $pMain <> 0 Then
+		If BitAND(Number($pJmp), 0xFFFFFFFF) <> BitAND(Number($pMain), 0xFFFFFFFF) Then Return False
+	EndIf
+	Local $pStruct = DllStructGetData($g_d_Move, 1)
+	If BitAND(Number($pStruct), 0xFFFFFFFF) <> BitAND(Number($pCmd), 0xFFFFFFFF) Then
+		DllStructSetData($g_d_Move, 1, $pCmd)
+	EndIf
+	Return True
+EndFunc
+
+Func Wine_Wpm($a_p_Dest, $a_p_Src, $a_i_Size)
+	If $g_h_GWProcess = 0 Or $a_p_Dest = 0 Or $a_p_Src = 0 Or $a_i_Size < 1 Then Return False
+	If Not Wine_IsUserPtr($a_p_Dest) Then Return False
+	Local $av = DllCall($g_h_Kernel32, "int", "WriteProcessMemory", _
+			"int", $g_h_GWProcess, _
+			"int", $a_p_Dest, _
+			"ptr", $a_p_Src, _
+			"int", $a_i_Size, _
+			"int", "")
+	If @error Or Not IsArray($av) Then Return False
+	Return Number($av[0]) <> 0
+EndFunc
+
+; Map_Move always returns True and never checks WPM. Wine path reports the
+; real enqueue and writes the slot Engine is actually draining.
+Func Wine_MapMove($a_f_X, $a_f_Y, $a_f_Randomize = 20)
+	If Not Wine_IsWine() Then
+		Map_Move($a_f_X, $a_f_Y, $a_f_Randomize)
+		Return True
+	EndIf
+	If Wine_MapIsLoading() Then Return False
+	If Not Wine_CommandsReady() Then
+		If Not Wine_EnsureCommandQueue() Then
+			Wine_LogCommandGap()
+			Return False
+		EndIf
+	EndIf
+	Wine_WireCommandStructs()
+	Wine_SyncQueueCounter()
+	If Not Wine_CommandMoveReady() Then
+		If $g_h_WineRefreshAt = 0 Or TimerDiff($g_h_WineRefreshAt) >= 8000 Then
+			Wine_RefreshCommandMove("enqueue-not-ready")
+		EndIf
+		If Not Wine_CommandMoveReady() Then Return False
+	EndIf
+
+	If $a_f_Randomize > 0 Then
+		$a_f_X += Random(-$a_f_Randomize, $a_f_Randomize)
+		$a_f_Y += Random(-$a_f_Randomize, $a_f_Randomize)
+	EndIf
+	If IsDeclared("g_f_LastMoveX") Then $g_f_LastMoveX = $a_f_X
+	If IsDeclared("g_f_LastMoveY") Then $g_f_LastMoveY = $a_f_Y
+	DllStructSetData($g_d_Move, 2, $a_f_X)
+	DllStructSetData($g_d_Move, 3, $a_f_Y)
+	DllStructSetData($g_d_Move, 4, 0)
+
+	Local $pCmd = Wine_LabelUserPtr("CommandMove")
+	Local $iSlot = Number($g_i_QueueCounter)
+	Local $pSlot = $g_p_QueueBase + (256 * $iSlot)
+	Local $sBefore = Wine_ReadBytesHex($pSlot, 16)
+	; Write X/Y first, then the CommandMove ptr, so Engine never jmps a half-written slot.
+	Local $bData = Wine_Wpm($pSlot + 4, $g_p_Move + 4, 12)
+	Local $bPtr = Wine_Wpm($pSlot, $g_p_Move, 4)
+	Local $bOk = $bData And $bPtr
+	Local $sAfter = Wine_ReadBytesHex($pSlot, 16)
+	Local $iHead = Number(Memory_Read($pSlot))
+	If $bOk Then
+		If $g_i_QueueCounter = $g_i_QueueSize Then
+			$g_i_QueueCounter = 0
+		Else
+			$g_i_QueueCounter = $g_i_QueueCounter + 1
+		EndIf
+	EndIf
+
+	Local $bLog = ($g_h_WineMoveLog = 0)
+	If Not $bLog And TimerDiff($g_h_WineMoveLog) >= 5000 Then $bLog = True
+	If Not $bOk Then $bLog = True
+	If $bLog Then
+		$g_h_WineMoveLog = TimerInit()
+		Local $pQC = Wine_LabelUserPtr("QueueCounter")
+		Local $iMem = 0
+		If $pQC <> 0 Then $iMem = Number(Memory_Read($pQC))
+		Out("[Move] enqueue ok=" & Number($bOk) & " slot=" & $iSlot & _
+				" cmd=" & Wine_HexPtr($pCmd) & " struct=" & Wine_HexPtr(DllStructGetData($g_d_Move, 1)) & _
+				" qc=" & $iSlot & "/" & $iMem & " dest=" & Round($a_f_X) & "," & Round($a_f_Y) & _
+				" head " & $sBefore & " -> " & $sAfter)
+		If $bOk And $iHead <> 0 And BitAND($iHead, 0xFFFFFFFF) <> BitAND(Number($pCmd), 0xFFFFFFFF) Then
+			Out("[Move] queue head dword " & Wine_HexPtr($iHead) & " is not CommandMove " & Wine_HexPtr($pCmd))
+		EndIf
+	EndIf
+	Return $bOk
+EndFunc
+
+; Re-wire CommandMove and reset the queue head. Rewrite stubs on the existing
+; Engine page only when the stub/JMP pairing is dead. Never plant a second JMP.
+Func Wine_RefreshCommandMove($a_s_Why = "stuck")
+	If Not Wine_IsWine() Then Return True
+	If Wine_MapIsLoading() Then Return False
+	$g_h_WineRefreshAt = TimerInit()
+	Local $pCmd = Wine_LabelUserPtr("CommandMove")
+	Out("[Move] refresh CommandMove (" & $a_s_Why & ") QueueBase=" & Wine_HexPtr($g_p_QueueBase) & _
+			" CommandMove=" & Wine_HexPtr($pCmd) & _
+			" stub=" & Wine_CompactHex(Wine_ReadBytesHex($pCmd, 8)) & _
+			" jmp=" & Wine_HexPtr(Wine_EngineJmpTarget()) & _
+			" MainProc=" & Wine_HexPtr(Wine_LabelUserPtr("MainProc")) & _
+			" AutoItQC=" & $g_i_QueueCounter)
+	Wine_WireCommandStructs()
+	Wine_ResetQueueHead()
+	If Wine_CommandMoveReady() Then
+		Out("[Move] CommandMove stub live after rewire; queue head reset to 0")
+		Return True
+	EndIf
+	Out("[Move] CommandMove stub not live; rewriting stubs on existing Engine page (no second JMP)")
+	Return Wine_RewriteStubsOnExistingPage()
+EndFunc
+
+; Reuse the live Engine E9 page. Same layout as the first install (QueueBase at
+; page+12, MainProc at page+65548). Does not VirtualAlloc or WriteDetour.
+Func Wine_RewriteStubsOnExistingPage()
+	If Wine_MapIsLoading() Then Return False
+	Local $pEngine = Wine_ScanEngineOnly()
+	$g_p_WineExistingE9 = 0
+	Local $pHook = Wine_FindEngineHookSite($pEngine)
+	If $pHook = 0 Then $pHook = $g_p_WineExistingE9
+	If $pHook = 0 Then
+		Local $pMainStart = Wine_LabelUserPtr("MainStart")
+		If $pMainStart <> 0 And StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pMainStart, 5)), 2) = "E9" Then
+			$pHook = $pMainStart
+			$g_p_WineExistingE9 = $pHook
+		EndIf
+	EndIf
+	If $pHook = 0 Then
+		Out("[Move] rewrite: no Engine E9 to reuse")
+		Return False
+	EndIf
+	If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pHook, 5)), 2) <> "E9" Then
+		Out("[Move] rewrite: Engine site is not E9; not planting a second JMP")
+		Return False
+	EndIf
+	Local $pMainExist = Scanner_GetCallTargetAddress($pHook)
+	Local $pAlloc = $pMainExist - (4 + 4 + 4 + 256 * 256)
+	If Not Wine_IsUserPtr($pAlloc) Or Not Wine_IsUserPtr($pMainExist) Then
+		Out("[Move] rewrite: Engine JMP target is not a user page")
+		Return False
+	EndIf
+	Out("[Move] rewrite: Engine E9 " & Wine_HexPtr($pHook) & " -> MainProc " & Wine_HexPtr($pMainExist) & " page " & Wine_HexPtr($pAlloc))
+
+	Local $aSave = $g_amx2_Patterns
+	Scanner_ClearPatterns()
+	Wine_RegisterQueuePatterns()
+	Local $aResults = Wine_ScanPatternsChunked()
+	Local $aQueuePatterns = $g_amx2_Patterns
+	$g_amx2_Patterns = $aQueuePatterns
+	If Not IsArray($aResults) Then
+		$g_amx2_Patterns = $aSave
+		Out("[Move] rewrite: 4KB scan failed")
+		Return False
+	EndIf
+	Local $pMove = Wine_ResolveFuncStart(Scanner_GetScanResult("Move", $aResults, "Func"))
+	Local $pPacketSend = Wine_ResolveFuncStart(Scanner_GetScanResult("PacketSend", $aResults, "Func"))
+	Local $pPacketLoc = Wine_ReadLivePtr(Scanner_GetScanResult("PacketLocation", $aResults, "Ptr"))
+	Local $pDialog = Wine_ResolveCallTarget(Scanner_GetScanResult("Dialog", $aResults, "Func"))
+	Local $pInteract = Wine_ResolveCallTarget(Scanner_GetScanResult("Interact", $aResults, "Func"))
+	Local $pEnter = Wine_ResolveCallTarget(Scanner_GetScanResult("EnterMission", $aResults, "Func"))
+	Local $pUiMsg = Wine_ResolveFuncStart(Scanner_GetScanResult("UIMessage", $aResults, "Func"))
+	Wine_BindReadOnlyFromQueue($aResults, $aQueuePatterns)
+	$g_amx2_Patterns = $aSave
+	If $pMove = 0 Then
+		Out("[Move] rewrite: Move func not resolved")
+		Return False
+	EndIf
+	If $pPacketSend <> 0 Then Wine_ReplaceValue("PacketSend", Ptr($pPacketSend))
+	If $pPacketLoc <> 0 Then
+		Wine_ReplaceValue("PacketLocation", Ptr($pPacketLoc))
+		$g_p_PacketLocation = $pPacketLoc
+	EndIf
+	If $pDialog <> 0 Then Wine_ReplaceValue("Dialog", Ptr($pDialog))
+	If $pInteract <> 0 Then Wine_ReplaceValue("Interact", Ptr($pInteract))
+	If $pEnter <> 0 Then Wine_ReplaceValue("EnterMission", Ptr($pEnter))
+	If Wine_IsUserPtr($pUiMsg) Then Wine_ReplaceValue("UIMessage", Ptr($pUiMsg))
+	Wine_ReplaceValue("Move", Ptr($pMove))
+	Wine_ReplaceValue("MainStart", Ptr($pHook))
+	Wine_ReplaceValue("MainReturn", Ptr($pHook + 5))
+	Wine_ReplaceValue("QueueSize", 0x100)
+
+	$g_i_ASMSize = 0
+	$g_i_ASMCodeOffset = 0
+	$g_s_ASMCode = ""
+	Wine_AssembleMinimalEngine()
+	$g_p_WineAsmAlloc = 0
+	$g_p_ASMMemory = $pAlloc
+	Wine_PromoteNewLabels()
+	Assembler_CompleteASMCode()
+	If $g_s_ASMCode = "" Then
+		Out("[Move] rewrite: Assembler_CompleteASMCode produced no bytes")
+		Return False
+	EndIf
+	Memory_WriteBinary($g_s_ASMCode, $g_p_ASMMemory + $g_i_ASMCodeOffset)
+	If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pHook, 5)), 2) <> "E9" Then
+		Out("[Move] rewrite: Engine E9 was lost; not planting a replacement")
+		Return False
+	EndIf
+
+	Local $pQueue = Memory_GetValue("QueueBase")
+	Local $pMain = Memory_GetValue("MainProc")
+	Local $pCmdMove = Memory_GetValue("CommandMove")
+	If Not Wine_IsUserPtr($pQueue) Or Not Wine_IsUserPtr($pMain) Or Not Wine_IsUserPtr($pCmdMove) Then
+		Out("[Move] rewrite: QueueBase/MainProc/CommandMove label is not a user ptr")
+		Return False
+	EndIf
+	$g_p_SavedIndex = Memory_GetValue("SavedIndex")
+	$g_p_MapIsLoaded = Memory_GetValue("MapIsLoaded")
+	$g_i_QueueSize = 0x100 - 1
+	$g_p_QueueBase = $pQueue
+	Wine_WireCommandStructs()
+	Wine_ResetQueueHead()
+	$g_b_WineMinimalHook = True
+	Out("[Move] rewrite done QueueBase=" & Wine_HexPtr($pQueue) & " MainProc=" & Wine_HexPtr($pMain) & _
+			" CommandMove=" & Wine_HexPtr($pCmdMove) & " stub=" & Wine_CompactHex(Wine_ReadBytesHex($pCmdMove, 8)) & _
+			" Move=" & Wine_HexPtr($pMove))
+	Return Wine_CommandMoveReady()
+EndFunc
+
 ; Called from the first Leveler_ExecuteStep / Map_Move, not from Start.
 ; Prefers a live QueueBase Core already allocated; otherwise one Engine JMP
 ; and a small command page (CommandMove / CommandEnterMission / ...).
@@ -770,13 +1050,25 @@ Func Wine_EnsureCommandQueue()
 	Wine_RefreshQueueFromLabels()
 	If Wine_QueueWalkReady() Then
 		$g_b_WineMinimalHook = True
+		Wine_SyncQueueCounter()
+		Wine_WireCommandStructs()
+		If Not Wine_CommandMoveReady() Then
+			If $g_h_WineRefreshAt = 0 Or TimerDiff($g_h_WineRefreshAt) >= 8000 Then
+				Out("Wine queue: walk-ready but CommandMove stub stale; refreshing (no second JMP)")
+				Wine_RefreshCommandMove("ensure-stale")
+			EndIf
+		EndIf
 		Return True
 	EndIf
 	; Map load to 246 must not rewrite Engine JMP / QueueBase. Reuse the page.
 	If Wine_QueueAlreadyLive() Then
 		Out("Wine queue: QueueBase already live; not re-injecting Engine JMP (map " & Map_GetMapID() & ")")
+		Wine_SyncQueueCounter()
 		Wine_WireCommandStructs()
 		$g_b_WineMinimalHook = True
+		If Not Wine_CommandMoveReady() Then
+			If $g_h_WineRefreshAt = 0 Or TimerDiff($g_h_WineRefreshAt) >= 8000 Then Wine_RefreshCommandMove("ensure-live-stale")
+		EndIf
 		Return True
 	EndIf
 	If Wine_MapIsLoading() Then
@@ -1058,6 +1350,7 @@ Func Wine_PlantEngineJmpOnly()
 		Return Wine_InjectAbort("JMP-only did not stick; restored original site bytes")
 	EndIf
 	Wine_RefreshQueueFromLabels()
+	Wine_ResetQueueHead()
 	$g_b_WineMinimalHook = True
 	Out("Wine: reused Core command page. QueueBase=" & Wine_HexPtr($g_p_QueueBase) & " MainStart=" & Wine_HexPtr($pHook))
 	Return True
@@ -1233,10 +1526,10 @@ Func Wine_InstallCommandQueue()
 
 	$g_p_SavedIndex = Memory_GetValue("SavedIndex")
 	$g_p_MapIsLoaded = Memory_GetValue("MapIsLoaded")
-	$g_i_QueueCounter = 0
 	$g_i_QueueSize = 0x100 - 1
 	$g_p_QueueBase = $pQueue
 	Wine_WireCommandStructs()
+	Wine_ResetQueueHead()
 	$g_b_WineMinimalHook = True
 	If $bReuse Then
 		Out("Wine: reused Engine JMP. QueueBase=" & Wine_HexPtr($g_p_QueueBase) & _

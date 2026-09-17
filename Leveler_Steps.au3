@@ -5,8 +5,6 @@ Func Leveler_ExecuteStep($a_i_Step)
 	If Wine_IsWine() Then
 		If Wine_MapIsLoading() Then
 			Out("[Recover] Map is loading; not touching Engine JMP")
-		ElseIf Wine_QueueAlreadyLive() Then
-			Wine_RefreshQueueFromLabels()
 		Else
 			If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
 		EndIf
