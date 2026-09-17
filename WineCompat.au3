@@ -46,6 +46,7 @@ If Not IsDeclared("g_p_WineWndProcOld") Then Global $g_p_WineWndProcOld = 0
 If Not IsDeclared("g_b_WineReuseBlocked") Then Global $g_b_WineReuseBlocked = False
 If Not IsDeclared("g_p_WineCleanEpi") Then Global $g_p_WineCleanEpi = 0
 If Not IsDeclared("g_h_WineVerifyAt") Then Global $g_h_WineVerifyAt = 0
+If Not IsDeclared("g_h_WineGwHwnd") Then Global $g_h_WineGwHwnd = 0
 
 Func Wine_IsWine()
 	If $g_b_WineChecked Then Return $g_b_IsWine
@@ -130,49 +131,162 @@ Func Wine_FindGwPid()
 EndFunc
 
 Func Wine_PidFromGwWindow()
-	Local $aClassWins = WinList("[CLASS:" & $GC_S_CLASS_DX_WINDOW & "]")
-	If IsArray($aClassWins) Then
-		Local $i = 1
-		For $i = 1 To $aClassWins[0][0]
-			Local $iPid = Number(WinGetProcess($aClassWins[$i][1]))
-			If $iPid > 0 Then Return $iPid
-		Next
-	EndIf
+	Local $h = Wine_DiscoverGwWindow(0)
+	If $h = 0 Then Return 0
+	Return Wine_HwndPid($h)
+EndFunc
 
-	Local $aWins = WinList()
-	If Not IsArray($aWins) Then Return 0
-	Local $j = 1
-	For $j = 1 To $aWins[0][0]
-		If $aWins[$j][0] = "" Then ContinueLoop
-		If Not StringInStr($aWins[$j][0], "Guild Wars") Then ContinueLoop
-		Local $iPid2 = Number(WinGetProcess($aWins[$j][1]))
-		If $iPid2 > 0 Then Return $iPid2
-	Next
+Func Wine_HwndPid($a_h)
+	If $a_h = 0 Then Return 0
+	Local $a = DllCall("user32.dll", "dword", "GetWindowThreadProcessId", "hwnd", $a_h, "dword*", 0)
+	If IsArray($a) And Number($a[2]) > 0 Then Return Number($a[2])
+	Local $i = Number(WinGetProcess($a_h))
+	If $i > 0 Then Return $i
 	Return 0
 EndFunc
 
-Func Wine_FindGwHwnd($a_i_Pid)
-	If $a_i_Pid <= 0 Then Return 0
+Func Wine_HwndVisibleSize($a_h)
+	If $a_h = 0 Then Return 0
+	If BitAND(WinGetState($a_h), 2) = 0 Then Return 0
+	Local $aPos = WinGetPos($a_h)
+	If Not IsArray($aPos) Then Return 0
+	Return Number($aPos[2]) * Number($aPos[3])
+EndFunc
 
-	Local $aClassWins = WinList("[CLASS:" & $GC_S_CLASS_DX_WINDOW & "]")
-	If IsArray($aClassWins) Then
-		Local $i = 1
-		For $i = 1 To $aClassWins[0][0]
-			If WinGetProcess($aClassWins[$i][1]) = $a_i_Pid Then Return $aClassWins[$i][1]
+; Wine WinList often has empty titles even when X11 shows "Guild Wars Reforged".
+; Do not skip untitled windows; match PID, ArenaNet_Dx_Window_Class, gw.exe class, or title.
+Func Wine_DiscoverGwWindow($a_i_Pid = 0)
+	If $g_h_WineGwHwnd <> 0 Then
+		Local $aOk = DllCall("user32.dll", "int", "IsWindow", "hwnd", $g_h_WineGwHwnd)
+		If IsArray($aOk) And $aOk[0] Then
+			If $a_i_Pid <= 0 Or Wine_HwndPid($g_h_WineGwHwnd) = $a_i_Pid Then Return $g_h_WineGwHwnd
+		EndIf
+		$g_h_WineGwHwnd = 0
+	EndIf
+	If $g_h_GWWindow <> 0 Then
+		Local $aGw = DllCall("user32.dll", "int", "IsWindow", "hwnd", $g_h_GWWindow)
+		If IsArray($aGw) And $aGw[0] Then
+			If $a_i_Pid <= 0 Or Wine_HwndPid($g_h_GWWindow) = $a_i_Pid Then
+				$g_h_WineGwHwnd = Wine_PreferDxChild($g_h_GWWindow, $a_i_Pid)
+				Return $g_h_WineGwHwnd
+			EndIf
+		EndIf
+	EndIf
+
+	Local $h = 0
+	Local $aFw = DllCall("user32.dll", "hwnd", "FindWindowA", "str", $GC_S_CLASS_DX_WINDOW, "ptr", 0)
+	If IsArray($aFw) And $aFw[0] <> 0 Then
+		If $a_i_Pid <= 0 Or Wine_HwndPid($aFw[0]) = $a_i_Pid Then $h = $aFw[0]
+	EndIf
+	If $h = 0 Then
+		Local $asTitle[3] = ["Guild Wars Reforged", "Guild Wars", "Guild Wars - "]
+		Local $t = 0
+		For $t = 0 To 2
+			Local $aT = DllCall("user32.dll", "hwnd", "FindWindowA", "ptr", 0, "str", $asTitle[$t])
+			If IsArray($aT) And $aT[0] <> 0 Then
+				If $a_i_Pid <= 0 Or Wine_HwndPid($aT[0]) = $a_i_Pid Then
+					$h = $aT[0]
+					ExitLoop
+				EndIf
+			EndIf
 		Next
 	EndIf
 
+	Local $hDx = 0, $hNamed = 0, $hGwClass = 0, $hVisible = 0, $hAny = 0, $iVisArea = 0
+	If $h <> 0 Then Wine_ClassifyHwnd($h, $a_i_Pid, $hDx, $hNamed, $hGwClass, $hVisible, $iVisArea, $hAny)
+
 	Local $aWins = WinList()
-	If Not IsArray($aWins) Then Return 0
-	Local $hAny = 0
-	Local $j = 1
-	For $j = 1 To $aWins[0][0]
-		If $aWins[$j][0] = "" Then ContinueLoop
-		If WinGetProcess($aWins[$j][1]) <> $a_i_Pid Then ContinueLoop
-		If StringInStr($aWins[$j][0], "Guild Wars") Then Return $aWins[$j][1]
-		If $hAny = 0 Then $hAny = $aWins[$j][1]
-	Next
-	Return $hAny
+	If IsArray($aWins) Then
+		Local $j = 1
+		For $j = 1 To $aWins[0][0]
+			Wine_ClassifyHwnd($aWins[$j][1], $a_i_Pid, $hDx, $hNamed, $hGwClass, $hVisible, $iVisArea, $hAny)
+		Next
+	EndIf
+
+	Local $aDesk = DllCall("user32.dll", "hwnd", "GetDesktopWindow")
+	If IsArray($aDesk) And $aDesk[0] <> 0 Then
+		Local $aChild = DllCall("user32.dll", "hwnd", "GetWindow", "hwnd", $aDesk[0], "uint", 5)
+		Local $hWalk = 0
+		If IsArray($aChild) Then $hWalk = $aChild[0]
+		Local $n = 0
+		While $hWalk <> 0 And $n < 400
+			Wine_ClassifyHwnd($hWalk, $a_i_Pid, $hDx, $hNamed, $hGwClass, $hVisible, $iVisArea, $hAny)
+			Local $aNext = DllCall("user32.dll", "hwnd", "GetWindow", "hwnd", $hWalk, "uint", 2)
+			If Not IsArray($aNext) Then ExitLoop
+			$hWalk = $aNext[0]
+			$n += 1
+		WEnd
+	EndIf
+
+	If $hDx <> 0 Then
+		$g_h_WineGwHwnd = $hDx
+	ElseIf $hNamed <> 0 Then
+		$g_h_WineGwHwnd = Wine_PreferDxChild($hNamed, $a_i_Pid)
+	ElseIf $hGwClass <> 0 Then
+		$g_h_WineGwHwnd = Wine_PreferDxChild($hGwClass, $a_i_Pid)
+	ElseIf $hVisible <> 0 Then
+		$g_h_WineGwHwnd = Wine_PreferDxChild($hVisible, $a_i_Pid)
+	Else
+		$g_h_WineGwHwnd = $hAny
+	EndIf
+	If $g_h_WineGwHwnd <> 0 Then
+		Out("Wine hwnd: using " & $g_h_WineGwHwnd & " class=" & Wine_WindowClass($g_h_WineGwHwnd) & _
+				" title=" & WinGetTitle($g_h_WineGwHwnd) & " pid=" & Wine_HwndPid($g_h_WineGwHwnd))
+	Else
+		Out("Wine hwnd: none for pid=" & $a_i_Pid & " (WinList/FindWindow/desktop walk empty)")
+	EndIf
+	Return $g_h_WineGwHwnd
+EndFunc
+
+Func Wine_ClassifyHwnd($a_h, $a_i_Pid, ByRef $a_h_Dx, ByRef $a_h_Named, ByRef $a_h_GwClass, ByRef $a_h_Visible, ByRef $a_i_VisArea, ByRef $a_h_Any)
+	If $a_h = 0 Then Return
+	Local $iPid = Wine_HwndPid($a_h)
+	If $a_i_Pid > 0 Then
+		If $iPid <> $a_i_Pid Then Return
+	Else
+		If $iPid <= 0 Then Return
+	EndIf
+	Local $sClass = Wine_WindowClass($a_h)
+	Local $sTitle = WinGetTitle($a_h)
+	Local $bName = ($sClass = $GC_S_CLASS_DX_WINDOW Or StringInStr($sTitle, "Guild Wars") Or StringInStr($sTitle, "Reforged") Or StringInStr($sClass, "gw.exe"))
+	If $a_i_Pid <= 0 And Not $bName Then Return
+	If $bName Then Out("Wine hwnd cand " & $a_h & " pid=" & $iPid & " class=" & $sClass & " title=[" & $sTitle & "] vis=" & Wine_HwndVisibleSize($a_h))
+	If $sClass = $GC_S_CLASS_DX_WINDOW And $a_h_Dx = 0 Then $a_h_Dx = $a_h
+	If (StringInStr($sTitle, "Guild Wars") Or StringInStr($sTitle, "Reforged")) And $a_h_Named = 0 Then $a_h_Named = $a_h
+	If (StringInStr($sClass, "gw.exe") Or StringInStr($sClass, "Gw")) And $a_h_GwClass = 0 Then $a_h_GwClass = $a_h
+	Local $iArea = Wine_HwndVisibleSize($a_h)
+	If $iArea > $a_i_VisArea Then
+		$a_i_VisArea = $iArea
+		$a_h_Visible = $a_h
+	EndIf
+	If $a_h_Any = 0 Then $a_h_Any = $a_h
+EndFunc
+
+Func Wine_PreferDxChild($a_h, $a_i_Pid)
+	If $a_h = 0 Then Return 0
+	If Wine_WindowClass($a_h) = $GC_S_CLASS_DX_WINDOW Then Return $a_h
+	Local $aChild = DllCall("user32.dll", "hwnd", "FindWindowExA", "hwnd", $a_h, "hwnd", 0, "str", $GC_S_CLASS_DX_WINDOW, "ptr", 0)
+	If IsArray($aChild) And $aChild[0] <> 0 Then Return $aChild[0]
+	Local $aC = DllCall("user32.dll", "hwnd", "GetWindow", "hwnd", $a_h, "uint", 5)
+	Local $hC = 0
+	If IsArray($aC) Then $hC = $aC[0]
+	Local $n = 0
+	While $hC <> 0 And $n < 40
+		If Wine_WindowClass($hC) = $GC_S_CLASS_DX_WINDOW Then Return $hC
+		If $a_i_Pid <= 0 Or Wine_HwndPid($hC) = $a_i_Pid Then
+			If Wine_WindowClass($hC) = $GC_S_CLASS_DX_WINDOW Then Return $hC
+		EndIf
+		Local $aN = DllCall("user32.dll", "hwnd", "GetWindow", "hwnd", $hC, "uint", 2)
+		If Not IsArray($aN) Then ExitLoop
+		$hC = $aN[0]
+		$n += 1
+	WEnd
+	Return $a_h
+EndFunc
+
+Func Wine_FindGwHwnd($a_i_Pid)
+	If $a_i_Pid <= 0 Then $a_i_Pid = Number($g_i_GWProcessId)
+	Return Wine_DiscoverGwWindow($a_i_Pid)
 EndFunc
 
 ; Memory_SetValue always appends; Memory_GetValue returns the FIRST match.
@@ -1089,8 +1203,8 @@ Func Wine_RefreshCommandMove($a_s_Why = "stuck")
 		Return True
 	EndIf
 	If $iTicks <= 0 Then
-		Out("[Move] MainProc bytes can be correct while ticks stay 0 — leftover JMP is not on the live path")
-		Return Wine_RelocateDeadEngine($a_s_Why)
+		Out("[Move] MainProc bytes can be correct while ticks stay 0 — Engine fld JMP is not on the live path")
+		Return Wine_VerifyDrainOrFallback()
 	EndIf
 	If Wine_MainProcBytesOk() And Wine_CommandMoveBytesOk() And $bJmpOk Then
 		Wine_ResetQueueHead()
@@ -1269,6 +1383,15 @@ Func Wine_EnsureCommandQueue()
 	If Wine_MapIsLoading() Then
 		Out("Wine queue: map is loading; not injecting Engine JMP")
 		Return False
+	EndIf
+	If Wine_CommandsReady() And $g_s_WineDrainKind <> "none" Then
+		If Not $g_b_WineEngineProven Then
+			Out("Wine queue: QueueBase live kind=" & $g_s_WineDrainKind & " ticks=" & Wine_EngineTickCount() & "; not planting Engine JMP, retrying GWA2/WndProc")
+			Wine_VerifyDrainOrFallback()
+		EndIf
+		Wine_WireCommandStructs()
+		$g_b_WineMinimalHook = True
+		Return True
 	EndIf
 	If Wine_CommandsReady() Then
 		If Wine_PlantEngineJmpOnly() Then Return True
@@ -1625,26 +1748,31 @@ Func Wine_RestoreOurHooks()
 EndFunc
 
 Func Wine_GwWndProcHwnd()
-	Local $h = Wine_GwClientHwnd(0)
-	If $h <> 0 Then Return $h
-	$h = Wine_FindGwHwnd($g_i_GWProcessId)
-	If $h <> 0 Then Return Wine_GwClientHwnd($h)
-	Return 0
+	Local $iPid = Number($g_i_GWProcessId)
+	Local $h = Wine_DiscoverGwWindow($iPid)
+	If $h = 0 And $iPid > 0 Then $h = Wine_DiscoverGwWindow(0)
+	Return $h
 EndFunc
 
 Func Wine_GwWndProcCurrent()
 	Local $h = Wine_GwWndProcHwnd()
 	If $h = 0 Then Return 0
 	Local $a = DllCall("user32.dll", "int", "GetWindowLongA", "hwnd", $h, "int", -4)
-	If Not IsArray($a) Then Return 0
-	Return Number($a[0])
+	If IsArray($a) And Number($a[0]) <> 0 Then Return Number($a[0])
+	Local $aW = DllCall("user32.dll", "int", "GetWindowLongW", "hwnd", $h, "int", -4)
+	If IsArray($aW) And Number($aW[0]) <> 0 Then Return Number($aW[0])
+	Local $aCl = DllCall("user32.dll", "int", "GetClassLongA", "hwnd", $h, "int", -24)
+	If IsArray($aCl) And Number($aCl[0]) <> 0 Then Return Number($aCl[0])
+	Return 0
 EndFunc
 
 Func Wine_PokeGwWindow()
 	Local $h = Wine_GwWndProcHwnd()
 	If $h = 0 Then Return
 	DllCall("user32.dll", "bool", "PostMessageA", "hwnd", $h, "uint", 0, "wparam", 0, "lparam", 0)
+	DllCall("user32.dll", "bool", "PostMessageA", "hwnd", $h, "uint", 0x000F, "wparam", 0, "lparam", 0)
 	DllCall("user32.dll", "bool", "PostMessageA", "hwnd", $h, "uint", 0x0113, "wparam", 1, "lparam", 0)
+	DllCall("user32.dll", "bool", "PostMessageA", "hwnd", $h, "uint", 0x0200, "wparam", 0, "lparam", 0)
 EndFunc
 
 Func Wine_WaitDrainTicks($a_i_Ms)
@@ -1805,9 +1933,22 @@ Func Wine_CommitFreshDrain($a_p_Alloc, $a_p_Hook, $a_s_Kind)
 	If Not Wine_IsUserPtr($a_p_Alloc) Then Return False
 	$g_s_WineAsmExit = $a_s_Kind
 	If $a_s_Kind = "wndproc" Then
+		Local $hPre = Wine_GwWndProcHwnd()
 		Local $pOld = Wine_GwWndProcCurrent()
+		If $hPre = 0 Then
+			Out("[Move] WndProc: no Gw hwnd (pid=" & $g_i_GWProcessId & " g_h_GWWindow=" & $g_h_GWWindow & ")")
+			Return False
+		EndIf
 		If $pOld = 0 Then
-			Out("[Move] WndProc: GetWindowLong failed (no Gw hwnd)")
+			Local $aMod = DllCall("kernel32.dll", "handle", "GetModuleHandleA", "str", "user32.dll")
+			If IsArray($aMod) And $aMod[0] <> 0 Then
+				Local $aProc = DllCall("kernel32.dll", "ptr", "GetProcAddress", "handle", $aMod[0], "str", "DefWindowProcA")
+				If IsArray($aProc) Then $pOld = Number($aProc[0])
+			EndIf
+			Out("[Move] WndProc: GetWindowLong=0 hwnd=" & $hPre & " class=" & Wine_WindowClass($hPre) & " title=[" & WinGetTitle($hPre) & "]; using DefWindowProcA " & Wine_HexPtr($pOld))
+		EndIf
+		If $pOld = 0 Then
+			Out("[Move] WndProc: no OldWndProc for hwnd=" & $hPre)
 			Return False
 		EndIf
 		If $g_p_WineWndProcOld = 0 Then $g_p_WineWndProcOld = $pOld
@@ -2139,6 +2280,7 @@ EndFunc
 ; Core already allocated QueueBase + CommandEnterMission. Plant the missing
 ; Engine JMP only (MainStart was 0 so Assembler_ModifyMemory wrote at null).
 Func Wine_PlantEngineJmpOnly()
+	If $g_s_WineDrainKind = "gwa2" Or $g_s_WineDrainKind = "wndproc" Then Return False
 	If Wine_QueueAlreadyLive() Then Return True
 	If Wine_MapIsLoading() Then Return False
 	Local $pMain = Wine_LabelUserPtr("MainProc")
