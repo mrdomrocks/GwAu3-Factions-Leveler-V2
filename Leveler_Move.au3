@@ -547,8 +547,21 @@ Func Leveler_GetAgentByName($a_s_Name)
 	Return 0
 EndFunc
 
-; Wine names are often empty. Prefer named trainers, then map-specific profession, then lvl 10 NPCs.
+; Wine names are often empty. Kaineng: Michiko at 420,1388. Then name / profession / lvl 10.
 Func Leveler_FindSkillTrainerAgent()
+	Local $l_i_Map = Map_GetMapID()
+	If $l_i_Map = $MAP_KAINENG Then
+		Local $l_i_At = Leveler_GetAgentByName("Michiko")
+		If $l_i_At = 0 Then $l_i_At = Leveler_GetNearestNPCAt($MICHIKO_X, $MICHIKO_Y, 500)
+		If $l_i_At <> 0 Then
+			Out("[Step] Michiko at " & Round(Agent_GetAgentInfo($l_i_At, "X")) & "," & Round(Agent_GetAgentInfo($l_i_At, "Y")) & _
+					" id=" & $l_i_At & " lv=" & Number(Agent_GetAgentInfo($l_i_At, "Level")) & _
+					" prof=" & Number(Agent_GetAgentInfo($l_i_At, "Primary")) & _
+					" all=" & Number(Agent_GetAgentInfo($l_i_At, "Allegiance")) & _
+					" name=" & String(Agent_GetAgentInfo($l_i_At, "Name")))
+			Return $l_i_At
+		EndIf
+	EndIf
 	Local $l_as_Names[4] = ["Michiko", "Masaharu", "Xu Fengxia", "Zhao Di"]
 	Local $n
 	For $n = 0 To 3
@@ -558,9 +571,7 @@ Func Leveler_FindSkillTrainerAgent()
 			Return $l_i_Named
 		EndIf
 	Next
-	Local $l_i_Map = Map_GetMapID()
 	Local $l_i_WantProf = 0
-	If $l_i_Map = $MAP_KAINENG Then $l_i_WantProf = $GC_I_PROFESSION_MONK
 	If $l_i_Map = $MAP_SHING_JEA Then $l_i_WantProf = $GC_I_PROFESSION_MESMER
 	Local $l_i_Max = Agent_GetMaxAgents()
 	Local $l_i_ProfMatch = 0

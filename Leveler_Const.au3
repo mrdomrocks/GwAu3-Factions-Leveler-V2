@@ -324,6 +324,12 @@ Global Const $SKILL_CRY_OF_FRUSTRATION = 57
 Global Const $SKILL_POWER_DRAIN = 25
 Global Const $SKILL_BACKFIRE = 54
 Global Const $SKILL_SPIRIT_RIFT = 910
+; Michiko in Kaineng Center (Complete Skills Training).
+Global Const $MICHIKO_X = 420.00
+Global Const $MICHIKO_Y = 1388.00
+; Zhao Di in Shing Jea Monastery courtyard.
+Global Const $ZHAO_DI_X = -8790.00
+Global Const $ZHAO_DI_Y = 10366.00
 
 ; Weapon / armor gold
 Global Const $MODEL_CLAIRVOYANT_STAFF = 11647

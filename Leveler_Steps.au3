@@ -377,7 +377,7 @@ Func Leveler_Step_UnlockSkills()
 		Out("[Step] Still near the bag merchant; taking the courtyard around the obstacle")
 		If Not Leveler_MoveTo(-10896.94, 10807.54, False) Then Return False
 	EndIf
-	If Not Leveler_MoveAndDialog(-8790.00, 10366.00, $DIALOG_GENERIC_TALK, False) Then Return False
+	If Not Leveler_MoveAndDialog($ZHAO_DI_X, $ZHAO_DI_Y, $DIALOG_GENERIC_TALK, False) Then Return False
 	Sleep(3000)
 	Leveler_BuySkillIfNeeded($SKILL_SIGNET_OF_DISRUPTION)
 	Sleep(400)
@@ -1275,12 +1275,7 @@ Func Leveler_Step_CompleteSkillsTraining()
 	EndIf
 	Leveler_LogMissingTrainerSkills()
 	Leveler_SetPacifist()
-	; After Zen the character is often in Seitung. Try the local trainer first
-	; (Masaharu sells Zhao Di skills). Cry/Power Drain/Backfire need Michiko.
-	Local $l_i_Map = Map_GetMapID()
-	If $l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_RAN_MUSU Or $l_i_Map = $MAP_SHING_JEA Or $l_i_Map = $MAP_KAINENG Then
-		If Leveler_BuyMissingTrainerSkills() And Leveler_Skills2Unlocked() Then Return True
-	EndIf
+	; Cry / Power Drain / Backfire are Michiko in Kaineng Center at 420,1388.
 	If Map_GetMapID() <> $MAP_KAINENG Or (Leveler_InstanceInfoTrusted() And Not Map_GetInstanceInfo("IsOutpost")) Then
 		If Not Leveler_Travel($MAP_KAINENG) Then
 			Out("[Step] Could not travel to Kaineng for Michiko")
