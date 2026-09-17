@@ -47,6 +47,7 @@ If Not IsDeclared("g_b_WineReuseBlocked") Then Global $g_b_WineReuseBlocked = Fa
 If Not IsDeclared("g_p_WineCleanEpi") Then Global $g_p_WineCleanEpi = 0
 If Not IsDeclared("g_h_WineVerifyAt") Then Global $g_h_WineVerifyAt = 0
 If Not IsDeclared("g_h_WineGwHwnd") Then Global $g_h_WineGwHwnd = 0
+If Not IsDeclared("g_s_WineExitReplay") Then Global $g_s_WineExitReplay = ""
 
 Func Wine_IsWine()
 	If $g_b_WineChecked Then Return $g_b_IsWine
@@ -907,6 +908,7 @@ Func Wine_QueueWalkReady()
 	If Wine_EngineHookLive() And Not $g_b_WineReuseBlocked Then Return True
 	If $g_p_WineExistingE9 <> 0 And Not $g_b_WineReuseBlocked And $g_b_WineEngineProven Then Return True
 	If $g_s_WineDrainKind = "wndproc" And $g_p_WineWndProcOld <> 0 Then Return True
+	If ($g_s_WineDrainKind = "render" Or $g_s_WineDrainKind = "skilltimer") And Wine_EngineHookLive() Then Return True
 	If Wine_EngineHookLive() Then Return True
 	Return False
 EndFunc
@@ -927,7 +929,7 @@ Func Wine_QueueAlreadyLive()
 	If $g_b_WineEngineProven And Wine_EngineHookLive() Then Return True
 	If Wine_EngineHookLive() And $g_b_WineMinimalHook And $g_s_WineDrainKind <> "none" Then Return True
 	If $g_p_WineExistingE9 <> 0 And $g_b_WineEngineProven Then Return True
-	If $g_b_WineMinimalHook And $g_s_WineDrainKind = "wndproc" Then Return True
+	If $g_b_WineMinimalHook And ($g_s_WineDrainKind = "wndproc" Or $g_s_WineDrainKind = "render" Or $g_s_WineDrainKind = "skilltimer") Then Return True
 	If $g_p_WineAsmAlloc <> 0 And $g_s_WineDrainKind <> "none" And Not $g_b_WineReuseBlocked Then Return True
 	Return False
 EndFunc
@@ -1084,9 +1086,13 @@ Func Wine_ResolveEngineHookSite($a_b_Scan = True)
 EndFunc
 
 Func Wine_EngineJmpTarget()
+	Local $pMainStart = Wine_LabelUserPtr("MainStart")
+	If $pMainStart <> 0 And StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pMainStart, 5)), 2) = "E9" Then
+		Local $pFromMain = Scanner_GetCallTargetAddress($pMainStart)
+		If Wine_IsUserPtr($pFromMain) Then Return $pFromMain
+	EndIf
 	Local $pHook = Wine_ResolveEngineHookSite(False)
 	If $pHook = 0 Then
-		Local $pMainStart = Wine_LabelUserPtr("MainStart")
 		If $pMainStart <> 0 Then $pHook = $pMainStart
 		If $pHook = 0 Then $pHook = $g_p_WineExistingE9
 	EndIf
@@ -1101,6 +1107,10 @@ EndFunc
 ; Overwrite the existing 5-byte Engine site so it points at THIS MainProc.
 ; Still one JMP — never plants a second hook address if an E9 is already live.
 Func Wine_RepointEngineJmp($a_s_Why = "re-point")
+	If $g_s_WineDrainKind = "render" Or $g_s_WineDrainKind = "skilltimer" Or $g_s_WineDrainKind = "wndproc" Then
+		Out("[Move] Engine re-point skipped; drain kind=" & $g_s_WineDrainKind)
+		Return Wine_EngineHookLive() Or $g_s_WineDrainKind = "wndproc"
+	EndIf
 	Local $pMain = Wine_LabelUserPtr("MainProc")
 	If $pMain = 0 Then
 		Out("[Move] Engine re-point skipped: MainProc is not a user ptr")
@@ -1176,7 +1186,7 @@ Func Wine_WatchEngineTicks()
 	EndIf
 	If TimerDiff($g_h_WineTicksAt) < 500 Then Return
 	Out("[Move] Engine ticks stuck at " & $iTicks & " jmp=" & Wine_HexPtr(Wine_EngineJmpTarget()) & _
-			" MainProc=" & Wine_HexPtr(Wine_LabelUserPtr("MainProc")) & " kind=" & $g_s_WineDrainKind & " — taking GWA2/WndProc")
+			" MainProc=" & Wine_HexPtr(Wine_LabelUserPtr("MainProc")) & " kind=" & $g_s_WineDrainKind & " — taking GWA2/Render")
 	$g_h_WineTicksAt = TimerInit()
 	Wine_VerifyDrainOrFallback()
 EndFunc
@@ -1198,9 +1208,10 @@ Func Wine_CommandMoveReady()
 	EndIf
 	Local $pJmp = Wine_EngineJmpTarget()
 	Local $pMain = Wine_LabelUserPtr("MainProc")
-	If $g_s_WineDrainKind <> "wndproc" And $pJmp <> 0 And $pMain <> 0 Then
+	If $g_s_WineDrainKind <> "wndproc" And $g_s_WineDrainKind <> "render" And $g_s_WineDrainKind <> "skilltimer" And $pJmp <> 0 And $pMain <> 0 Then
 		If Not Wine_PtrsEq($pJmp, $pMain) Then Return False
 	EndIf
+	If ($g_s_WineDrainKind = "render" Or $g_s_WineDrainKind = "skilltimer") And Not Wine_EngineHookLive() Then Return False
 	Local $pStruct = DllStructGetData($g_d_Move, 1)
 	If BitAND(Number($pStruct), 0xFFFFFFFF) <> BitAND(Number($pCmd), 0xFFFFFFFF) Then
 		DllStructSetData($g_d_Move, 1, $pCmd)
@@ -1319,7 +1330,7 @@ Func Wine_RefreshCommandMove($a_s_Why = "stuck")
 	Wine_WireCommandStructs()
 	Local $bJmpOk = ($pJmp <> 0 And $pMain <> 0 And Wine_PtrsEq($pJmp, $pMain))
 	Local $bTicking = ($iTicks > 0 And ($g_i_WineTicksLast < 0 Or $iTicks > $g_i_WineTicksLast))
-	If $g_s_WineDrainKind = "wndproc" Then $bJmpOk = True
+	If $g_s_WineDrainKind = "wndproc" Or $g_s_WineDrainKind = "render" Or $g_s_WineDrainKind = "skilltimer" Then $bJmpOk = Wine_EngineHookLive() Or $g_s_WineDrainKind = "wndproc"
 	If Wine_CommandMoveReady() And $bJmpOk And $bTicking Then
 		Wine_ResetQueueHead()
 		Out("[Move] CommandMove stub live after rewire; Engine ticks=" & $iTicks & "; queue head reset")
@@ -1328,6 +1339,11 @@ Func Wine_RefreshCommandMove($a_s_Why = "stuck")
 	If $iTicks <= 0 Then
 		Out("[Move] MainProc bytes can be correct while ticks stay 0 — Engine fld JMP is not on the live path")
 		Return Wine_VerifyDrainOrFallback()
+	EndIf
+	If $g_s_WineDrainKind = "render" Or $g_s_WineDrainKind = "skilltimer" Then
+		Out("[Move] refresh: keeping " & $g_s_WineDrainKind & " JMP (not re-pointing Engine)")
+		Wine_ResetQueueHead()
+		Return Wine_EngineHookLive()
 	EndIf
 	If Wine_MainProcBytesOk() And Wine_CommandMoveBytesOk() And $bJmpOk Then
 		Wine_ResetQueueHead()
@@ -1482,7 +1498,7 @@ Func Wine_EnsureCommandQueue()
 		Local $pJmp = Wine_EngineJmpTarget()
 		Local $pMain = Wine_LabelUserPtr("MainProc")
 		If Not $g_b_WineEngineProven Then
-			Out("Wine queue: walk-ready but drain never ticked (kind=" & $g_s_WineDrainKind & "); taking GWA2/WndProc")
+			Out("Wine queue: walk-ready but drain never ticked (kind=" & $g_s_WineDrainKind & "); taking GWA2/Render")
 			Wine_VerifyDrainOrFallback()
 		ElseIf Not Wine_CommandMoveReady() Or ($g_s_WineDrainKind <> "wndproc" And ($pJmp = 0 Or $pMain = 0 Or Not Wine_PtrsEq($pJmp, $pMain))) Then
 			If $g_h_WineRefreshAt = 0 Or TimerDiff($g_h_WineRefreshAt) >= 8000 Then
@@ -1509,7 +1525,7 @@ Func Wine_EnsureCommandQueue()
 	EndIf
 	If Wine_CommandsReady() And $g_s_WineDrainKind <> "none" Then
 		If Not $g_b_WineEngineProven Then
-			Out("Wine queue: QueueBase live kind=" & $g_s_WineDrainKind & " ticks=" & Wine_EngineTickCount() & "; not planting Engine JMP, retrying GWA2/WndProc")
+			Out("Wine queue: QueueBase live kind=" & $g_s_WineDrainKind & " ticks=" & Wine_EngineTickCount() & "; not planting Engine JMP, retrying GWA2/Render")
 			Wine_VerifyDrainOrFallback()
 		EndIf
 		Wine_WireCommandStructs()
@@ -1815,6 +1831,16 @@ Func Wine_PatchMainProcHeartbeat()
 	Return True
 EndFunc
 
+Func Wine_PatchStolenExit()
+	If StringLen($g_s_WineExitReplay) <> 10 Then Return False
+	Local $pExit = Wine_LabelUserPtr("MainExit")
+	If $pExit = 0 Then Return False
+	Memory_WriteBinary($g_s_WineExitReplay, $pExit + 2)
+	Wine_FlushGw($pExit, 16)
+	Out("[Move] MainExit stolen bytes " & $g_s_WineExitReplay & " at " & Wine_HexPtr($pExit + 2))
+	Return True
+EndFunc
+
 Func Wine_PatchGwa2Exit()
 	Local $pExit = Wine_LabelUserPtr("MainExit")
 	If $pExit = 0 Then Return False
@@ -1837,11 +1863,11 @@ Func Wine_RestoreEngineEpilogue($a_p_Hook)
 	ElseIf Wine_EnginePatternNear($a_p_Hook) Then
 		$sWant = "8BECD94508"
 	EndIf
-	If $sNow = $sWant Then
-		Out("[Move] hook " & Wine_HexPtr($a_p_Hook) & " already " & $sWant)
-		Return True
-	EndIf
-	If StringLeft($sNow, 2) <> "E9" And $sNow <> "8BECD94508" And $sNow <> "FFD083C404" Then
+	If StringLeft($sNow, 2) <> "E9" Then
+		If $sNow = $sWant Then
+			Out("[Move] hook " & Wine_HexPtr($a_p_Hook) & " already " & $sWant)
+			Return True
+		EndIf
 		Out("[Move] restore refused: " & Wine_HexPtr($a_p_Hook) & " bytes=" & $sNow)
 		Return False
 	EndIf
@@ -1910,31 +1936,35 @@ Func Wine_WaitDrainTicks($a_i_Ms)
 	Return False
 EndFunc
 
-; After a dead Engine fld JMP, plant GWA2 then WndProc in this call. Do not
-; wait for the escort walk loop — a8d9f84 never reached those fallbacks.
+; After a dead Engine fld JMP, plant GWA2 then Render in this call. WndProc
+; cannot plant: this Wine/Gw has no Win32 hwnd for the DX/Reforged client
+; (only IoLookupWnd + IME). Engine and GWA2 are the same iterator.
 Func Wine_VerifyDrainOrFallback()
 	If Not Wine_IsWine() Then Return True
 	If $g_b_WineEngineProven Then Return True
 	If Wine_MapIsLoading() Then Return False
-	If $g_s_WineDrainKind = "wndproc" Then
-		If $g_h_WineVerifyAt <> 0 And TimerDiff($g_h_WineVerifyAt) < 4000 Then
-			Wine_PokeGwWindow()
-			Return Wine_EngineTickCount() > 0
-		EndIf
+	If $g_s_WineDrainKind = "render" Or $g_s_WineDrainKind = "skilltimer" Then
+		If $g_h_WineVerifyAt <> 0 And TimerDiff($g_h_WineVerifyAt) < 4000 Then Return Wine_EngineTickCount() > 0
 		$g_h_WineVerifyAt = TimerInit()
-		Wine_PokeGwWindow()
-		If Wine_WaitDrainTicks(500) Then Return True
-		Wine_PokeGwWindow()
-		Return Wine_WaitDrainTicks(500)
+		Return Wine_WaitDrainTicks(800)
+	EndIf
+	If $g_s_WineDrainKind = "wndproc" Then
+		Out("Wine: WndProc drain is not viable (no Win32 DX hwnd). Restoring and planting Render.")
+		$g_h_WineRelocateAt = 0
+		If Not Wine_RelocateDeadEngine("wndproc-no-hwnd") Then Return False
+		Return Wine_WaitDrainTicks(800)
 	EndIf
 
 	If $g_s_WineDrainKind = "engine" Or $g_s_WineDrainKind = "none" Then
 		If Wine_EngineTickCount() > 0 Then Return True
-		Out("Wine: Engine fld site never ticked after the fresh JMP (nearCallers=0 on this Wine/Gw). Restoring 8B EC D9 45 08 and planting one GWA2 call-eax hook.")
-		$g_h_WineRelocateAt = 0
 		If $g_s_WineDrainKind = "none" Then $g_s_WineDrainKind = "engine"
+		If $g_h_WineVerifyAt <> 0 And TimerDiff($g_h_WineVerifyAt) < 4000 Then Return False
+		$g_h_WineVerifyAt = TimerInit()
+		If Wine_WaitDrainTicks(800) Then Return True
+		Out("Wine: Engine fld site never ticked after 800ms (nearCallers=0; 7ccd322 left this JMP but later retests never entered it). Restoring 8B EC D9 45 08 and planting one GWA2 call-eax hook.")
+		$g_h_WineRelocateAt = 0
 		If Not Wine_RelocateDeadEngine("engine-never-ticks") Then
-			Out("Wine: GWA2 plant failed; trying WndProc")
+			Out("Wine: GWA2 plant failed; trying Render")
 			$g_h_WineRelocateAt = 0
 			$g_s_WineDrainKind = "gwa2"
 			Wine_RelocateDeadEngine("gwa2-plant-failed")
@@ -1943,16 +1973,13 @@ Func Wine_VerifyDrainOrFallback()
 
 	If $g_s_WineDrainKind = "gwa2" Then
 		If Wine_WaitDrainTicks(800) Then Return True
-		Out("Wine: GWA2 hook never ticked. Restoring it and planting one WndProc trampoline.")
+		Out("Wine: GWA2 hook never ticked (same function as Engine fld). No Win32 hwnd for ArenaNet_Dx_Window_Class / Guild Wars Reforged — skipping WndProc. Planting one GwAu3 Render hook.")
 		$g_h_WineRelocateAt = 0
 		If Not Wine_RelocateDeadEngine("gwa2-never-ticks") Then Return False
 	EndIf
 
-	If $g_s_WineDrainKind = "wndproc" Then
-		Wine_PokeGwWindow()
-		If Wine_WaitDrainTicks(500) Then Return True
-		Wine_PokeGwWindow()
-		Return Wine_WaitDrainTicks(500)
+	If $g_s_WineDrainKind = "render" Or $g_s_WineDrainKind = "skilltimer" Then
+		Return Wine_WaitDrainTicks(800)
 	EndIf
 	Return $g_b_WineEngineProven
 EndFunc
@@ -2034,6 +2061,64 @@ Func Wine_FindGwa2HookSite()
 	Return 0
 EndFunc
 
+; GwAu3 Render hook: pattern F6C401741C68 at hook+0x68, return hook+0xA.
+; This is the per-frame path stock Assembler_ModifyMemory uses. It does not
+; need a Win32 hwnd (wine-gw DX/Reforged is X11-only).
+Func Wine_FindRenderHookSite()
+	Local $a = Wine_FindPatternHits("F6C401741C68", 8)
+	Local $pBest = 0
+	Local $iBestCall = -1
+	Local $i = 1
+	For $i = 1 To $a[0]
+		Local $pHit = $a[$i]
+		Local $pHook = $pHit - 0x68
+		Local $sHit = Wine_CompactHex(Wine_ReadBytesHex($pHit, 6))
+		Local $sSite = Wine_ReadBytesHex($pHook, 16)
+		Local $iCall = Wine_CountNearCallers($pHook)
+		Out("Wine Render hit " & Wine_HexPtr($pHit) & " hook=" & Wine_HexPtr($pHook) & " site16=" & $sSite & " nearCallers=" & $iCall)
+		If $sHit <> "F6C401741C68" Then ContinueLoop
+		If Not Wine_IsUserPtr($pHook) Then ContinueLoop
+		If $iCall > $iBestCall Then
+			$iBestCall = $iCall
+			$pBest = $pHook
+		EndIf
+	Next
+	If $pBest <> 0 Then
+		Out("Wine Render live hook " & Wine_HexPtr($pBest) & " return=" & Wine_HexPtr($pBest + 0xA) & " nearCallers=" & $iBestCall)
+		Return $pBest
+	EndIf
+	Out("Wine Render pattern F6C401741C68 not found")
+	Return 0
+EndFunc
+
+; SkillTimer `call esi; mov ecx,[ebp-10]` runs when the skill clock updates.
+; Steal those 5 bytes and replay them after MainProc (no Win32 hwnd).
+Func Wine_FindSkillTimerHookSite()
+	Local $a = Wine_FindPatternHits("FFD68B4DF08BD88B4708", 6)
+	Local $pBest = 0
+	Local $iBestCall = -1
+	Local $i = 1
+	For $i = 1 To $a[0]
+		Local $pHit = $a[$i]
+		Local $s = Wine_CompactHex(Wine_ReadBytesHex($pHit, 5))
+		Local $iCall = Wine_CountNearCallers($pHit)
+		Out("Wine SkillTimer hit " & Wine_HexPtr($pHit) & " bytes=" & Wine_ReadBytesHex($pHit, 10) & " nearCallers=" & $iCall)
+		If $s <> "FFD68B4DF0" Then ContinueLoop
+		If Not Wine_IsUserPtr($pHit) Then ContinueLoop
+		If $iCall > $iBestCall Then
+			$iBestCall = $iCall
+			$pBest = $pHit
+		EndIf
+		If $pBest = 0 Then $pBest = $pHit
+	Next
+	If $pBest <> 0 Then
+		Out("Wine SkillTimer live hook " & Wine_HexPtr($pBest) & " (call esi; mov ecx,[ebp-10]) nearCallers=" & $iBestCall)
+		Return $pBest
+	EndIf
+	Out("Wine SkillTimer pattern FFD68B4DF08BD88B4708 not found")
+	Return 0
+EndFunc
+
 Func Wine_AllocQueuePage()
 	Local $iAlloc = 0x11000
 	Local $avAlloc = DllCall($g_h_Kernel32, "ptr", "VirtualAllocEx", _
@@ -2091,8 +2176,14 @@ Func Wine_CommitFreshDrain($a_p_Alloc, $a_p_Hook, $a_s_Kind)
 		If $a_p_Hook = 0 Then Return False
 		$g_s_WineHookSaved = Wine_CompactHex(Wine_ReadBytesHex($a_p_Hook, 5))
 		$g_p_WineHookSaved = $a_p_Hook
+		$g_s_WineExitReplay = ""
+		If $a_s_Kind = "skilltimer" Then $g_s_WineExitReplay = $g_s_WineHookSaved
 		Wine_ReplaceValue("MainStart", Ptr($a_p_Hook))
-		Wine_ReplaceValue("MainReturn", Ptr($a_p_Hook + 5))
+		If $a_s_Kind = "render" Then
+			Wine_ReplaceValue("MainReturn", Ptr($a_p_Hook + 0xA))
+		Else
+			Wine_ReplaceValue("MainReturn", Ptr($a_p_Hook + 5))
+		EndIf
 	EndIf
 	Wine_ReplaceValue("QueueSize", 0x100)
 	$g_i_ASMSize = 0
@@ -2108,6 +2199,7 @@ Func Wine_CommitFreshDrain($a_p_Alloc, $a_p_Hook, $a_s_Kind)
 	Memory_WriteBinary($g_s_ASMCode, $g_p_ASMMemory + $g_i_ASMCodeOffset)
 	Wine_PatchMainProcHeartbeat()
 	If $a_s_Kind = "gwa2" Then Wine_PatchGwa2Exit()
+	If $a_s_Kind = "skilltimer" Then Wine_PatchStolenExit()
 	Local $pQueue = Memory_GetValue("QueueBase")
 	Local $pMain = Memory_GetValue("MainProc")
 	Local $pCmdMove = Memory_GetValue("CommandMove")
@@ -2143,8 +2235,12 @@ Func Wine_CommitFreshDrain($a_p_Alloc, $a_p_Hook, $a_s_Kind)
 			Out("[Move] plant refused: GWA2 site " & Wine_HexPtr($a_p_Hook) & " is " & $sBefore)
 			Return False
 		EndIf
+		If ($a_s_Kind = "render" Or $a_s_Kind = "skilltimer") And StringLeft(Wine_CompactHex($sBefore), 2) = "E9" Then
+			Out("[Move] plant refused: " & $a_s_Kind & " site " & Wine_HexPtr($a_p_Hook) & " already E9 " & $sBefore)
+			Return False
+		EndIf
 		Memory_WriteDetour("MainStart", "MainProc")
-		Wine_FlushGw($a_p_Hook, 8)
+		Wine_FlushGw($a_p_Hook, 16)
 		Local $sAfter = Wine_ReadBytesHex($a_p_Hook, 5)
 		If StringLeft(Wine_CompactHex($sAfter), 2) <> "E9" Then
 			Memory_WriteBinary($sBefore, $a_p_Hook)
@@ -2153,21 +2249,25 @@ Func Wine_CommitFreshDrain($a_p_Alloc, $a_p_Hook, $a_s_Kind)
 		EndIf
 		$g_p_WineExistingE9 = $a_p_Hook
 		$g_p_WineEngineHook = $a_p_Hook
+		Local $sRet = " +5"
+		If $a_s_Kind = "render" Then $sRet = " +0xA"
 		Out("[Move] planted one " & $a_s_Kind & " JMP " & Wine_HexPtr($a_p_Hook) & " " & $sBefore & " -> " & $sAfter & _
-				" MainProc=" & Wine_HexPtr($pMain))
+				" MainProc=" & Wine_HexPtr($pMain) & " return" & $sRet)
 	EndIf
 	$g_b_WineMinimalHook = True
 	$g_b_WineReuseBlocked = False
 	$g_s_WineDrainKind = $a_s_Kind
 	$g_i_WineTicksLast = 0
 	$g_h_WineTicksAt = TimerInit()
+	$g_h_WineVerifyAt = 0
 	Wine_LogMainProcProof("plant-" & $a_s_Kind)
 	Out("[Move] fresh drain page=" & Wine_HexPtr($a_p_Alloc) & " QueueBase=" & Wine_HexPtr($pQueue) & _
 			" CommandMove=" & Wine_HexPtr($pCmdMove) & " stub=" & Wine_CompactHex(Wine_ReadBytesHex($pCmdMove, 8)))
 	Return True
 EndFunc
 
-; Restore the dead Engine fld JMP and plant ONE GWA2 or WndProc drain.
+; Restore the dead Engine/GWA2 JMP and plant ONE Render (or SkillTimer) drain.
+; Do not plant WndProc: wine-gw has no Win32 hwnd for the DX/Reforged client.
 Func Wine_RelocateDeadEngine($a_s_Why = "dead-hook")
 	If Not Wine_IsWine() Then Return False
 	If Wine_MapIsLoading() Then Return False
@@ -2189,16 +2289,27 @@ Func Wine_RelocateDeadEngine($a_s_Why = "dead-hook")
 	$g_b_WineMinimalHook = False
 
 	Local $sKind = "gwa2"
-	If $g_s_WineDrainKind = "gwa2" Or $g_i_WineRelocateN >= 3 Then $sKind = "wndproc"
-	If $g_s_WineDrainKind = "wndproc" Then $sKind = "wndproc"
+	If $g_s_WineDrainKind = "gwa2" Or $g_s_WineDrainKind = "wndproc" Or $a_s_Why = "gwa2-never-ticks" Or $a_s_Why = "wndproc-no-hwnd" Or $a_s_Why = "gwa2-plant-failed" Then $sKind = "render"
 
 	Local $pHook = 0
 	If $sKind = "gwa2" Then
 		$pHook = Wine_FindGwa2HookSite()
 		If $pHook = 0 Then
-			Out("[Move] no GWA2 Engine site; trying WndProc")
-			$sKind = "wndproc"
+			Out("[Move] no GWA2 Engine site; trying Render")
+			$sKind = "render"
 		EndIf
+	EndIf
+	If $sKind = "render" Then
+		$pHook = Wine_FindRenderHookSite()
+		If $pHook = 0 Then
+			Out("[Move] no Render site; trying SkillTimer call-esi")
+			$sKind = "skilltimer"
+			$pHook = Wine_FindSkillTimerHookSite()
+		EndIf
+	EndIf
+	If $pHook = 0 Then
+		Out("[Move] no live drain site (Engine/GWA2/Render/SkillTimer)")
+		Return False
 	EndIf
 
 	Local $pAlloc = Wine_AllocQueuePage()
@@ -2208,9 +2319,10 @@ Func Wine_RelocateDeadEngine($a_s_Why = "dead-hook")
 	EndIf
 	Out("[Move] relocate " & $sKind & " on NEW page " & Wine_HexPtr($pAlloc) & " hook=" & Wine_HexPtr($pHook) & " (" & $a_s_Why & ")")
 	If Not Wine_CommitFreshDrain($pAlloc, $pHook, $sKind) Then
-		If $sKind <> "wndproc" Then
-			Out("[Move] " & $sKind & " commit failed; trying WndProc on the same new page")
-			If Wine_CommitFreshDrain($pAlloc, 0, "wndproc") Then Return True
+		If $sKind = "render" Then
+			Out("[Move] Render commit failed; trying SkillTimer on the same new page")
+			$pHook = Wine_FindSkillTimerHookSite()
+			If $pHook <> 0 And Wine_CommitFreshDrain($pAlloc, $pHook, "skilltimer") Then Return True
 		EndIf
 		Wine_FreeAsmAlloc($pAlloc)
 		$g_p_WineAsmAlloc = 0
@@ -2322,8 +2434,17 @@ Func Wine_AssembleMinimalEngine()
 	_("MainExit:")
 	_("popfd")
 	_("popad")
-	If $g_s_WineAsmExit = "wndproc" Then
-		; Window-thread drain. Do not reconstruct Engine fld [ebp+8].
+	If $g_s_WineAsmExit = "wndproc" Or $g_s_WineAsmExit = "render" Then
+		; Render: stock GwAu3 skips hook..hook+0xA and ljmps RenderingModReturn.
+		; WndProc is unused on this Wine/Gw (no DX hwnd).
+		_("ljmp MainReturn")
+	ElseIf $g_s_WineAsmExit = "skilltimer" Then
+		; 5 nops overwritten with stolen call esi; mov ecx,[ebp-10]
+		_("nop")
+		_("nop")
+		_("nop")
+		_("nop")
+		_("nop")
 		_("ljmp MainReturn")
 	Else
 		; Engine: reconstruct 8B EC D9 45 08. GWA2 overwrites these 5 bytes
@@ -2418,7 +2539,7 @@ EndFunc
 ; Core already allocated QueueBase + CommandEnterMission. Plant the missing
 ; Engine JMP only (MainStart was 0 so Assembler_ModifyMemory wrote at null).
 Func Wine_PlantEngineJmpOnly()
-	If $g_s_WineDrainKind = "gwa2" Or $g_s_WineDrainKind = "wndproc" Then Return False
+	If $g_s_WineDrainKind = "gwa2" Or $g_s_WineDrainKind = "wndproc" Or $g_s_WineDrainKind = "render" Or $g_s_WineDrainKind = "skilltimer" Then Return False
 	If Wine_QueueAlreadyLive() Then Return True
 	If Wine_MapIsLoading() Then Return False
 	Local $pMain = Wine_LabelUserPtr("MainProc")
@@ -2660,7 +2781,7 @@ Func Wine_InstallCommandQueue()
 				" CommandEnterMission=" & Wine_HexPtr($pCmdEnt))
 	EndIf
 	Wine_LogMainProcProof("install")
-	Out("Wine: skipped Render/LoadFinished/Trader/TradePartner detours (not Assembler_ModifyMemory).")
+	Out("Wine: skipped LoadFinished/Trader/TradePartner detours (not Assembler_ModifyMemory). Render is the WndProc fallback when Engine/GWA2 never tick.")
 	Return True
 EndFunc
 
