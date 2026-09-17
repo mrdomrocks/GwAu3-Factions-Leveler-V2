@@ -99,7 +99,7 @@ Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 If Wine_IsWine() Then
 	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID. Window title is often Guild Wars Reforged.")
 	Out("Scanner_GetLoggedCharNames is skipped on Wine so a timed local scan cannot cache 0/78 before Start.")
-	Out("Start calls Core_Initialize immediately. The first step installs a one-JMP queue (QueueBase + CommandMove). At Zen outpost 213 it clicks Enter Mission; map/CurrentMapID 246 is already-inside.")
+	Out("Start calls Core_Initialize immediately. The first step installs a one-JMP queue (QueueBase + CommandMove). Already-inside Zen is map/CurrentMapID 246 or Togo+Vhang party allies together (map may still read 213). Togo NPC alone does not skip Enter.")
 	Out("Log file: " & @ScriptDir & "\Logs\leveler.log")
 Else
 	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
@@ -209,6 +209,7 @@ Func Leveler_AttachToGw()
 	$g_h_WineGwHwnd = 0
 	$g_s_WineExitReplay = ""
 	$g_i_WineDrainSeenLast = 0
+	$g_h_WineEnterMissAt = 0
 	$g_b_WipeReturnSent = False
 	$g_h_WipeReturnAt = 0
 	Local $l_s_Name = StringStripWS(GUICtrlRead($g_h_NameCombo), 3)

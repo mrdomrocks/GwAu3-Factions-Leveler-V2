@@ -10,13 +10,18 @@ Func Leveler_ExecuteStep($a_i_Step)
 		EndIf
 	EndIf
 	If Leveler_MapLooksConnecting() Then
-		Out("[Recover] Client is connecting; waiting for the outpost without sending packets.")
-		Leveler_WaitReturnToOutpost()
-		If Leveler_StatusMapReady() Then
-			$g_b_NeedStatusCheck = True
-			Out("[Status] Recovered to map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "; re-evaluating story floor.")
+		If Wine_IsWine() And Leveler_WineZenPartyAlliesTogether() Then
+			Out("[Step] Wine: Type/connecting flicker but Togo+Vhang allies present (" & $g_s_ZenAllyDetect & _
+					"); treating as in-mission (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & ")")
+		Else
+			Out("[Recover] Client is connecting; waiting for the outpost without sending packets.")
+			Leveler_WaitReturnToOutpost()
+			If Leveler_StatusMapReady() Then
+				$g_b_NeedStatusCheck = True
+				Out("[Status] Recovered to map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "; re-evaluating story floor.")
+			EndIf
+			Return False
 		EndIf
-		Return False
 	EndIf
 	If Wine_IsWine() And Leveler_InMissionInstance() Then
 		Out("[Step] Wine mid-mission: skip map-ready / outpost travel, run the step")
@@ -25,7 +30,8 @@ Func Leveler_ExecuteStep($a_i_Step)
 		If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	EndIf
 	If Wine_IsWine() And Leveler_WineHeldZenExplorable() And Leveler_PartyHasZenMissionAllies() Then
-		Out("[Step] Wine: Togo allies present (" & $g_s_ZenAllyDetect & "); not a wipe")
+		Out("[Step] Wine: mission allies present (" & $g_s_ZenAllyDetect & "); map " & Map_GetMapID() & _
+				" current " & Leveler_LiveMapID() & "; not a wipe")
 	ElseIf Wine_IsWine() And Leveler_WineAtZenOutpost() Then
 		Out("[Step] Wine: Zen outpost map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "; not in-mission (Togo NPC does not skip Enter)")
 	ElseIf Wine_IsWine() And Leveler_WinePlayerClearlyAlive() Then
@@ -1294,11 +1300,13 @@ Func Leveler_Step_ZenDaijunMission()
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_WineHeldZenExplorable() Or (Not Wine_IsWine() And Leveler_InMissionInstance($MAP_ZEN_EXP)) Then
 		If Wine_IsWine() Then $g_b_WineEnterSent = True
+		Local $l_s_Detect = ""
+		If $g_s_ZenAllyDetect <> "" Then $l_s_Detect = ", " & $g_s_ZenAllyDetect
 		Out("[Step] Already inside Zen Daijun (map " & Map_GetMapID() & _
-				" current " & Leveler_LiveMapID() & ")")
+				" current " & Leveler_LiveMapID() & $l_s_Detect & ")")
 		If Not Wine_IsWine() Then Leveler_LoadZenSkillBar()
 	Else
-		; Wine 213 is the outpost even when Master Togo stands there.
+		; Wine 213 is the outpost even when Master Togo stands there (no Vhang).
 		; Do not Travel/resign on InstanceInfo IsOutpost flicker — that loops 213→213.
 		If Not Leveler_WineAtZenOutpost() Then
 			If Wine_IsWine() Then
@@ -1336,10 +1344,11 @@ Func Leveler_Step_ZenDaijunMission()
 		EndIf
 	EndIf
 	If Leveler_IsWiped() Then Return False
-	; Wine: never escort on outpost 213. In-mission is held map/CurrentMapID 246.
+	; Wine: never escort on outpost 213 with only the town Togo NPC.
+	; In-mission is held 246 or Togo+Vhang party allies (map id may still read 213).
 	If Wine_IsWine() And Not Leveler_WineHeldZenExplorable() Then
 		Out("[Step] Still on outpost (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & _
-				"); not escorting. Enter Mission must hold 246.")
+				"); not escorting. Need held 246 or Togo+Vhang allies.")
 		Return False
 	EndIf
 

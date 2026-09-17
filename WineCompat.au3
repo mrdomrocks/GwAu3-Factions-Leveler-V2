@@ -58,6 +58,7 @@ If Not IsDeclared("g_h_WineVerifyAt") Then Global $g_h_WineVerifyAt = 0
 If Not IsDeclared("g_h_WineGwHwnd") Then Global $g_h_WineGwHwnd = 0
 If Not IsDeclared("g_s_WineExitReplay") Then Global $g_s_WineExitReplay = ""
 If Not IsDeclared("g_i_WineDrainSeenLast") Then Global $g_i_WineDrainSeenLast = 0
+If Not IsDeclared("g_h_WineEnterMissAt") Then Global $g_h_WineEnterMissAt = 0
 
 Func Wine_IsWine()
 	If $g_b_WineChecked Then Return $g_b_IsWine
@@ -711,6 +712,7 @@ EndFunc
 
 ; Durable enter proof only. Do not use InstanceInfo Type / IsWaitingForMission
 ; / objectives — those flicker on Wine and falsely latch $g_b_WineEnterSent.
+; Togo+Vhang party allies mean the instance even when map/current stay 213.
 Func Wine_EnterMapEvidence($a_i_StartMap)
 	Local $iMap = Map_GetMapID()
 	Local $iCur = Number(Map_GetCharacterInfo("CurrentMapID"))
@@ -718,6 +720,7 @@ Func Wine_EnterMapEvidence($a_i_StartMap)
 	If $iMap = 245 Or $iCur = 245 Then Return True
 	If $iMap > 0 And $iMap <> $a_i_StartMap And $iMap <> 213 And $iMap <> 214 Then Return True
 	If $iCur > 0 And $iCur <> $a_i_StartMap And $iCur <> 213 And $iCur <> 214 Then Return True
+	If Leveler_WineZenPartyAlliesTogether() Then Return True
 	Return False
 EndFunc
 
@@ -743,6 +746,25 @@ Func Wine_EnterLooksStarted($a_i_StartMap)
 	Return Wine_EnterMapEvidence($a_i_StartMap)
 EndFunc
 
+Func Wine_EnterLatchSuccess($a_s_How)
+	$g_b_WineEnterSent = True
+	$g_h_WineEnterMissAt = 0
+	Local $sDetect = ""
+	If IsDeclared("g_s_ZenAllyDetect") And $g_s_ZenAllyDetect <> "" Then $sDetect = " " & $g_s_ZenAllyDetect
+	Out("Wine enter: " & $a_s_How & " (map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")) & $sDetect & ")")
+	Return True
+EndFunc
+
+; Dismiss covering UI so the outpost Enter Mission pill can show, then open party.
+Func Wine_EnterRevealMissionUi($a_h_Wnd, $a_b_ToggleParty = False)
+	ControlSend($a_h_Wnd, "", "", "{ESC}")
+	Sleep(250)
+	If $a_b_ToggleParty Then
+		ControlSend($a_h_Wnd, "", "", "p")
+		Sleep(400)
+	EndIf
+EndFunc
+
 Func Wine_LevelerOverlayHold()
 	If Not IsDeclared("g_h_MainGui") Then Return
 	If $g_h_MainGui = 0 Then Return
@@ -761,10 +783,12 @@ EndFunc
 
 Func Wine_EnterChallenge()
 	Local $iNow = Map_GetMapID()
+	; No Enter Mission button mid-instance. Togo+Vhang (or held 246) is already-inside.
+	If Leveler_WineZenPartyAlliesTogether() Then
+		Return Wine_EnterLatchSuccess("already inside; Togo+Vhang allies, not clicking")
+	EndIf
 	If Wine_EnterMapEvidence($iNow) And Wine_WaitEnterEvidence($iNow, 2000) Then
-		$g_b_WineEnterSent = True
-		Out("Wine enter: already inside the mission (map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")) & ").")
-		Return True
+		Return Wine_EnterLatchSuccess("already inside the mission")
 	EndIf
 	If $g_b_WineEnterSent Then
 		If Wine_EnterMapEvidence($iNow) Then
@@ -773,6 +797,12 @@ Func Wine_EnterChallenge()
 		EndIf
 		Out("Wine enter: previous latch was stale (still map " & $iNow & "); retrying clicks.")
 		$g_b_WineEnterSent = False
+	EndIf
+	If $g_h_WineEnterMissAt <> 0 And TimerDiff($g_h_WineEnterMissAt) < 15000 Then
+		If Wine_EnterMapEvidence($iNow) Then Return Wine_EnterLatchSuccess("already inside after missed clicks")
+		Out("Wine enter: Enter Mission was not on screen; not repeating the click sweep (" & _
+				Int(TimerDiff($g_h_WineEnterMissAt) / 1000) & "s ago).")
+		Return False
 	EndIf
 
 	Local $hWnd = $g_h_GWWindow
@@ -785,6 +815,7 @@ Func Wine_EnterChallenge()
 	Local $iStart = Map_GetMapID()
 	Local $hCli = Wine_GwClientHwnd($hWnd)
 	If $hCli <> 0 Then $hWnd = $hCli
+	Local $bRetry = ($g_h_WineEnterMissAt <> 0)
 	Wine_LevelerOverlayHold()
 	WinSetOnTop($hWnd, "", 1)
 	WinActivate($hWnd)
@@ -792,6 +823,13 @@ Func Wine_EnterChallenge()
 	DllCall("user32.dll", "bool", "SetForegroundWindow", "hwnd", $hWnd)
 	DllCall("user32.dll", "bool", "BringWindowToTop", "hwnd", $hWnd)
 	Sleep(400)
+	; Outpost: dismiss covering UI so Enter Mission can show. Retry also toggles party.
+	Wine_EnterRevealMissionUi($hWnd, $bRetry)
+	If Leveler_WineZenPartyAlliesTogether() Then
+		WinSetOnTop($hWnd, "", 0)
+		Wine_LevelerOverlayRestore()
+		Return Wine_EnterLatchSuccess("already inside after UI reveal; not clicking")
+	EndIf
 
 	Local $hFrame = Wine_GwFrameHwnd($hWnd)
 	Local $aPos = WinGetPos($hFrame)
@@ -814,72 +852,78 @@ Func Wine_EnterChallenge()
 
 	ControlSend($hWnd, "", "", "{ENTER}")
 	If Wine_WaitEnterEvidence($iStart, 2500) Then
-		$g_b_WineEnterSent = True
-		Out("Wine enter: {ENTER} loaded map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
 		WinSetOnTop($hWnd, "", 0)
 		Wine_LevelerOverlayRestore()
-		Return True
+		Return Wine_EnterLatchSuccess("{ENTER} loaded")
 	EndIf
 	; {ENTER} often starts the load while map is still 213. More PostMessage /
 	; MouseClick during DX reset crashes Gw. Stop input and wait for held 246.
 	If Wine_WaitLoadHint($iStart, 1200) Then
-		Out("Wine enter: load started after {ENTER}; waiting for held 246 (no more clicks)")
+		Out("Wine enter: load started after {ENTER}; waiting for held 246 / Togo+Vhang (no more clicks)")
 		If Wine_WaitEnterEvidence($iStart, 45000) Then
-			$g_b_WineEnterSent = True
-			Out("Wine enter: held map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
 			WinSetOnTop($hWnd, "", 0)
 			Wine_LevelerOverlayRestore()
-			Return True
+			Return Wine_EnterLatchSuccess("held after {ENTER}")
 		EndIf
 		WinSetOnTop($hWnd, "", 0)
 		Wine_LevelerOverlayRestore()
-		Out("Wine enter: load started but 246 did not hold. Not latching.")
+		Out("Wine enter: load started but 246/allies did not hold. Not latching.")
 		Return False
 	EndIf
 
 	Local $aiY[6] = [22, 32, 42, 54, 68, 80]
 	Local $aiXOff[3] = [0, -40, 40]
+	Local $iYMax = 5
+	Local $iXMax = 2
+	If $bRetry Then
+		; Button was missing last sweep. Fewer clicks after party toggle; do not storm 18.
+		$iYMax = 2
+		$iXMax = 0
+		$aiY[0] = 22
+		$aiY[1] = 42
+		$aiY[2] = 68
+		Out("Wine enter: retry after reveal; short click strip (not a full sweep)")
+	EndIf
 	Local $iY = 0
 	Local $iX = 0
-	For $iY = 0 To 5
-		For $iX = 0 To 2
-			If Wine_EnterLoadStarted($iStart) Or Wine_MapIsLoading() Then ExitLoop 2
+	For $iY = 0 To $iYMax
+		For $iX = 0 To $iXMax
+			If Wine_EnterMapEvidence($iStart) Or Wine_EnterLoadStarted($iStart) Or Wine_MapIsLoading() Then ExitLoop 2
 			Wine_ClientClick($hWnd, $iCx + $aiXOff[$iX], $aiY[$iY])
 			If Wine_WaitEnterEvidence($iStart, 1600) Then
-				$g_b_WineEnterSent = True
-				Out("Wine enter: click loaded map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
 				WinSetOnTop($hWnd, "", 0)
 				Wine_LevelerOverlayRestore()
-				Return True
+				Return Wine_EnterLatchSuccess("click loaded")
 			EndIf
-			If Wine_EnterLoadStarted($iStart) Or Wine_WaitLoadHint($iStart, 400) Then ExitLoop 2
+			If Wine_EnterMapEvidence($iStart) Or Wine_EnterLoadStarted($iStart) Or Wine_WaitLoadHint($iStart, 400) Then ExitLoop 2
 		Next
 	Next
 	If Wine_EnterLoadStarted($iStart) Or Wine_MapIsLoading() Or Wine_EnterMapEvidence($iStart) Then
-		Out("Wine enter: load started; waiting for held 246 (no more clicks)")
+		Out("Wine enter: load started; waiting for held 246 / Togo+Vhang (no more clicks)")
 		If Wine_WaitEnterEvidence($iStart, 45000) Then
-			$g_b_WineEnterSent = True
-			Out("Wine enter: held map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
 			WinSetOnTop($hWnd, "", 0)
 			Wine_LevelerOverlayRestore()
-			Return True
+			Return Wine_EnterLatchSuccess("held after clicks")
 		EndIf
 		WinSetOnTop($hWnd, "", 0)
 		Wine_LevelerOverlayRestore()
-		Out("Wine enter: load started but 246 did not hold. Not latching.")
+		Out("Wine enter: load started but 246/allies did not hold. Not latching.")
 		Return False
 	EndIf
 	ControlSend($hWnd, "", "", "{ENTER}")
 	If Wine_WaitEnterEvidence($iStart, 2500) Then
-		$g_b_WineEnterSent = True
-		Out("Wine enter: {ENTER} loaded map " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")))
 		WinSetOnTop($hWnd, "", 0)
 		Wine_LevelerOverlayRestore()
-		Return True
+		Return Wine_EnterLatchSuccess("{ENTER} loaded")
 	EndIf
 	WinSetOnTop($hWnd, "", 0)
 	Wine_LevelerOverlayRestore()
-	Out("Wine enter: no durable map change (still " & Map_GetMapID() & " current " & Number(Map_GetCharacterInfo("CurrentMapID")) & "). Not latching.")
+	If Wine_EnterMapEvidence($iStart) Or Leveler_WineZenPartyAlliesTogether() Then
+		Return Wine_EnterLatchSuccess("already inside after sweep (no button)")
+	EndIf
+	$g_h_WineEnterMissAt = TimerInit()
+	Out("Wine enter: no Enter Mission button and no durable map change (still " & Map_GetMapID() & _
+			" current " & Number(Map_GetCharacterInfo("CurrentMapID")) & "). Not latching. Will not re-sweep for 15s.")
 	Return False
 EndFunc
 

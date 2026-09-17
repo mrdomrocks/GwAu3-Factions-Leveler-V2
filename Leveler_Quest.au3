@@ -348,7 +348,7 @@ EndFunc
 Func Leveler_IsOutpost()
 	If Leveler_InMissionInstance() Then Return False
 	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
-	; Wine 213 without 246 is the outpost even if InstanceInfo flickers explorable.
+	; Wine 213 without 246 / Togo+Vhang is the outpost even if InstanceInfo flickers explorable.
 	If Leveler_WineAtZenOutpost() Then Return True
 	If Not Leveler_InstanceInfoTrusted() Then
 		Local $l_i_Map = Map_GetMapID()

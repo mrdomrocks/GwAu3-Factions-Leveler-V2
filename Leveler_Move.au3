@@ -1355,7 +1355,7 @@ EndFunc
 ; True once we are sitting in the mission outpost (213 / 214), not Connecting and not still in the instance.
 Func Leveler_AtWipeOutpost()
 	If Leveler_MapLooksConnecting() Then Return False
-	; 213 with Togo NPC is the outpost. 246 with Togo is the instance.
+	; 213 with Togo NPC only is the outpost. 246 or Togo+Vhang is the instance.
 	If Leveler_WineHeldZenExplorable() Or Leveler_InMissionInstance() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	If $l_i_Map <= 0 Then Return False

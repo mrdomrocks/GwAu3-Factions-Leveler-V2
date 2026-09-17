@@ -375,7 +375,10 @@ Global $g_b_ExplorableResume = False
 ; Out() also appends here so a black Wine GUI still leaves a log.
 Global $g_s_LevelerLogFile = ""
 Global $g_h_LastGuiOut = 0
-; How we last saw Zen mission allies: hench / agent-togo / agent-rt.
+; How we last saw Zen mission allies: hench / agent-togo / togo+vhang / togo+vhang-party.
 Global $g_s_ZenAllyDetect = ""
+Global $g_h_ZenAllyCacheAt = 0
+Global $g_b_ZenAllyCache = False
+Global $g_s_ZenAllyCacheDetect = ""
 ; Zen escort waypoint index. Survives a single MoveTo timeout so we do not restart at 0.
 Global $g_i_ZenEscortWp = 0

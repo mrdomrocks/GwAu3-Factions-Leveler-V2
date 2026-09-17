@@ -266,8 +266,91 @@ Func Leveler_FindLivingZenTogoAgent()
 	Return 0
 EndFunc
 
+; Headmaster Vhang (E15) is a Zen mission ally. He is never the outpost town NPC.
+Func Leveler_FindLivingZenVhangAgent()
+	If Not Leveler_AgentMemoryLive() Then Return 0
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
+		Local $l_s_Name = String(Agent_GetAgentInfo($i, "Name"))
+		If StringInStr($l_s_Name, "Vhang") Then Return $i
+		If StringInStr($l_s_Name, "Togo") Then ContinueLoop
+		Local $l_i_Lvl = Number(Agent_GetAgentInfo($i, "Level"))
+		Local $l_i_Prof = Number(Agent_GetAgentInfo($i, "Primary"))
+		Local $l_i_All = Number(Agent_GetAgentInfo($i, "Allegiance"))
+		If $l_i_Lvl >= 14 And $l_i_Lvl <= 16 And $l_i_Prof = $GC_I_PROFESSION_ELEMENTALIST Then
+			If $l_i_All = $GC_I_ALLEGIANCE_ALLY Then Return $i
+		EndIf
+	Next
+	Return 0
+EndFunc
+
+Func Leveler_PartyOthersContains($a_i_Agent)
+	If $a_i_Agent = 0 Then Return False
+	Local $l_p_Others = Party_GetMyPartyInfo("ArrayOthersPartyMember")
+	Local $l_i_Size = Number(Party_GetMyPartyInfo("ArrayOthersPartyMemberSize"))
+	If $l_p_Others = 0 Or $l_i_Size <= 0 Then Return False
+	If $l_i_Size > 32 Then $l_i_Size = 32
+	Local $i
+	For $i = 0 To $l_i_Size - 1
+		If Number(Memory_Read($l_p_Others + ($i * 4), "dword")) = Number($a_i_Agent) Then Return True
+	Next
+	Return False
+EndFunc
+
+; True only when Master Togo AND Headmaster Vhang are both living. Outpost town
+; Togo (NPC, no Vhang) must not count. Map/CurrentMapID may still read 213.
+Func Leveler_WineZenPartyAlliesTogether()
+	If Not Wine_IsWine() Then Return False
+	If $g_h_ZenAllyCacheAt <> 0 And TimerDiff($g_h_ZenAllyCacheAt) < 400 Then
+		If $g_b_ZenAllyCache Then $g_s_ZenAllyDetect = $g_s_ZenAllyCacheDetect
+		Return $g_b_ZenAllyCache
+	EndIf
+	If Not Leveler_AgentMemoryLive() Then Return False
+	Local $l_i_Togo = Leveler_FindLivingZenTogoAgent()
+	If $l_i_Togo = 0 Then
+		$g_h_ZenAllyCacheAt = TimerInit()
+		$g_b_ZenAllyCache = False
+		$g_s_ZenAllyCacheDetect = ""
+		Return False
+	EndIf
+	Local $l_i_Vhang = Leveler_FindLivingZenVhangAgent()
+	If $l_i_Vhang = 0 Or $l_i_Vhang = $l_i_Togo Then
+		$g_h_ZenAllyCacheAt = TimerInit()
+		$g_b_ZenAllyCache = False
+		$g_s_ZenAllyCacheDetect = ""
+		Return False
+	EndIf
+	Local $l_s_Togo = String(Agent_GetAgentInfo($l_i_Togo, "Name"))
+	Local $l_s_Vhang = String(Agent_GetAgentInfo($l_i_Vhang, "Name"))
+	Local $l_i_TogoAll = Number(Agent_GetAgentInfo($l_i_Togo, "Allegiance"))
+	Local $l_i_VhangAll = Number(Agent_GetAgentInfo($l_i_Vhang, "Allegiance"))
+	Local $l_b_Named = StringInStr($l_s_Togo, "Togo") And StringInStr($l_s_Vhang, "Vhang")
+	Local $l_b_Ally = ($l_i_TogoAll = $GC_I_ALLEGIANCE_ALLY And $l_i_VhangAll = $GC_I_ALLEGIANCE_ALLY)
+	If Not $l_b_Named And Not $l_b_Ally Then
+		$g_h_ZenAllyCacheAt = TimerInit()
+		$g_b_ZenAllyCache = False
+		$g_s_ZenAllyCacheDetect = ""
+		Return False
+	EndIf
+	If Leveler_PartyOthersContains($l_i_Togo) And Leveler_PartyOthersContains($l_i_Vhang) Then
+		$g_s_ZenAllyDetect = "togo+vhang-party"
+	ElseIf $l_b_Named Then
+		$g_s_ZenAllyDetect = "togo+vhang"
+	Else
+		$g_s_ZenAllyDetect = "togo+vhang-ally"
+	EndIf
+	$g_h_ZenAllyCacheAt = TimerInit()
+	$g_b_ZenAllyCache = True
+	$g_s_ZenAllyCacheDetect = $g_s_ZenAllyDetect
+	Return True
+EndFunc
+
 Func Leveler_PartyHasZenMissionAllies()
 	$g_s_ZenAllyDetect = ""
+	If Leveler_WineZenPartyAlliesTogether() Then Return True
 	Local $l_i_Hench = Leveler_HenchmanCount()
 	Local $l_i_High = 0
 	Local $l_i_HighRt = 0
@@ -317,9 +400,11 @@ Func Leveler_MapLooksConnecting()
 	Return False
 EndFunc
 
-; Held Zen instance only. Master Togo at outpost 213 is a town NPC and must
-; not count as in-mission (that skipped Enter Mission and escorted in town).
+; Held Zen instance: map/CurrentMapID 246, or Togo+Vhang as party allies
+; together when those IDs stay 213. Master Togo at outpost 213 (no Vhang)
+; is a town NPC and must not count as in-mission.
 Func Leveler_WineHeldZenExplorable()
+	If Leveler_WineZenPartyAlliesTogether() Then Return True
 	If Leveler_MapLooksConnecting() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
@@ -330,19 +415,22 @@ Func Leveler_WineLooksInZenMission()
 	Return Leveler_WineHeldZenExplorable()
 EndFunc
 
-; Wine: sitting at Zen 213 and not actually in the instance (no 246).
-; InstanceInfo IsOutpost/IsExplorable flicker must not count as explorable.
-; Outpost Togo NPC is not proof of the mission.
+; Wine: sitting at Zen 213 and not actually in the instance (no 246, no
+; Togo+Vhang allies). InstanceInfo IsOutpost/IsExplorable flicker must not
+; count as explorable. Outpost Togo NPC is not proof of the mission.
 Func Leveler_WineAtZenOutpost()
 	If Not Wine_IsWine() Then Return False
-	If Leveler_MapLooksConnecting() Then Return False
 	If Leveler_WineHeldZenExplorable() Then Return False
+	If Leveler_MapLooksConnecting() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
 	Return $l_i_Map = $MAP_ZEN_OP Or $l_i_Cur = $MAP_ZEN_OP
 EndFunc
 
 Func Leveler_InMissionInstance($a_i_MapID = 0)
+	; Wine: Togo+Vhang party allies are the instance even if Type flickers 2
+	; and Map_GetMapID / CurrentMapID stay 213.
+	If Wine_IsWine() And Leveler_WineZenPartyAlliesTogether() Then Return True
 	If Leveler_MapLooksConnecting() Then Return False
 	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
 
@@ -351,7 +439,7 @@ Func Leveler_InMissionInstance($a_i_MapID = 0)
 	If $l_i_Cur = $MAP_ZEN_EXP Or $l_i_Map = $MAP_ZEN_EXP Then Return True
 	If $l_i_Cur = $MAP_CHO_EXPLORABLE Or $l_i_Map = $MAP_CHO_EXPLORABLE Then Return True
 
-	; Wine: outpost 213 + Togo NPC is the outpost. Require map/CurrentMapID 246.
+	; Wine: outpost 213 + Togo NPC alone is the outpost, not the mission.
 	If Wine_IsWine() Then Return False
 
 	If Leveler_WineLooksInZenMission() Then Return True
@@ -378,18 +466,20 @@ EndFunc
 
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_s_Detect = ""
+	If Wine_IsWine() And $g_s_ZenAllyDetect <> "" Then $l_s_Detect = ", " & $g_s_ZenAllyDetect
 	If Leveler_InMissionInstance($a_i_MapID) Then
 		If Wine_IsWine() Then $g_b_WineEnterSent = True
 		Out("[Step] Already inside " & $a_s_Name & " (map " & $l_i_StartMap & _
-				" current " & Leveler_LiveMapID() & ")")
+				" current " & Leveler_LiveMapID() & $l_s_Detect & ")")
 		Return True
 	EndIf
 
 	; Engine already accepted Enter Challenge. Do not send it again.
-	; Wine: IsWaitingForMission / Type flicker is not proof — require map 246.
+	; Wine: IsWaitingForMission / Type flicker is not proof — require 246 or Togo+Vhang.
 	If Wine_IsWine() Then
 		If Wine_EnterMapEvidence($l_i_StartMap) Then
-			Out("[Step] Already inside " & $a_s_Name & " (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & ")")
+			Out("[Step] Already inside " & $a_s_Name & " (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & $l_s_Detect & ")")
 			$g_b_WineEnterSent = True
 			Return True
 		EndIf
@@ -437,12 +527,13 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Return True
 EndFunc
 
-; After held 246: wait out the load before skill bar, queue refresh, or Move.
+; After held 246 / Togo+Vhang: wait out the load before skill bar, queue refresh, or Move.
 Func Leveler_WaitWineWorldSettled($a_i_Timeout = 25000)
 	If Not Wine_IsWine() Then Return True
-	; Mid-mission Start: already on 246. Do not block the GUI.
+	; Mid-mission Start: already on 246 or Togo+Vhang allies. Do not block the GUI.
 	If Leveler_WineHeldZenExplorable() Then
-		Out("[Step] Wine: already in Zen (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "); skip settle wait")
+		Out("[Step] Wine: already in Zen (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & _
+				"); skip settle wait")
 		Return True
 	EndIf
 	Out("[Step] Wine: waiting for the mission world to settle before skill bar / queue / move")
@@ -476,8 +567,8 @@ Func Leveler_WaitWineWorldSettled($a_i_Timeout = 25000)
 EndFunc
 
 ; Wine has no LoadFinished hook, so Map_WaitMapIsLoaded never completes.
-; Type 2 is LOADING — keep waiting. Wine success is map/CurrentMapID 246,
-; not Type=explorable flicker or Togo NPC on outpost 213. Fail on char-select.
+; Type 2 is LOADING — keep waiting. Wine success is map/CurrentMapID 246 or
+; Togo+Vhang party allies, not Type=explorable flicker or Togo NPC on 213.
 Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
 	Local $l_h_Timer = TimerInit()
 	Local $l_b_SawLoad = False
@@ -514,7 +605,7 @@ Func Leveler_WaitWineMission($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 60000)
 			Out("[Step] Mission instance confirmed (map " & $l_i_Map & " current " & Leveler_LiveMapID() & ")")
 			Return True
 		EndIf
-		; Wine: Type=explorable on outpost 213 is a flicker. Require 246.
+		; Wine: Type=explorable on outpost 213 is a flicker. Require 246 or Togo+Vhang.
 		If Wine_IsWine() Then
 			If Wine_EnterMapEvidence($a_i_StartMap) Then
 				Out("[Step] Mission instance confirmed (map " & $l_i_Map & " current " & Leveler_LiveMapID() & ")")
