@@ -1653,24 +1653,62 @@ Func Leveler_Step_ToEyeOfTheNorth()
 		Out("[Step] Already at Eye of the North")
 		Return True
 	EndIf
+	If Map_IsMapUnlocked($MAP_EOTN) And Map_GetMapID() <> $MAP_ICE_CLIFF Then
+		If Leveler_Travel($MAP_EOTN) Then
+			Out("[Step] Eye of the North is already unlocked")
+			Return True
+		EndIf
+	EndIf
 
 	If Map_GetMapID() <> $MAP_ICE_CLIFF Then
 		If Not Leveler_Travel($MAP_BOREAL) Then Return False
 		Leveler_PrepareForBattle()
-		If Not Leveler_MoveAndExit(4684, -27869, $MAP_ICE_CLIFF, True) Then Return False
+		; EotN storyline Unlocker uses 4141,-27703 (inside Boreal). 4684,-27869 is the
+		; Ice Cliff-side portal and sits in the wall from inside the outpost.
+		Local $l_af_Boreal[1][2] = [[4141.00, -27703.00]]
+		Leveler_FollowCoordsFrom($l_af_Boreal, False)
+		If Not Leveler_ApproachPortal(4141.00, -27703.00, $MAP_ICE_CLIFF, False) Then Return False
 	Else
 		Leveler_PrepareForBattle()
 	EndIf
 
-	If Not Leveler_MoveTo(3579.07, -22007.27, True) Then Return False
-	Sleep(15000)
-	If Not Leveler_TalkModel($MODEL_DESTROYERS_NPC, $DIALOG_DESTROYERS_STEP1) Then
-		Out("[Step] Against the Destroyers NPC dialog failed; continuing the path")
+	; First-visit Jora / Sif dialog only near the Boreal entrance (Python waits 15s).
+	If Agent_GetDistanceToXY(3579.07, -22007.27) < 5000 Then
+		Leveler_MoveTo(3579.07, -22007.27, True)
+		Sleep(15000)
+		If Leveler_GetAgentByModel($MODEL_DESTROYERS_NPC) <> 0 Then
+			If Not Leveler_QuestLoop($QUEST_AGAINST_DESTROYERS, 0, 0, $DIALOG_DESTROYERS_STEP1, "step", $MODEL_DESTROYERS_NPC) Then
+				Out("[Step] Against the Destroyers NPC dialog failed; continuing the path")
+			EndIf
+		EndIf
 	EndIf
-	If Not Leveler_MoveTo(3743.31, -15862.36, True) Then Return False
-	If Not Leveler_MoveTo(3607.21, -6937.32, True) Then Return False
-	If Not Leveler_MoveTo(2557.23, -275.97, True) Then Return False
-	If Not Leveler_MoveAndExit(-641.25, 2069.27, $MAP_EOTN, True) Then Return False
+
+	; Python Factions Leveler used three long legs that need navmesh. Wine Map_Move
+	; walks those into Ice Cliff walls. EotN storyline Unlocker path goes around the Eye.
+	Local $l_af_Ice[10][2] = [ _
+			[766.00, -20764.00], _
+			[-4234.00, -15585.00], _
+			[-6020.00, -13621.00], _
+			[-4145.00, -10496.00], _
+			[3266.00, -14782.00], _
+			[6838.00, -15585.00], _
+			[6302.00, -9960.00], _
+			[1391.00, -3442.00], _
+			[3802.00, -495.00], _
+			[1128.00, 882.00] _
+			]
+	If Not Leveler_FollowCoordsFrom($l_af_Ice, True) Then Return False
+	If Map_GetMapID() = $MAP_EOTN Then
+		Out("[Step] Arrived at Eye of the North")
+		Return True
+	EndIf
+	; Do not keep pushing Factions -641,2069 into the Eye wall. Approach the south door
+	; (Unlocker 1128,882) and wait for the load.
+	If Not Leveler_ApproachPortal(1128.00, 882.00, $MAP_EOTN, True) Then Return False
+	If Map_GetMapID() <> $MAP_EOTN Then
+		Out("[Step] Ice Cliff did not load Eye of the North")
+		Return False
+	EndIf
 	Out("[Step] Arrived at Eye of the North")
 	Return True
 EndFunc
@@ -1678,19 +1716,54 @@ EndFunc
 Func Leveler_Step_UnlockEotnPool()
 	$g_s_CurrentHeader = "Unlock Eye of the North Pool"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Map_IsMapUnlocked($MAP_HOM) And Leveler_HasKeiranBow() Then
+		Out("[Step] Eye of the North pool already unlocked")
+		If Map_GetMapID() <> $MAP_EOTN Then Leveler_Travel($MAP_EOTN)
+		Return True
+	EndIf
+
 	If Map_GetMapID() <> $MAP_HOM Then
 		If Not Leveler_Travel($MAP_EOTN) Then Return False
 		Leveler_SetPacifist()
-		If Not Leveler_MoveTo(-4416.39, 4932.36, False) Then Return False
-		If Not Leveler_MoveAndExit(-5198.00, 5595.00, $MAP_HOM, False) Then Return False
+		; Outposts always Map_Move straight. Reverse of the Gunnar Ice Cliff door path,
+		; then the Python HOM portal points — not a single shot into the hall wall.
+		Local $l_af_Hom[7][2] = [ _
+				[1522.00, 464.00], _
+				[718.00, 1060.00], _
+				[-115.00, 1677.00], _
+				[-964.00, 2270.00], _
+				[-1814.00, 2917.00], _
+				[-4416.39, 4932.36], _
+				[-5198.00, 5595.00] _
+				]
+		Leveler_FollowCoordsFrom($l_af_Hom, False)
+		If Map_GetMapID() <> $MAP_HOM Then
+			If Not Leveler_ApproachPortal(-5198.00, 5595.00, $MAP_HOM, False) Then Return False
+		EndIf
+		If Map_GetMapID() <> $MAP_HOM Then
+			Out("[Step] Hall of Monuments portal did not load")
+			Return False
+		EndIf
 	EndIf
 
 	Leveler_SetPacifist()
 	If Not Leveler_MoveTo(-6572.70, 6588.83, False) Then Return False
-	Leveler_TalkModel($MODEL_GWEN, $DIALOG_POOL_CINEMATIC)
+	If Leveler_GetAgentByModel($MODEL_GWEN) <> 0 Then
+		If Not Leveler_QuestLoop($QUEST_AGAINST_DESTROYERS, 0, 0, $DIALOG_POOL_CINEMATIC, "step", $MODEL_GWEN) Then
+			Leveler_TalkModel($MODEL_GWEN, $DIALOG_POOL_CINEMATIC)
+		EndIf
+	Else
+		Leveler_TalkModel($MODEL_GWEN, $DIALOG_POOL_CINEMATIC)
+	EndIf
 	Sleep(1000)
 	Leveler_WaitCinematic()
-	Leveler_TalkModel($MODEL_EOTN_POOL, $DIALOG_POOL_STEP3)
+	If Leveler_GetAgentByModel($MODEL_EOTN_POOL) <> 0 Then
+		If Not Leveler_QuestLoop($QUEST_AGAINST_DESTROYERS, 0, 0, $DIALOG_POOL_STEP3, "step", $MODEL_EOTN_POOL) Then
+			Leveler_TalkModel($MODEL_EOTN_POOL, $DIALOG_POOL_STEP3)
+		EndIf
+	Else
+		Leveler_TalkModel($MODEL_EOTN_POOL, $DIALOG_POOL_STEP3)
+	EndIf
 	Sleep(1000)
 	Leveler_WaitCinematic()
 	If Map_GetMapID() <> $MAP_HOM Then Map_WaitMapLoading($MAP_HOM, -1, 30000)
@@ -1698,11 +1771,29 @@ Func Leveler_Step_UnlockEotnPool()
 
 	Leveler_TalkModel($MODEL_GWEN, $DIALOG_GWEN_TAPESTRY)
 	Sleep(1000)
-	Leveler_TalkModel($MODEL_GWEN, $DIALOG_VANGUARD_STEP)
+	If Leveler_GetAgentByModel($MODEL_GWEN) <> 0 Then
+		If Not Leveler_QuestLoop($QUEST_MISSING_VANGUARD, 0, 0, $DIALOG_VANGUARD_STEP, "step", $MODEL_GWEN) Then
+			Leveler_TalkModel($MODEL_GWEN, $DIALOG_VANGUARD_STEP)
+		EndIf
+	Else
+		Leveler_TalkModel($MODEL_GWEN, $DIALOG_VANGUARD_STEP)
+	EndIf
 	Ui_Dialog($DIALOG_KEIRAN_BOW)
 	Sleep(600)
-	Leveler_TalkModel($MODEL_OGDEN, $DIALOG_OGDEN_ALLIES)
-	Leveler_TalkModel($MODEL_VEKK, $DIALOG_VEKK_ASURA)
+	If Leveler_GetAgentByModel($MODEL_OGDEN) <> 0 Then
+		If Not Leveler_QuestLoop($QUEST_NORTHERN_ALLIES, 0, 0, $DIALOG_OGDEN_ALLIES, "step", $MODEL_OGDEN) Then
+			Leveler_TalkModel($MODEL_OGDEN, $DIALOG_OGDEN_ALLIES)
+		EndIf
+	Else
+		Leveler_TalkModel($MODEL_OGDEN, $DIALOG_OGDEN_ALLIES)
+	EndIf
+	If Leveler_GetAgentByModel($MODEL_VEKK) <> 0 Then
+		If Not Leveler_QuestLoop($QUEST_KNOWLEDGEABLE_ASURA, 0, 0, $DIALOG_VEKK_ASURA, "step", $MODEL_VEKK) Then
+			Leveler_TalkModel($MODEL_VEKK, $DIALOG_VEKK_ASURA)
+		EndIf
+	Else
+		Leveler_TalkModel($MODEL_VEKK, $DIALOG_VEKK_ASURA)
+	EndIf
 
 	Local $l_i_Bow = Item_FindItemByModelID($MODEL_KEIRAN_BOW)
 	If $l_i_Bow <> 0 Then Item_EquipItem($l_i_Bow)
