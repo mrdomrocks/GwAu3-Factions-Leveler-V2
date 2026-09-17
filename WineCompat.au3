@@ -13,6 +13,12 @@
 ; It never calls Assembler_ModifyMemory (no five-JMP path).
 ; A leftover Engine E9 that has never ticked is restored (8B EC D9 45 08) and
 ; replaced with one fresh JMP on a new VirtualAlloc page (7ccd322 walk path).
+; Leftover SkillTimer/GWA2/Scene E9s are restored to original bytes on Start
+; (tail 8B D8 8B 47 08 / 8B CE / 8B 01) so a retest does not need a manual
+; restore before the pattern scan. SkillTimer ticks live on the MainProc page
+; while WPM to QueueBase (64KB earlier) is invisible to that thread
+; (195ad24: ticks rose, drainSeen stayed 0, slot 0 written). Move is a
+; PendingMove flag+xyz beside EngineTicks on the same page.
 
 If Not IsDeclared("g_b_IsWine") Then Global $g_b_IsWine = False
 If Not IsDeclared("g_b_WineChecked") Then Global $g_b_WineChecked = False
@@ -1265,6 +1271,7 @@ Func Wine_MapMove($a_f_X, $a_f_Y, $a_f_Randomize = 20)
 	DllStructSetData($g_d_Move, 3, $a_f_Y)
 	DllStructSetData($g_d_Move, 4, 0)
 
+	Local $bPend = Wine_WritePendingMove($a_f_X, $a_f_Y)
 	Local $pCmd = Wine_LabelUserPtr("CommandMove")
 	Local $iSlot = Number($g_i_QueueCounter)
 	Local $pSlot = $g_p_QueueBase + (256 * $iSlot)
@@ -1287,6 +1294,7 @@ Func Wine_MapMove($a_f_X, $a_f_Y, $a_f_Randomize = 20)
 	Local $bLog = ($g_h_WineMoveLog = 0)
 	If Not $bLog And TimerDiff($g_h_WineMoveLog) >= 5000 Then $bLog = True
 	If Not $bOk Then $bLog = True
+	If Not $bPend Then $bLog = True
 	If $bLog Then
 		$g_h_WineMoveLog = TimerInit()
 		Local $pQC = Wine_LabelUserPtr("QueueCounter")
@@ -1295,19 +1303,37 @@ Func Wine_MapMove($a_f_X, $a_f_Y, $a_f_Randomize = 20)
 		Local $pSeen = Wine_LabelUserPtr("DrainSeen")
 		Local $iSeen = 0
 		If $pSeen <> 0 Then $iSeen = Number(Memory_Read($pSeen))
+		Local $pPend = Wine_LabelUserPtr("PendingMove")
+		Local $iPend = 0
+		If $pPend <> 0 Then $iPend = Number(Memory_Read($pPend))
 		Out("[Move] enqueue ok=" & Number($bOk) & " slot=" & $iSlot & _
 				" cmd=" & Wine_HexPtr($pCmd) & " struct=" & Wine_HexPtr(DllStructGetData($g_d_Move, 1)) & _
-				" qc=" & $iSlot & "/" & $iMem & " drainSeen=" & $iSeen & _
+				" qc=" & $iSlot & "/" & $iMem & " drainSeen=" & $iSeen & " pending=" & $iPend & "/" & Number($bPend) & _
 				" dest=" & Round($a_f_X) & "," & Round($a_f_Y) & _
 				" head " & $sBefore & " -> " & $sAfter)
 		If $bOk And $iHead <> 0 And BitAND($iHead, 0xFFFFFFFF) <> BitAND(Number($pCmd), 0xFFFFFFFF) Then
 			Out("[Move] queue head dword " & Wine_HexPtr($iHead) & " is not CommandMove " & Wine_HexPtr($pCmd))
 		EndIf
 		Out("[Move] engine ticks=" & Wine_EngineTickCount() & " jmp=" & Wine_HexPtr(Wine_EngineJmpTarget()) & _
-				" MainProc=" & Wine_HexPtr(Wine_LabelUserPtr("MainProc")) & " memQC=" & $iMem & " drainSeen=" & $iSeen)
+				" MainProc=" & Wine_HexPtr(Wine_LabelUserPtr("MainProc")) & " memQC=" & $iMem & " drainSeen=" & $iSeen & " pending=" & $iPend)
 	EndIf
 	Wine_WatchEngineTicks()
-	Return $bOk
+	Return $bOk Or $bPend
+EndFunc
+
+; Flag+xyz live on the EngineTicks page (SkillTimer can see this write).
+Func Wine_WritePendingMove($a_f_X, $a_f_Y)
+	Local $pFlag = Wine_LabelUserPtr("PendingMove")
+	Local $pXYZ = Wine_LabelUserPtr("PendingXYZ")
+	If $pFlag = 0 Or $pXYZ = 0 Then Return False
+	DllStructSetData($g_d_Move, 2, $a_f_X)
+	DllStructSetData($g_d_Move, 3, $a_f_Y)
+	DllStructSetData($g_d_Move, 4, 0)
+	Memory_Write($pFlag, 0)
+	If Not Wine_Wpm($pXYZ, $g_p_Move + 4, 12) Then Return False
+	Memory_Write($pFlag, 1)
+	Wine_FlushGw($pFlag, 16)
+	Return Number(Memory_Read($pFlag)) = 1
 EndFunc
 
 ; Re-wire CommandMove, rewrite stubs on our Queue page, and re-point the one
@@ -1495,6 +1521,7 @@ Func Wine_EnsureCommandQueue()
 		Out("Wine queue: no Gw process handle")
 		Return False
 	EndIf
+	Wine_RestoreOrphanReplayHooks()
 	Wine_RefreshQueueFromLabels()
 	If Wine_QueueWalkReady() Then
 		$g_b_WineMinimalHook = True
@@ -1810,25 +1837,34 @@ Func Wine_LogMainProcProof($a_s_Why = "proof", $a_b_Callers = False)
 	Local $pHook = Wine_ResolveEngineHookSite(False)
 	If $pHook = 0 Then $pHook = $g_p_WineEngineHook
 	If $pHook = 0 Then $pHook = Wine_LabelUserPtr("MainStart")
-	Local $sMain = Wine_ReadBytesHex($pMain, 32)
+	Local $sMain = Wine_ReadBytesHex($pMain, 64)
+	Local $sComp = Wine_CompactHex($sMain)
 	Local $sHook = Wine_ReadBytesHex($pHook, 8)
 	Local $iInc = 0
 	Local $iQcOp = 0
 	Local $iQbOp = 0
+	Local $iPendOp = 0
 	If $pMain <> 0 Then
-		$iInc = Wine_ReadImm32($pMain + 2)
 		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 2, 2)) = "FF05" Then $iInc = Wine_ReadImm32($pMain + 4)
-		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 8, 1)) = "A1" Then $iQcOp = Wine_ReadImm32($pMain + 9)
-		; RegularFlow: A1 QC (5) + 8BC8 (2) + C1E008 (3) + 05 QueueBase (5) starts at MainProc+18
-		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 18, 1)) = "05" Then $iQbOp = Wine_ReadImm32($pMain + 19)
+		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 8, 2)) = "833D" Then $iPendOp = Wine_ReadImm32($pMain + 10)
+		Local $iReg = StringInStr($sComp, "8BC8C1E00805")
+		If $iReg > 0 Then
+			Local $iOff = Int(($iReg - 1) / 2)
+			If $iOff >= 5 And Wine_CompactHex(Wine_ReadBytesHex($pMain + $iOff - 5, 1)) = "A1" Then $iQcOp = Wine_ReadImm32($pMain + $iOff - 4)
+			If Wine_CompactHex(Wine_ReadBytesHex($pMain + $iOff + 5, 1)) = "05" Then $iQbOp = Wine_ReadImm32($pMain + $iOff + 6)
+		EndIf
 	EndIf
 	Local $iSeen = 0
 	If $pSeen <> 0 Then $iSeen = Number(Memory_Read($pSeen))
+	Local $pPend = Wine_LabelUserPtr("PendingMove")
+	Local $iPend = 0
+	If $pPend <> 0 Then $iPend = Number(Memory_Read($pPend))
 	Local $sCallers = "skip"
 	If $a_b_Callers And $pHook <> 0 Then $sCallers = Wine_CountNearCallers($pHook)
 	Out("[Move] MainProc proof (" & $a_s_Why & ") kind=" & $g_s_WineDrainKind & _
-			" MainProc=" & Wine_HexPtr($pMain) & " bytes=" & Wine_CompactHex($sMain) & _
+			" MainProc=" & Wine_HexPtr($pMain) & " bytes=" & $sComp & _
 			" inc=[" & Wine_HexPtr($iInc) & "] EngineTicks=" & Wine_HexPtr($pTicks) & _
+			" pendOp=[" & Wine_HexPtr($iPendOp) & "] PendingMove=" & Wine_HexPtr($pPend) & "=" & $iPend & _
 			" qcOp=[" & Wine_HexPtr($iQcOp) & "] QueueCounter=" & Wine_HexPtr($pQC) & _
 			" qbOp=[" & Wine_HexPtr($iQbOp) & "] QueueBase=" & Wine_HexPtr($pQB) & _
 			" drainSeen=" & $iSeen & _
@@ -1837,6 +1873,9 @@ Func Wine_LogMainProcProof($a_s_Why = "proof", $a_b_Callers = False)
 	If $pTicks <> 0 And $iInc <> 0 And Not Wine_PtrsEq($iInc, $pTicks) Then
 		Out("[Move] MainProc inc target is NOT EngineTicks — patching FF05")
 		Wine_PatchMainProcHeartbeat()
+	EndIf
+	If $pPend <> 0 And $iPendOp <> 0 And Not Wine_PtrsEq($iPendOp, $pPend) Then
+		Out("[Move] MainProc cmp PendingMove is NOT PendingMove — pendOp=" & Wine_HexPtr($iPendOp))
 	EndIf
 	If $pQB <> 0 And $iQbOp <> 0 And Not Wine_PtrsEq($iQbOp, $pQB) Then
 		Out("[Move] MainProc add eax,QueueBase is NOT QueueBase — qbOp=" & Wine_HexPtr($iQbOp))
@@ -1876,16 +1915,35 @@ Func Wine_PatchGwa2Exit()
 	Return True
 EndFunc
 
+; Original 5 bytes for a leftover E9, from saved bytes or the insn tail.
+; SkillTimer: E9 over FFD68B4DF0, tail 8BD88B4708. GWA2: E9 over FFD083C404,
+; tail 8BCE (and the 56 push esi before the site). Engine: 8BECD94508.
+Func Wine_StolenOriginal5($a_p_Hook)
+	If $a_p_Hook = 0 Then Return ""
+	If $g_p_WineHookSaved <> 0 And Wine_PtrsEq($g_p_WineHookSaved, $a_p_Hook) And StringLen($g_s_WineHookSaved) = 10 Then
+		Return $g_s_WineHookSaved
+	EndIf
+	Local $sNow = Wine_CompactHex(Wine_ReadBytesHex($a_p_Hook, 5))
+	Local $sTail = Wine_CompactHex(Wine_ReadBytesHex($a_p_Hook + 5, 5))
+	If $sNow = "FFD68B4DF0" Or $sNow = "FFD083C404" Or $sNow = "8BECD94508" Or $sNow = "D9E0D95DFC" Then Return $sNow
+	If $sTail = "8BD88B4708" Then Return "FFD68B4DF0"
+	If StringLeft($sTail, 4) = "8BCE" And Wine_CompactHex(Wine_ReadBytesHex($a_p_Hook - 1, 1)) = "56" Then Return "FFD083C404"
+	If StringLeft($sTail, 4) = "8B01" And ($sNow = "D9E0D95DFC" Or StringLeft($sNow, 2) = "E9") Then
+		Local $pScene = 0
+		If IsDeclared("g_ap_ScanResults") And IsArray($g_ap_ScanResults) Then $pScene = Scanner_GetScanResult("SceneContext", $g_ap_ScanResults, "Ptr")
+		If $pScene <> 0 And Wine_PtrsEq($pScene, $a_p_Hook) Then Return "D9E0D95DFC"
+	EndIf
+	If Wine_EnginePatternNear($a_p_Hook) Then Return "8BECD94508"
+	Return ""
+EndFunc
+
 Func Wine_RestoreEngineEpilogue($a_p_Hook)
 	If $a_p_Hook = 0 Then Return False
 	Local $sNow = Wine_CompactHex(Wine_ReadBytesHex($a_p_Hook, 5))
-	Local $sWant = "8BECD94508"
-	If $g_p_WineHookSaved <> 0 And Wine_PtrsEq($g_p_WineHookSaved, $a_p_Hook) And StringLen($g_s_WineHookSaved) = 10 Then
-		$sWant = $g_s_WineHookSaved
-	ElseIf $sNow = "FFD083C404" Then
-		$sWant = "FFD083C404"
-	ElseIf Wine_EnginePatternNear($a_p_Hook) Then
-		$sWant = "8BECD94508"
+	Local $sWant = Wine_StolenOriginal5($a_p_Hook)
+	If $sWant = "" Then
+		Out("[Move] restore refused: " & Wine_HexPtr($a_p_Hook) & " bytes=" & $sNow & " tail=" & Wine_CompactHex(Wine_ReadBytesHex($a_p_Hook + 5, 5)))
+		Return False
 	EndIf
 	If StringLeft($sNow, 2) <> "E9" Then
 		If $sNow = $sWant Then
@@ -1923,6 +1981,64 @@ Func Wine_RestoreOurHooks()
 	If $g_p_WineDeadHook <> 0 Then
 		If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($g_p_WineDeadHook, 5)), 2) = "E9" Then
 			Wine_RestoreEngineEpilogue($g_p_WineDeadHook)
+		EndIf
+	EndIf
+	Wine_RestoreOrphanReplayHooks()
+EndFunc
+
+; After AutoIt restart, session pointers are 0 but Gw still has leftover E9s
+; (Start A: SkillTimer 0047F7EC stayed E9, pattern FFD68B4DF0 vanished).
+; Restore original 5 bytes so the next plant can scan and keep one hook.
+Func Wine_RestoreOrphanReplayHooks()
+	If Not Wine_IsWine() Then Return
+	Local $pLive = Wine_LabelUserPtr("MainStart")
+	Local $i = 1
+	Local $aSt = Wine_FindPatternHits("8BD88B4708", 8)
+	For $i = 1 To $aSt[0]
+		Local $pSt = $aSt[$i] - 5
+		If Not Wine_IsUserPtr($pSt) Then ContinueLoop
+		If $pLive <> 0 And Wine_PtrsEq($pSt, $pLive) Then ContinueLoop
+		If $g_p_WineEngineHook <> 0 And Wine_PtrsEq($pSt, $g_p_WineEngineHook) Then ContinueLoop
+		If $g_p_WineExistingE9 <> 0 And Wine_PtrsEq($pSt, $g_p_WineExistingE9) Then ContinueLoop
+		If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pSt, 5)), 2) <> "E9" Then ContinueLoop
+		Local $pTgt = Scanner_GetCallTargetAddress($pSt)
+		Local $sTgt = Wine_CompactHex(Wine_ReadBytesHex($pTgt, 2))
+		If $sTgt = "609C" Then
+			Out("Wine SkillTimer leftover E9 at " & Wine_HexPtr($pSt) & " -> MainProc " & Wine_HexPtr($pTgt) & " (60 9C); restoring FFD68B4DF0 so the next plant is a clean call-esi")
+		Else
+			Out("Wine SkillTimer leftover E9 at " & Wine_HexPtr($pSt) & " -> " & Wine_HexPtr($pTgt) & "; restoring FFD68B4DF0")
+		EndIf
+		Wine_RestoreEngineEpilogue($pSt)
+	Next
+	Local $aEpi = Wine_FindPatternHits("8BECD94508", 12)
+	For $i = 1 To $aEpi[0]
+		Local $pGwaNear = $aEpi[$i] + 0x6C
+		If Not Wine_IsUserPtr($pGwaNear) Then ContinueLoop
+		If $pLive <> 0 And Wine_PtrsEq($pGwaNear, $pLive) Then ContinueLoop
+		If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pGwaNear, 5)), 2) <> "E9" Then ContinueLoop
+		If Wine_CompactHex(Wine_ReadBytesHex($pGwaNear - 1, 1)) <> "56" Then ContinueLoop
+		Out("Wine GWA2 leftover E9 at " & Wine_HexPtr($pGwaNear) & " (Engine epi+0x6C); restoring FFD083C404")
+		Wine_RestoreEngineEpilogue($pGwaNear)
+	Next
+	Local $aGw = Wine_FindPatternHits("8BCEE8", 24)
+	For $i = 1 To $aGw[0]
+		Local $pGw = $aGw[$i] - 5
+		If Not Wine_IsUserPtr($pGw) Then ContinueLoop
+		If $pLive <> 0 And Wine_PtrsEq($pGw, $pLive) Then ContinueLoop
+		If $g_p_WineEngineHook <> 0 And Wine_PtrsEq($pGw, $g_p_WineEngineHook) Then ContinueLoop
+		If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pGw, 5)), 2) <> "E9" Then ContinueLoop
+		If Wine_CompactHex(Wine_ReadBytesHex($pGw - 1, 1)) <> "56" Then ContinueLoop
+		Out("Wine GWA2 leftover E9 at " & Wine_HexPtr($pGw) & "; restoring FFD083C404")
+		Wine_RestoreEngineEpilogue($pGw)
+	Next
+	If IsDeclared("g_ap_ScanResults") And IsArray($g_ap_ScanResults) Then
+		Local $pScene = Scanner_GetScanResult("SceneContext", $g_ap_ScanResults, "Ptr")
+		If $pScene <> 0 And StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pScene, 5)), 2) = "E9" Then
+			If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pScene + 5, 2)), 4) = "8B01" Then
+				Out("Wine Scene leftover E9 at " & Wine_HexPtr($pScene) & "; restoring D9E0D95DFC")
+				Memory_WriteBinary("D9E0D95DFC", $pScene)
+				Wine_FlushGw($pScene, 8)
+			EndIf
 		EndIf
 	EndIf
 EndFunc
@@ -2123,6 +2239,19 @@ EndFunc
 Func Wine_FindGwa2HookSite()
 	; GWA2 ScanEngine: 56 FF D0 83 C4 04 8B CE E8 97... Hook the 5-byte
 	; `call eax; add esp,4` at +1 so the boundary is exact.
+	Local $aLeft = Wine_FindPatternHits("8BCEE8", 24)
+	Local $k = 1
+	For $k = 1 To $aLeft[0]
+		Local $pLeft = $aLeft[$k] - 5
+		If Not Wine_IsUserPtr($pLeft) Then ContinueLoop
+		If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pLeft, 5)), 2) <> "E9" Then ContinueLoop
+		If Wine_CompactHex(Wine_ReadBytesHex($pLeft - 1, 1)) <> "56" Then ContinueLoop
+		Out("Wine GWA2 leftover E9 at " & Wine_HexPtr($pLeft) & " bytes=" & Wine_ReadBytesHex($pLeft, 8) & "; restoring FFD083C404")
+		If Wine_RestoreEngineEpilogue($pLeft) Then
+			Out("Wine GWA2 live Engine " & Wine_HexPtr($pLeft) & " (restored call eax; add esp,4)")
+			Return $pLeft
+		EndIf
+	Next
 	Local $aNeedles[3] = ["56FFD083C4048BCE", "56FFD083C404", "FFD083C4048BCE"]
 	Local $n = 0
 	For $n = 0 To 2
@@ -2137,6 +2266,13 @@ Func Wine_FindGwa2HookSite()
 			If $s = "FFD083C404" Then
 				Out("Wine GWA2 live Engine " & Wine_HexPtr($pHook) & " (call eax; add esp,4)")
 				Return $pHook
+			EndIf
+			If StringLeft($s, 2) = "E9" And Wine_CompactHex(Wine_ReadBytesHex($pHook - 1, 1)) = "56" Then
+				Out("Wine GWA2 leftover E9 at " & Wine_HexPtr($pHook) & " bytes=" & Wine_ReadBytesHex($pHook, 8) & "; restoring FFD083C404")
+				If Wine_RestoreEngineEpilogue($pHook) Then
+					Out("Wine GWA2 live Engine " & Wine_HexPtr($pHook) & " (restored call eax; add esp,4)")
+					Return $pHook
+				EndIf
 			EndIf
 		Next
 	Next
@@ -2182,7 +2318,22 @@ EndFunc
 ; SkillTimer `call esi; mov ecx,[ebp-10]` runs when the skill clock updates.
 ; Steal those 5 bytes and replay them after MainProc (no Win32 hwnd).
 ; GwAu3 scan is pattern-0x3 (pointer); the call esi is at that result + 3.
+; Leftover E9 hides FFD68B4DF0; find tail 8BD88B4708 at +5 and restore/reuse.
 Func Wine_FindSkillTimerHookSite()
+	Local $pLeft = Wine_FindLeftoverSkillTimerE9()
+	If $pLeft <> 0 Then
+		Local $pTgt = Scanner_GetCallTargetAddress($pLeft)
+		Local $sTgt = Wine_CompactHex(Wine_ReadBytesHex($pTgt, 2))
+		If $sTgt = "609C" Then
+			Out("Wine SkillTimer leftover E9 at " & Wine_HexPtr($pLeft) & " -> live MainProc " & Wine_HexPtr($pTgt) & "; restoring FFD68B4DF0 then planting this site")
+		Else
+			Out("Wine SkillTimer leftover E9 at " & Wine_HexPtr($pLeft) & " bytes=" & Wine_ReadBytesHex($pLeft, 10) & "; restoring FFD68B4DF0")
+		EndIf
+		If Wine_RestoreEngineEpilogue($pLeft) Then
+			Out("Wine SkillTimer live hook " & Wine_HexPtr($pLeft) & " (restored call esi; mov ecx,[ebp-10])")
+			Return $pLeft
+		EndIf
+	EndIf
 	If IsDeclared("g_ap_ScanResults") And IsArray($g_ap_ScanResults) Then
 		Local $pCore = Scanner_GetScanResult("SkillTimer", $g_ap_ScanResults, "Ptr")
 		If $pCore <> 0 Then
@@ -2192,6 +2343,10 @@ Func Wine_FindSkillTimerHookSite()
 			If $sCore = "FFD68B4DF0" And Wine_IsUserPtr($pHook) Then
 				Out("Wine SkillTimer live hook " & Wine_HexPtr($pHook) & " (Core call esi; mov ecx,[ebp-10])")
 				Return $pHook
+			EndIf
+			If StringLeft($sCore, 2) = "E9" And Wine_CompactHex(Wine_ReadBytesHex($pHook + 5, 5)) = "8BD88B4708" Then
+				Out("Wine SkillTimer Core leftover E9 at " & Wine_HexPtr($pHook) & "; restoring FFD68B4DF0")
+				If Wine_RestoreEngineEpilogue($pHook) Then Return $pHook
 			EndIf
 		EndIf
 	EndIf
@@ -2220,6 +2375,22 @@ Func Wine_FindSkillTimerHookSite()
 	Return 0
 EndFunc
 
+; Leftover SkillTimer JMP: E9 xx xx xx xx 8B D8 8B 47 08 (original FF D6 8B 4D F0).
+Func Wine_FindLeftoverSkillTimerE9()
+	Local $pLive = Wine_LabelUserPtr("MainStart")
+	Local $a = Wine_FindPatternHits("8BD88B4708", 8)
+	Local $i = 1
+	For $i = 1 To $a[0]
+		Local $pHook = $a[$i] - 5
+		If Not Wine_IsUserPtr($pHook) Then ContinueLoop
+		If $pLive <> 0 And Wine_PtrsEq($pHook, $pLive) Then ContinueLoop
+		If $g_p_WineEngineHook <> 0 And Wine_PtrsEq($pHook, $g_p_WineEngineHook) Then ContinueLoop
+		If StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pHook, 5)), 2) <> "E9" Then ContinueLoop
+		Return $pHook
+	Next
+	Return 0
+EndFunc
+
 ; SceneContext landmark: fchs; fstp [ebp-4]; mov eax,[ecx]. Steal the 5 PI bytes.
 Func Wine_FindSceneHookSite()
 	If IsDeclared("g_ap_ScanResults") And IsArray($g_ap_ScanResults) Then
@@ -2230,6 +2401,12 @@ Func Wine_FindSceneHookSite()
 			If $sCore = "D9E0D95DFC" And Wine_BytesAreHookable5($sCore) And Wine_IsUserPtr($pCore) Then
 				Out("Wine Scene live hook " & Wine_HexPtr($pCore) & " (Core fchs; fstp [ebp-4])")
 				Return $pCore
+			EndIf
+			If StringLeft($sCore, 2) = "E9" And StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pCore + 5, 2)), 4) = "8B01" Then
+				Out("Wine Scene Core leftover E9 at " & Wine_HexPtr($pCore) & "; restoring D9E0D95DFC")
+				Memory_WriteBinary("D9E0D95DFC", $pCore)
+				Wine_FlushGw($pCore, 8)
+				If Wine_CompactHex(Wine_ReadBytesHex($pCore, 5)) = "D9E0D95DFC" Then Return $pCore
 			EndIf
 		EndIf
 	EndIf
@@ -2568,6 +2745,26 @@ Func Wine_AssembleMinimalEngine()
 	; here — a trailing /N bumps $g_i_ASMCodeOffset and writes MainProc 4 bytes
 	; late, so the Engine JMP lands on zeros and never ticks.
 	_("inc dword[EngineTicks]")
+	; Same-page PendingMove: SkillTimer ticks live on this page, but WPM to
+	; QueueBase (64KB earlier) is not visible to the Gw thread (195ad24:
+	; slot 0 written, drainSeen stayed 0, jz MainExit always). Flag+xyz sit
+	; next to EngineTicks so a same-page write is consumed here.
+	_("cmp dword[PendingMove],0")
+	_("jz RegularFlow")
+	_("inc dword[DrainSeen]")
+	_("mov dword[PendingMove],0")
+	_("mov eax,dword[QueueCounter]")
+	_("inc eax")
+	_("cmp eax,QueueSize")
+	_("jnz PendSkipReset")
+	_("xor eax,eax")
+	_("PendSkipReset:")
+	_("mov dword[QueueCounter],eax")
+	_("mov eax,PendingXYZ")
+	_("push eax")
+	_("call Move")
+	_("pop eax")
+	_("jmp MainExit")
 	_("RegularFlow:")
 	_("mov eax,dword[QueueCounter]")
 	_("mov ecx,eax")
@@ -2678,6 +2875,13 @@ Func Wine_BindEngineTicks()
 	Memory_Write($pTicks, 0)
 	Wine_ReplaceValue("DrainSeen", Ptr($pTicks + 4))
 	Memory_Write($pTicks + 4, 0)
+	Wine_ReplaceValue("PendingMove", Ptr($pTicks + 8))
+	Memory_Write($pTicks + 8, 0)
+	Wine_ReplaceValue("PendingXYZ", Ptr($pTicks + 12))
+	Memory_Write($pTicks + 12, 0)
+	Memory_Write($pTicks + 16, 0)
+	Memory_Write($pTicks + 20, 0)
+	Wine_FlushGw($pTicks, 24)
 	Return $pTicks
 EndFunc
 
@@ -2741,6 +2945,7 @@ Func Wine_InstallCommandQueue()
 	$g_s_WineAsmExit = "engine"
 	If Wine_MapIsLoading() Then Return False
 	Out("Wine inject: 4KB scan for Engine/Move/EnterMission/PacketSend/Dialog (read-only).")
+	Wine_RestoreOrphanReplayHooks()
 	Local $aSave = $g_amx2_Patterns
 	Scanner_ClearPatterns()
 	Wine_RegisterQueuePatterns()
