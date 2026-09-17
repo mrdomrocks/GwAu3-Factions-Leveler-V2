@@ -375,3 +375,5 @@ Global $g_b_ExplorableResume = False
 ; Out() also appends here so a black Wine GUI still leaves a log.
 Global $g_s_LevelerLogFile = ""
 Global $g_h_LastGuiOut = 0
+; How we last saw Zen mission allies: hench / agent-togo / agent-rt.
+Global $g_s_ZenAllyDetect = ""

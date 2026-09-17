@@ -22,7 +22,9 @@ Func Leveler_ExecuteStep($a_i_Step)
 		If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	EndIf
 	If Wine_IsWine() And Leveler_PartyHasZenMissionAllies() Then
-		Out("[Step] Wine: Togo allies present; not a wipe")
+		Out("[Step] Wine: Togo allies present (" & $g_s_ZenAllyDetect & "); not a wipe")
+	ElseIf Wine_IsWine() And Leveler_WinePlayerClearlyAlive() Then
+		Out("[Step] Wine: player alive on map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "; not a wipe")
 	ElseIf Leveler_IsWiped() Then
 		Out("[Step] Wipe detected before '" & $g_as_StepNames[$a_i_Step] & "'. Recovering.")
 		Leveler_RecoverWipe()

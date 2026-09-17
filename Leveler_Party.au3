@@ -243,9 +243,31 @@ Func Leveler_HasMissionObjectives()
 	Return Number(World_GetWorldInfo("MissionObjectiveArraySize")) > 0
 EndFunc
 
-; Master Togo (Ritualist) and Headmaster Vhang are level-20 allies. Outpost
-; hench at Zen are ~level 10. Uses party context (BasePointer), not AgentBase.
+; Master Togo / Vhang are mission allies, not hired hench. Hench count is 0 in Zen.
+Func Leveler_FindLivingZenTogoAgent()
+	If Not Leveler_AgentMemoryLive() Then Return 0
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
+		Local $l_s_Name = String(Agent_GetAgentInfo($i, "Name"))
+		Local $l_i_Model = Number(Agent_GetAgentInfo($i, "PlayerNumber"))
+		If Leveler_IsTogoModel($l_i_Model) Then Return $i
+		If StringInStr($l_s_Name, "Togo") Then Return $i
+		If StringInStr($l_s_Name, "Vhang") Then ContinueLoop
+		Local $l_i_Lvl = Number(Agent_GetAgentInfo($i, "Level"))
+		Local $l_i_Prof = Number(Agent_GetAgentInfo($i, "Primary"))
+		Local $l_i_All = Number(Agent_GetAgentInfo($i, "Allegiance"))
+		If $l_i_Lvl >= 16 And $l_i_Prof = $GC_I_PROFESSION_RITUALIST Then
+			If $l_i_All = $GC_I_ALLEGIANCE_NPC Or $l_i_All = $GC_I_ALLEGIANCE_ALLY Then Return $i
+		EndIf
+	Next
+	Return 0
+EndFunc
+
 Func Leveler_PartyHasZenMissionAllies()
+	$g_s_ZenAllyDetect = ""
 	Local $l_i_Hench = Leveler_HenchmanCount()
 	Local $l_i_High = 0
 	Local $l_i_HighRt = 0
@@ -258,7 +280,33 @@ Func Leveler_PartyHasZenMissionAllies()
 			If $l_i_Prof = $GC_I_PROFESSION_RITUALIST Then $l_i_HighRt += 1
 		EndIf
 	Next
-	Return $l_i_High >= 1 And $l_i_HighRt >= 1
+	If $l_i_High >= 1 And $l_i_HighRt >= 1 Then
+		$g_s_ZenAllyDetect = "hench"
+		Return True
+	EndIf
+	Local $l_i_Togo = Leveler_FindLivingZenTogoAgent()
+	If $l_i_Togo <> 0 Then
+		Local $l_s_Name = String(Agent_GetAgentInfo($l_i_Togo, "Name"))
+		Local $l_i_Prof = Number(Agent_GetAgentInfo($l_i_Togo, "Primary"))
+		If $l_i_Prof = $GC_I_PROFESSION_RITUALIST Then
+			$g_s_ZenAllyDetect = "agent-togo-rt"
+		ElseIf StringInStr($l_s_Name, "Togo") Then
+			$g_s_ZenAllyDetect = "agent-togo"
+		Else
+			$g_s_ZenAllyDetect = "agent-ally"
+		EndIf
+		Return True
+	EndIf
+	Return False
+EndFunc
+
+; Wine: AgentBase live, not dead, not the Pos 0,0 attach gap.
+Func Leveler_WinePlayerClearlyAlive()
+	If Not Wine_IsWine() Then Return False
+	If Not Leveler_AgentMemoryLive() Then Return False
+	If Agent_GetAgentInfo(-2, "IsDead") Then Return False
+	If Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
+	Return True
 EndFunc
 
 ; Connecting / loading (Type 2). Do not treat as in-mission or ready.
