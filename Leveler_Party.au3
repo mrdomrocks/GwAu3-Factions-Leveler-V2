@@ -434,6 +434,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	EndIf
 	Sleep(2000)
 	Out("[Step] Mission instance loaded on map " & Map_GetMapID())
+	$g_i_ZenEscortWp = 0
 	If Wine_IsWine() And Not Leveler_WaitWineWorldSettled() Then Return False
 	Return True
 EndFunc

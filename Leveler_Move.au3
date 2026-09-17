@@ -99,25 +99,78 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
 	If Leveler_IsWiped() Then Return False
 	If $g_b_SpiritRiftWatch Then
-		If Not Leveler_WaitOutOfCombat(45000) Then Return False
-		If Not Leveler_HoldForTogo() Then Return False
+		Local $l_f_Hx = 0, $l_f_Hy = 0
+		Leveler_LiveXY($l_f_Hx, $l_f_Hy)
+		If Wine_IsWine() And $l_f_Hx = 0 And $l_f_Hy = 0 Then
+			; Agent pos unread — do not block 45s on HoldForTogo from (0,0).
+		Else
+			If Not Leveler_WaitOutOfCombat(45000) Then Return False
+			If Not Leveler_HoldForTogo() Then Return False
+		EndIf
 	EndIf
-	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+	If Leveler_DistToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+	If Wine_IsWine() And $l_b_Ok Then Return True
 	Return $l_b_Ok
 EndFunc
 
+; First non-zero of agent -2, MyID, camera, living Togo. Returns the source name.
+Func Leveler_LiveXY(ByRef $a_f_X, ByRef $a_f_Y)
+	$a_f_X = Number(Agent_GetAgentInfo(-2, "X"))
+	$a_f_Y = Number(Agent_GetAgentInfo(-2, "Y"))
+	If $a_f_X <> 0 Or $a_f_Y <> 0 Then Return "agent-2"
+	Local $l_i_Me = Number(Agent_GetMyID())
+	If $l_i_Me > 0 Then
+		$a_f_X = Number(Agent_GetAgentInfo($l_i_Me, "X"))
+		$a_f_Y = Number(Agent_GetAgentInfo($l_i_Me, "Y"))
+		If $a_f_X <> 0 Or $a_f_Y <> 0 Then Return "agent-myid"
+	EndIf
+	If IsDeclared("g_p_SceneContext") And Number($g_p_SceneContext) <> 0 Then
+		$a_f_X = Number(Camera_GetCameraInfo("X"))
+		$a_f_Y = Number(Camera_GetCameraInfo("Y"))
+		If $a_f_X <> 0 Or $a_f_Y <> 0 Then Return "camera"
+	EndIf
+	Local $l_i_Togo = Leveler_FindLivingZenTogoAgent()
+	If $l_i_Togo <> 0 Then
+		$a_f_X = Number(Agent_GetAgentInfo($l_i_Togo, "X"))
+		$a_f_Y = Number(Agent_GetAgentInfo($l_i_Togo, "Y"))
+		If $a_f_X <> 0 Or $a_f_Y <> 0 Then Return "togo"
+	EndIf
+	$a_f_X = 0
+	$a_f_Y = 0
+	Return "none"
+EndFunc
+
+Func Leveler_DistToXY($a_f_X, $a_f_Y)
+	Local $l_f_X = 0, $l_f_Y = 0
+	Leveler_LiveXY($l_f_X, $l_f_Y)
+	If $l_f_X = 0 And $l_f_Y = 0 Then Return 999999
+	Local $l_f_Dx = $l_f_X - $a_f_X
+	Local $l_f_Dy = $l_f_Y - $a_f_Y
+	Return Sqrt($l_f_Dx * $l_f_Dx + $l_f_Dy * $l_f_Dy)
+EndFunc
+
 Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = False)
+	If Wine_IsWine() And $a_i_Timeout < 45000 Then $a_i_Timeout = 45000
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $l_h_Timer = TimerInit()
 	Local $l_i_LastLog = -5000
+	Local $l_i_Moves = 0
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
 		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
 		If Map_GetMapID() <> $l_i_StartMap Then Return True
-		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+		If Leveler_DistToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+		Local $l_f_X = 0, $l_f_Y = 0
+		Local $l_s_Src = Leveler_LiveXY($l_f_X, $l_f_Y)
 		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 5000 Then
-			Out("[Move] walking map " & $l_i_StartMap & " toward " & Round($a_f_X) & "," & Round($a_f_Y))
+			Out("[Move] walking map " & $l_i_StartMap & " pos " & Round($l_f_X) & "," & Round($l_f_Y) & _
+					" src=" & $l_s_Src & " toward " & Round($a_f_X) & "," & Round($a_f_Y))
 			$l_i_LastLog = TimerDiff($l_h_Timer)
+		EndIf
+		; Wine: Agent 0,0 never shrinks distance. After ~12s of live QueueBase moves, count as arrived.
+		If Wine_IsWine() And $l_f_X = 0 And $l_f_Y = 0 And $l_i_Moves >= 40 And Wine_QueueWalkReady() Then
+			Out("[Move] Wine: pos still 0,0 after QueueBase-live moves; treating waypoint as arrived")
+			Return True
 		EndIf
 		If $g_b_SpiritRiftWatch And Leveler_TogoNeedsHelp() Then
 			Leveler_FightWithTogo()
@@ -126,9 +179,14 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 		EndIf
 		If $a_b_Combat Then Leveler_CombatTick()
 		Map_Move($a_f_X, $a_f_Y, 20)
+		$l_i_Moves += 1
 		Sleep(250)
 	WEnd
-	Return Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
+	If Wine_IsWine() And Wine_QueueWalkReady() And $l_i_Moves >= 20 Then
+		Out("[Move] Wine: MoveDirect timed out with live queue; treating waypoint as arrived")
+		Return True
+	EndIf
+	Return Leveler_DistToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
 EndFunc
 
 Func Leveler_MoveAndDialog($a_f_X, $a_f_Y, $a_i_Dialog, $a_b_Combat = False, $a_i_NpcModel = 0)
@@ -709,6 +767,9 @@ Func Leveler_TogoNeedsHelp()
 	If $l_i_Togo = 0 Then Return False
 	Local $l_f_HP = Number(Agent_GetAgentInfo($l_i_Togo, "HP"))
 	If $l_f_HP > 0 And $l_f_HP <= 0.65 Then Return True
+	Local $l_f_Mx = 0, $l_f_My = 0
+	Leveler_LiveXY($l_f_Mx, $l_f_My)
+	If $l_f_Mx = 0 And $l_f_My = 0 Then Return Leveler_EnemiesNearAgent($l_i_Togo, 900)
 	If Agent_GetDistance($l_i_Togo) > 850 Then Return True
 	Return Leveler_EnemiesNearAgent($l_i_Togo, 900)
 EndFunc

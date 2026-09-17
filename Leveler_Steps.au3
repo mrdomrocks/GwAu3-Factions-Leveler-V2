@@ -1342,127 +1342,124 @@ Func Leveler_Step_ZenDaijunMission()
 	$g_h_RiftCooldown = TimerInit()
 	$g_b_CombatMode = True
 	Out("[Step] Escort Togo: fight on him, interrupt Spirit Rifts, do not walk off the party")
-
-	If Not Leveler_MoveTo(15120.68, 10456.73, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_WaitOutOfCombat(20000) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(11990.38, 10782.05, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_WaitOutOfCombat(20000) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(10161.92, 9751.41, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(9723.10, 7968.76, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_WaitOutOfCombat() Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_InteractGadgetAt(9632.00, 8058.00, True) Then
-		Out("[Step] Gadget interact failed; continuing the path")
-	EndIf
-	If Not Leveler_MoveTo(9412.15, 7257.83, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(9183.47, 6653.42, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(8966.42, 6203.29, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(3510.94, 2724.63, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(2120.18, 1690.91, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(928.27, 2782.67, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(744.67, 4187.17, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(242.27, 6558.48, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-4565.76, 8326.51, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-5374.88, 8626.30, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-10291.65, 8519.68, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-11009.76, 6292.73, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-12762.20, 6112.31, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-14029.90, 3699.97, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-13243.47, 1253.06, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-11907.05, 28.87, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-11306.09, 802.47, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	Sleep(5000)
-	If Not Leveler_MoveTo(-10255.23, 178.48, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_MoveTo(-9068.41, -553.94, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	Sleep(5000)
-	If Not Leveler_MoveTo(-7949.79, -1376.02, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	Leveler_MoveTo(-7688.63, -1538.34, True)
+	If $g_i_ZenEscortWp > 0 Then Out("[Step] Resuming Zen escort at waypoint " & $g_i_ZenEscortWp)
+	If Not Leveler_ZenEscortRun() Then Return False
 	If Not Map_WaitMapLoading($MAP_SEITUNG) Then
 		$g_b_SpiritRiftWatch = False
 		Return False
 	EndIf
 	$g_b_SpiritRiftWatch = False
+	$g_i_ZenEscortWp = 0
 	Out("[Step] Zen Daijun complete. Arrived in Seitung Harbor.")
+	Return True
+EndFunc
+
+; after: 0 none, 1 wait-combat 20s, 2 wait-combat + gadget, 3 sleep 5s, 4 last (ignore fail)
+Func Leveler_ZenEscortRun()
+	Local $l_af_Wp[25][3]
+	$l_af_Wp[0][0] = 15120.68
+	$l_af_Wp[0][1] = 10456.73
+	$l_af_Wp[0][2] = 1
+	$l_af_Wp[1][0] = 11990.38
+	$l_af_Wp[1][1] = 10782.05
+	$l_af_Wp[1][2] = 1
+	$l_af_Wp[2][0] = 10161.92
+	$l_af_Wp[2][1] = 9751.41
+	$l_af_Wp[2][2] = 0
+	$l_af_Wp[3][0] = 9723.10
+	$l_af_Wp[3][1] = 7968.76
+	$l_af_Wp[3][2] = 2
+	$l_af_Wp[4][0] = 9412.15
+	$l_af_Wp[4][1] = 7257.83
+	$l_af_Wp[4][2] = 0
+	$l_af_Wp[5][0] = 9183.47
+	$l_af_Wp[5][1] = 6653.42
+	$l_af_Wp[5][2] = 0
+	$l_af_Wp[6][0] = 8966.42
+	$l_af_Wp[6][1] = 6203.29
+	$l_af_Wp[6][2] = 0
+	$l_af_Wp[7][0] = 3510.94
+	$l_af_Wp[7][1] = 2724.63
+	$l_af_Wp[7][2] = 0
+	$l_af_Wp[8][0] = 2120.18
+	$l_af_Wp[8][1] = 1690.91
+	$l_af_Wp[8][2] = 0
+	$l_af_Wp[9][0] = 928.27
+	$l_af_Wp[9][1] = 2782.67
+	$l_af_Wp[9][2] = 0
+	$l_af_Wp[10][0] = 744.67
+	$l_af_Wp[10][1] = 4187.17
+	$l_af_Wp[10][2] = 0
+	$l_af_Wp[11][0] = 242.27
+	$l_af_Wp[11][1] = 6558.48
+	$l_af_Wp[11][2] = 0
+	$l_af_Wp[12][0] = -4565.76
+	$l_af_Wp[12][1] = 8326.51
+	$l_af_Wp[12][2] = 0
+	$l_af_Wp[13][0] = -5374.88
+	$l_af_Wp[13][1] = 8626.30
+	$l_af_Wp[13][2] = 0
+	$l_af_Wp[14][0] = -10291.65
+	$l_af_Wp[14][1] = 8519.68
+	$l_af_Wp[14][2] = 0
+	$l_af_Wp[15][0] = -11009.76
+	$l_af_Wp[15][1] = 6292.73
+	$l_af_Wp[15][2] = 0
+	$l_af_Wp[16][0] = -12762.20
+	$l_af_Wp[16][1] = 6112.31
+	$l_af_Wp[16][2] = 0
+	$l_af_Wp[17][0] = -14029.90
+	$l_af_Wp[17][1] = 3699.97
+	$l_af_Wp[17][2] = 0
+	$l_af_Wp[18][0] = -13243.47
+	$l_af_Wp[18][1] = 1253.06
+	$l_af_Wp[18][2] = 0
+	$l_af_Wp[19][0] = -11907.05
+	$l_af_Wp[19][1] = 28.87
+	$l_af_Wp[19][2] = 0
+	$l_af_Wp[20][0] = -11306.09
+	$l_af_Wp[20][1] = 802.47
+	$l_af_Wp[20][2] = 3
+	$l_af_Wp[21][0] = -10255.23
+	$l_af_Wp[21][1] = 178.48
+	$l_af_Wp[21][2] = 0
+	$l_af_Wp[22][0] = -9068.41
+	$l_af_Wp[22][1] = -553.94
+	$l_af_Wp[22][2] = 3
+	$l_af_Wp[23][0] = -7949.79
+	$l_af_Wp[23][1] = -1376.02
+	$l_af_Wp[23][2] = 0
+	$l_af_Wp[24][0] = -7688.63
+	$l_af_Wp[24][1] = -1538.34
+	$l_af_Wp[24][2] = 4
+	Local $i
+	For $i = $g_i_ZenEscortWp To 24
+		Out("[Step] Zen escort waypoint " & $i & "/24 " & Round($l_af_Wp[$i][0]) & "," & Round($l_af_Wp[$i][1]))
+		If $l_af_Wp[$i][2] = 4 Then
+			Leveler_MoveTo($l_af_Wp[$i][0], $l_af_Wp[$i][1], True)
+		ElseIf Not Leveler_MoveTo($l_af_Wp[$i][0], $l_af_Wp[$i][1], True) Then
+			$g_b_SpiritRiftWatch = False
+			Out("[Step] Zen escort holding at waypoint " & $i & " for retry")
+			Return False
+		EndIf
+		$g_i_ZenEscortWp = $i + 1
+		If $l_af_Wp[$i][2] = 1 Then
+			If Not Leveler_WaitOutOfCombat(20000) Then
+				$g_b_SpiritRiftWatch = False
+				Return False
+			EndIf
+		ElseIf $l_af_Wp[$i][2] = 2 Then
+			If Not Leveler_WaitOutOfCombat() Then
+				$g_b_SpiritRiftWatch = False
+				Return False
+			EndIf
+			If Not Leveler_InteractGadgetAt(9632.00, 8058.00, True) Then
+				Out("[Step] Gadget interact failed; continuing the path")
+			EndIf
+		ElseIf $l_af_Wp[$i][2] = 3 Then
+			Sleep(5000)
+		EndIf
+	Next
 	Return True
 EndFunc
 

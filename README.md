@@ -59,6 +59,7 @@ Native Windows is unchanged unless `ForceWineCompat=1`.
 8. Zen combat stays on Togo (do not walk off him). A wipe / Togo death resigns **once**, sends Return-to-Outpost **once**, and waits. Do not re-send 0xA7 while the client shows Connecting — that hangs at 0%. Success is a clean Zen outpost (213), then re-enter.
 9. After a held **246** (first live enter on wine-gw), wait for the world to settle before skill-bar writes, queue refresh, or the first Move. Do **not** re-inject Engine JMP if QueueBase is already live across the load. Do **not** keep PostMessage/MouseClick-ing once the load starts — that crashed Gw.
 10. Mid-mission Start with Togo must log Escort and `Map_Move` without blocking the GUI. Skip `Cache_SkillBar` / Pathfinder / settle-wait on Wine when already in Zen. `Out()` also appends `Logs/leveler.log` next to the script. Togo is a **mission ally**, not a hench — detect him from agents (name/model/Rt). Do not resign while Togo or a clearly-alive player is present.
+11. Wine arrival must not require Agent X,Y. Log `pos src=` each walk tick. If pos stays 0,0 after live QueueBase moves, count the waypoint arrived and resume the next one — do not restart escort at 15121.
 
 ## Scope
 

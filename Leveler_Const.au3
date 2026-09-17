@@ -377,3 +377,5 @@ Global $g_s_LevelerLogFile = ""
 Global $g_h_LastGuiOut = 0
 ; How we last saw Zen mission allies: hench / agent-togo / agent-rt.
 Global $g_s_ZenAllyDetect = ""
+; Zen escort waypoint index. Survives a single MoveTo timeout so we do not restart at 0.
+Global $g_i_ZenEscortWp = 0
