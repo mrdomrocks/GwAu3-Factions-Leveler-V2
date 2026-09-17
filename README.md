@@ -21,5 +21,5 @@ The main script includes `../../API/_GwAu3.au3` and uses the vendored Pathfinder
 1. Shing Jea start: secondary, Xunlai, weapon, monastery armor, bags, skills.
 2. Island story: Minister Cho, Lost Treasure, Tengu quests, Seitung armor, Zen Daijun.
 3. Kaineng: Marketplace, max armor, Search for a Cure, Master's Burden, Mox.
-4. Eye of the North unlock and Auspicious Beginnings farm to 20.
-5. Post-20: An Unwelcome Guest, Gunnar's Hold, Punch the Clown, Lion's Arch, Kamadan, Consulate Docks, Olias, remaining secondaries, mercenary heroes, Longeye / Vaettir NPC (Assassin and Mesmer only).
+4. Eye of the North unlock, Gunnar's Hold, Punch the Clown, then Kilroy Stonekin Punch-Out farm to 20.
+5. Post-20: An Unwelcome Guest, Lion's Arch, Kamadan, Consulate Docks, Olias, remaining secondaries, mercenary heroes, Longeye / Vaettir NPC (Assassin and Mesmer only).

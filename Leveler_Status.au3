@@ -239,6 +239,9 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 	If Leveler_QuestProgress($QUEST_KNOWLEDGEABLE_ASURA) Then
 		Leveler_MarkQuestDone($QUEST_NORTHERN_ALLIES)
 	EndIf
+	If Leveler_QuestProgress($QUEST_PUNCH_OUT) Or Leveler_QuestProgress($QUEST_THROWDOWN) Then
+		Leveler_MarkQuestDone($QUEST_PUNCH_CLOWN)
+	EndIf
 EndFunc
 
 Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
@@ -350,7 +353,7 @@ Func Leveler_StatusCheck()
 	Local $l_b_Eotn = Map_IsMapUnlocked($MAP_EOTN) Or $l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM Or $l_i_Map = $MAP_AB
 	Local $l_b_Hom = Map_IsMapUnlocked($MAP_HOM) Or $l_i_Map = $MAP_HOM Or $l_i_Map = $MAP_AB
 	Local $l_i_Level = Leveler_PlayerLevel()
-	Local $l_b_Gunnar = Map_IsMapUnlocked($MAP_GUNNAR) Or $l_i_Map = $MAP_GUNNAR Or $l_i_Map = $MAP_NORRHART
+	Local $l_b_Gunnar = Map_IsMapUnlocked($MAP_GUNNAR) Or $l_i_Map = $MAP_GUNNAR Or $l_i_Map = $MAP_NORRHART Or $l_i_Map = $MAP_KILROY Or $l_i_Map = $MAP_FRONIS
 	Local $l_b_Lions = Map_IsMapUnlocked($MAP_LIONS_ARCH) Or $l_i_Map = $MAP_LIONS_ARCH Or $l_i_Map = $MAP_LIONS_GATE
 	Local $l_b_Kamadan = Map_IsMapUnlocked($MAP_KAMADAN) Or $l_i_Map = $MAP_KAMADAN Or $l_i_Map = $MAP_SUN_DOCKS Or $l_i_Map = $MAP_CONSULATE Or $l_i_Map = $MAP_DOCKS
 	Local $l_b_Docks = Map_IsMapUnlocked($MAP_DOCKS) Or $l_i_Map = $MAP_DOCKS
@@ -439,10 +442,14 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_TO_BOREAL] = (Map_IsMapUnlocked($MAP_BOREAL) Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_ICE_CLIFF Or $l_b_Eotn) And $l_i_Map <> $MAP_TUNNELS
 	$g_ab_StepDone[$LEVELER_STEP_TO_EOTN] = $l_b_Eotn And $l_i_Map <> $MAP_ICE_CLIFF
 	$g_ab_StepDone[$LEVELER_STEP_EOTN_POOL] = $l_b_Hom Or Leveler_HasKeiranBow()
+	$g_ab_StepDone[$LEVELER_STEP_TO_GUNNAR] = $l_b_Gunnar And $l_i_Map <> $MAP_ICE_CLIFF
+	If Leveler_HasIncompleteQuest($QUEST_PUNCH_CLOWN) Or $l_i_Map = $MAP_KILROY Then
+		$g_ab_StepDone[$LEVELER_STEP_KILROY] = False
+	Else
+		$g_ab_StepDone[$LEVELER_STEP_KILROY] = (Leveler_IsQuestDone($QUEST_PUNCH_CLOWN) And Not Leveler_HasIncompleteQuest($QUEST_PUNCH_CLOWN)) Or Leveler_HasQuest($QUEST_PUNCH_OUT) Or Leveler_QuestProgress($QUEST_THROWDOWN) Or $l_i_Map = $MAP_FRONIS
+	EndIf
 	$g_ab_StepDone[$LEVELER_STEP_FARM_20] = $l_i_Level >= 20
 	$g_ab_StepDone[$LEVELER_STEP_ATTR_2] = Leveler_IsQuestDone($QUEST_UNWELCOME) And Not Leveler_HasIncompleteQuest($QUEST_UNWELCOME)
-	$g_ab_StepDone[$LEVELER_STEP_TO_GUNNAR] = $l_b_Gunnar And $l_i_Map <> $MAP_ICE_CLIFF
-	$g_ab_StepDone[$LEVELER_STEP_KILROY] = Leveler_IsQuestDone($QUEST_PUNCH_CLOWN) And Not Leveler_HasIncompleteQuest($QUEST_PUNCH_CLOWN)
 	$g_ab_StepDone[$LEVELER_STEP_TO_LA] = $l_b_Lions And $l_i_Map <> $MAP_BEJUNKAN
 	$g_ab_StepDone[$LEVELER_STEP_TO_KAMADAN] = $l_b_Kamadan
 	$g_ab_StepDone[$LEVELER_STEP_TO_DOCKS] = $l_b_Docks
