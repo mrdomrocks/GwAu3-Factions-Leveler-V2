@@ -18,7 +18,9 @@
 ; restore before the pattern scan. SkillTimer ticks live on the MainProc page
 ; while WPM to QueueBase (64KB earlier) is invisible to that thread
 ; (195ad24: ticks rose, drainSeen stayed 0, slot 0 written). Move is a
-; PendingMove flag+xyz beside EngineTicks on the same page.
+; PendingMove flag+xyz beside EngineTicks; the handler is a stub after
+; MainExit — never `call Move` in the SkillTimer entry block (745157e
+; put E8 there and Wine stopped translating MainProc, ticks stayed 0).
 
 If Not IsDeclared("g_b_IsWine") Then Global $g_b_IsWine = False
 If Not IsDeclared("g_b_WineChecked") Then Global $g_b_WineChecked = False
@@ -1837,7 +1839,7 @@ Func Wine_LogMainProcProof($a_s_Why = "proof", $a_b_Callers = False)
 	Local $pHook = Wine_ResolveEngineHookSite(False)
 	If $pHook = 0 Then $pHook = $g_p_WineEngineHook
 	If $pHook = 0 Then $pHook = Wine_LabelUserPtr("MainStart")
-	Local $sMain = Wine_ReadBytesHex($pMain, 64)
+	Local $sMain = Wine_ReadBytesHex($pMain, 96)
 	Local $sComp = Wine_CompactHex($sMain)
 	Local $sHook = Wine_ReadBytesHex($pHook, 8)
 	Local $iInc = 0
@@ -1846,7 +1848,7 @@ Func Wine_LogMainProcProof($a_s_Why = "proof", $a_b_Callers = False)
 	Local $iPendOp = 0
 	If $pMain <> 0 Then
 		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 2, 2)) = "FF05" Then $iInc = Wine_ReadImm32($pMain + 4)
-		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 8, 2)) = "833D" Then $iPendOp = Wine_ReadImm32($pMain + 10)
+		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 8, 1)) = "A1" Then $iPendOp = Wine_ReadImm32($pMain + 9)
 		Local $iReg = StringInStr($sComp, "8BC8C1E00805")
 		If $iReg > 0 Then
 			Local $iOff = Int(($iReg - 1) / 2)
@@ -1875,7 +1877,7 @@ Func Wine_LogMainProcProof($a_s_Why = "proof", $a_b_Callers = False)
 		Wine_PatchMainProcHeartbeat()
 	EndIf
 	If $pPend <> 0 And $iPendOp <> 0 And Not Wine_PtrsEq($iPendOp, $pPend) Then
-		Out("[Move] MainProc cmp PendingMove is NOT PendingMove — pendOp=" & Wine_HexPtr($iPendOp))
+		Out("[Move] MainProc PendingMove load is NOT PendingMove — pendOp=" & Wine_HexPtr($iPendOp))
 	EndIf
 	If $pQB <> 0 And $iQbOp <> 0 And Not Wine_PtrsEq($iQbOp, $pQB) Then
 		Out("[Move] MainProc add eax,QueueBase is NOT QueueBase — qbOp=" & Wine_HexPtr($iQbOp))
@@ -2745,12 +2747,14 @@ Func Wine_AssembleMinimalEngine()
 	; here — a trailing /N bumps $g_i_ASMCodeOffset and writes MainProc 4 bytes
 	; late, so the Engine JMP lands on zeros and never ticks.
 	_("inc dword[EngineTicks]")
-	; Same-page PendingMove: SkillTimer ticks live on this page, but WPM to
-	; QueueBase (64KB earlier) is not visible to the Gw thread (195ad24:
-	; slot 0 written, drainSeen stayed 0, jz MainExit always). Flag+xyz sit
-	; next to EngineTicks so a same-page write is consumed here.
-	_("cmp dword[PendingMove],0")
-	_("jz RegularFlow")
+	; Do NOT emit `call Move` (E8) in this basic block. 745157e put E8 in
+	; MainProc; Wine's translator then failed the whole unit, so even the
+	; EngineTicks inc never ran (SkillTimer ticks stayed 0). PendingMove is
+	; a same-page flag test + ljmp to a stub after MainExit (like CommandMove).
+	_("RegularFlow:")
+	_("mov eax,dword[PendingMove]")
+	_("test eax,eax")
+	_("jz QueueFlow")
 	_("inc dword[DrainSeen]")
 	_("mov dword[PendingMove],0")
 	_("mov eax,dword[QueueCounter]")
@@ -2760,12 +2764,8 @@ Func Wine_AssembleMinimalEngine()
 	_("xor eax,eax")
 	_("PendSkipReset:")
 	_("mov dword[QueueCounter],eax")
-	_("mov eax,PendingXYZ")
-	_("push eax")
-	_("call Move")
-	_("pop eax")
-	_("jmp MainExit")
-	_("RegularFlow:")
+	_("ljmp PendingDoMove")
+	_("QueueFlow:")
 	_("mov eax,dword[QueueCounter]")
 	_("mov ecx,eax")
 	_("shl eax,8")
@@ -2864,6 +2864,15 @@ Func Wine_AssembleMinimalEngine()
 	_("call UIMessage")
 	_("add esp,C")
 	_("retn")
+
+	; Separate from MainProc so Wine does not translate `call Move` as part
+	; of the SkillTimer entry block (745157e ticks=0). eax/stack already saved.
+	_("PendingDoMove:")
+	_("mov eax,PendingXYZ")
+	_("push eax")
+	_("call Move")
+	_("pop eax")
+	_("ljmp MainExit")
 EndFunc
 
 ; EngineTicks is the first dword after the written stubs (still on the RWX page).
