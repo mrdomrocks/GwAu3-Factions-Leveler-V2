@@ -323,6 +323,12 @@ Func Leveler_EnsureStepOutpost($a_i_Step)
 	If $a_i_Step = $LEVELER_STEP_DONE Then Return True
 	If Map_GetInstanceInfo("IsLoading") Then Return Leveler_WaitUntilMapReady()
 	If Not Leveler_WaitUntilMapReady() Then Return False
+	; Do not snap a past-Zen character back to map 213 just because StatusCheck
+	; landed on the Zen step. The Zen step itself will leave / travel onward.
+	If $a_i_Step = $LEVELER_STEP_ZEN_MISSION And Leveler_ZenDaijunAlreadyComplete() Then
+		Out("[Move] Zen Daijun is already complete; not traveling to the Zen outpost")
+		Return True
+	EndIf
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_i_Outpost = Leveler_StepOutpost($a_i_Step)
 	If $l_i_Outpost = 0 Then Return True

@@ -219,8 +219,22 @@ Func Leveler_QuestLogMatch($a_i_QuestID)
 	Return 0
 EndFunc
 
+; GWCA / GwAu3 expose the tracked quest under a few names. Wine may only fill one.
+Func Leveler_ActiveQuestID()
+	Local $l_as_Keys[6] = ["ActiveQuest", "ActiveQuestID", "QuestID", "CurrentQuest", "LiveQuest", "TrackedQuest"]
+	Local $i
+	For $i = 0 To 5
+		Local $l_i_ID = Number(World_GetWorldInfo($l_as_Keys[$i]))
+		If $l_i_ID > 0 Then Return $l_i_ID
+	Next
+	Local $l_i_Info = Number(Quest_GetQuestInfo(0, "QuestID"))
+	If $l_i_Info > 0 Then Return $l_i_Info
+	Return 0
+EndFunc
+
 Func Leveler_QuestInLog($a_i_QuestID)
 	If $a_i_QuestID = 0 Then Return False
+	If Leveler_ActiveQuestID() = $a_i_QuestID Then Return True
 	If Quest_GetQuestInfo($a_i_QuestID, "HasQuest") Then Return True
 	Return Leveler_QuestLogMatch($a_i_QuestID) <> 0
 EndFunc
@@ -326,8 +340,6 @@ Func Leveler_StepQuestID($a_i_Step)
 EndFunc
 
 Func Leveler_HasQuest($a_i_QuestID)
-	If $a_i_QuestID = 0 Then Return False
-	If Quest_GetQuestInfo($a_i_QuestID, "HasQuest") Then Return True
 	Return Leveler_QuestInLog($a_i_QuestID)
 EndFunc
 
