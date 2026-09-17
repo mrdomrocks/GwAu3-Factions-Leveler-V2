@@ -935,6 +935,7 @@ Func Wine_CommandMoveReady()
 	If Not Wine_CommandsReady() Then Return False
 	Local $sStub = Wine_CompactHex(Wine_ReadBytesHex($pCmd, 5))
 	If StringLeft($sStub, 6) <> "8D4004" Then Return False
+	If Not Wine_MainProcBytesOk() Then Return False
 	If StringMid($sStub, 7, 2) = "E8" Or StringMid($sStub, 9, 2) = "E8" Then
 		Local $pCall = $pCmd + 4
 		If Wine_CompactHex(Wine_ReadBytesHex($pCall, 1)) = "E8" Then
@@ -1070,6 +1071,11 @@ Func Wine_RefreshCommandMove($a_s_Why = "stuck")
 		Out("[Move] CommandMove stub live after rewire; Engine ticks=" & $iTicks & "; queue head reset")
 		Return True
 	EndIf
+	If Wine_MainProcBytesOk() And Wine_CommandMoveBytesOk() And $bJmpOk Then
+		Wine_ResetQueueHead()
+		Out("[Move] MainProc 60 9C and CommandMove 8D4004 already at the JMP target; not rewriting (ticks=" & $iTicks & ")")
+		Return True
+	EndIf
 	Out("[Move] Engine not draining; rewriting stubs on Queue page and re-pointing the one JMP")
 	Local $bRew = Wine_RewriteStubsOnExistingPage()
 	Wine_RepointEngineJmp($a_s_Why)
@@ -1161,6 +1167,7 @@ Func Wine_RewriteStubsOnExistingPage()
 	Wine_AssembleMinimalEngine()
 	$g_p_WineAsmAlloc = 0
 	$g_p_ASMMemory = $pAlloc
+	Wine_BindEngineTicks()
 	Wine_PromoteNewLabels()
 	Assembler_CompleteASMCode()
 	If $g_s_ASMCode = "" Then
@@ -1185,8 +1192,14 @@ Func Wine_RewriteStubsOnExistingPage()
 	$g_b_WineMinimalHook = True
 	Wine_RepointEngineJmp("rewrite")
 	Out("[Move] rewrite done QueueBase=" & Wine_HexPtr($pQueue) & " MainProc=" & Wine_HexPtr($pMain) & _
+			" MainProcBytes=" & Wine_CompactHex(Wine_ReadBytesHex($pMain, 6)) & _
 			" CommandMove=" & Wine_HexPtr($pCmdMove) & " stub=" & Wine_CompactHex(Wine_ReadBytesHex($pCmdMove, 8)) & _
-			" Move=" & Wine_HexPtr($pMove) & " ticks=" & Wine_EngineTickCount())
+			" Move=" & Wine_HexPtr($pMove) & " ticks=" & Wine_EngineTickCount() & _
+			" CodeOff=" & $g_i_ASMCodeOffset)
+	If Not Wine_MainProcBytesOk() Then
+		Out("[Move] rewrite: MainProc does not start 60 9C (pushad/pushfd); write missed the JMP target")
+		Return False
+	EndIf
 	Return Wine_CommandMoveReady()
 EndFunc
 
@@ -1207,9 +1220,9 @@ Func Wine_EnsureCommandQueue()
 		Wine_WireCommandStructs()
 		Local $pJmp = Wine_EngineJmpTarget()
 		Local $pMain = Wine_LabelUserPtr("MainProc")
-		If Not Wine_CommandMoveReady() Or $pJmp = 0 Or $pMain = 0 Or Not Wine_PtrsEq($pJmp, $pMain) Or Wine_EngineTickCount() <= 0 Then
+		If Not Wine_CommandMoveReady() Or $pJmp = 0 Or $pMain = 0 Or Not Wine_PtrsEq($pJmp, $pMain) Then
 			If $g_h_WineRefreshAt = 0 Or TimerDiff($g_h_WineRefreshAt) >= 8000 Then
-				Out("Wine queue: walk-ready but Engine JMP/ticks not live; refreshing (one JMP)")
+				Out("Wine queue: walk-ready but CommandMove/JMP layout is wrong; refreshing (one JMP)")
 				Wine_RefreshCommandMove("ensure-engine")
 			EndIf
 		EndIf
@@ -1391,6 +1404,9 @@ Func Wine_AssembleMinimalEngine()
 	_("MainProc:")
 	_("pushad")
 	_("pushfd")
+	; Heartbeat at page+ASMSize (set after assemble). Do NOT _("EngineTicks/4")
+	; here — a trailing /N bumps $g_i_ASMCodeOffset and writes MainProc 4 bytes
+	; late, so the Engine JMP lands on zeros and never ticks.
 	_("inc dword[EngineTicks]")
 	_("RegularFlow:")
 	_("mov eax,dword[QueueCounter]")
@@ -1471,8 +1487,28 @@ Func Wine_AssembleMinimalEngine()
 	_("call UIMessage")
 	_("add esp,C")
 	_("ljmp CommandReturn")
-	; After the stubs so QueueBase/MainProc offsets stay put.
-	_("EngineTicks/4")
+EndFunc
+
+; EngineTicks is the first dword after the written stubs (still on the RWX page).
+; Must run after $g_p_ASMMemory is the live page and before CompleteASMCode.
+Func Wine_BindEngineTicks()
+	Local $pTicks = $g_p_ASMMemory + $g_i_ASMSize
+	If Not Wine_IsUserPtr($pTicks) Then Return 0
+	Wine_ReplaceValue("EngineTicks", Ptr($pTicks))
+	Memory_Write($pTicks, 0)
+	Return $pTicks
+EndFunc
+
+Func Wine_MainProcBytesOk()
+	Local $pMain = Wine_LabelUserPtr("MainProc")
+	If $pMain = 0 Then Return False
+	Return StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pMain, 4)), 4) = "609C"
+EndFunc
+
+Func Wine_CommandMoveBytesOk()
+	Local $pCmd = Wine_LabelUserPtr("CommandMove")
+	If $pCmd = 0 Then Return False
+	Return StringLeft(Wine_CompactHex(Wine_ReadBytesHex($pCmd, 5)), 6) = "8D4004"
 EndFunc
 
 Func Wine_ScanEngineOnly()
@@ -1634,6 +1670,7 @@ Func Wine_InstallCommandQueue()
 		Out("Wine inject: Queue/ASM page at " & Wine_HexPtr($pAlloc))
 	EndIf
 
+	Wine_BindEngineTicks()
 	Wine_PromoteNewLabels()
 	Assembler_CompleteASMCode()
 	If $g_s_ASMCode = "" Then
@@ -1693,10 +1730,14 @@ Func Wine_InstallCommandQueue()
 	If $bReuse Then
 		Out("Wine: reused Engine JMP. QueueBase=" & Wine_HexPtr($g_p_QueueBase) & _
 				" MainStart=" & Wine_HexPtr($pHook) & " MainProc=" & Wine_HexPtr($pMain) & _
+				" MainProcBytes=" & Wine_CompactHex(Wine_ReadBytesHex($pMain, 6)) & _
+				" CommandMove=" & Wine_HexPtr(Memory_GetValue("CommandMove")) & _
+				" stub=" & Wine_CompactHex(Wine_ReadBytesHex(Memory_GetValue("CommandMove"), 8)) & _
 				" CommandPacketSend=" & Wine_HexPtr($pCmdPkt))
 	Else
 		Out("Wine: single Engine JMP planted. QueueBase=" & Wine_HexPtr($g_p_QueueBase) & _
 				" MainStart=" & Wine_HexPtr($pHook) & " MainProc=" & Wine_HexPtr($pMain) & _
+				" MainProcBytes=" & Wine_CompactHex(Wine_ReadBytesHex($pMain, 6)) & _
 				" CommandEnterMission=" & Wine_HexPtr($pCmdEnt))
 	EndIf
 	Out("Wine: skipped Render/LoadFinished/Trader/TradePartner detours (not Assembler_ModifyMemory).")
