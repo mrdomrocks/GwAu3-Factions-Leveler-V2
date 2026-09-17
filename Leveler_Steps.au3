@@ -399,34 +399,21 @@ Func Leveler_Step_UnlockSkills()
 	Return True
 EndFunc
 
-; Michiko in Kaineng sells Cry of Frustration, Power Drain, and Backfire.
+; Michiko in Kaineng (also Masaharu in Seitung / Xu Fengxia in Ran Musu).
+; Wine: find trainer without names; buy Zhao Di skills too if they were skipped.
 Func Leveler_BuyKainengInterrupts()
 	If Leveler_Skills2Unlocked() Then
 		Return Leveler_EquipTrainerSkills()
 	EndIf
-	If Map_GetMapID() <> $MAP_KAINENG Then Return False
-	Local $l_i_Npc = Leveler_GetAgentByName("Michiko")
-	If $l_i_Npc = 0 Then
-		Out("[Step] Michiko not found in Kaineng")
+	Leveler_LogMissingTrainerSkills()
+	If Not Leveler_BuyMissingTrainerSkills() Then
+		Out("[Step] Trainer buy did not finish on map " & Map_GetMapID())
 		Return False
 	EndIf
-	Local $l_f_X = Agent_GetAgentInfo($l_i_Npc, "X")
-	Local $l_f_Y = Agent_GetAgentInfo($l_i_Npc, "Y")
-	If Not Leveler_MoveAndDialog($l_f_X, $l_f_Y, $DIALOG_GENERIC_TALK, False, Agent_GetAgentInfo($l_i_Npc, "PlayerNumber")) Then Return False
-	Sleep(3000)
-	If Not Leveler_BuySkillIfNeeded($SKILL_CRY_OF_FRUSTRATION) Then Return False
-	Sleep(400)
-	If Not Leveler_BuySkillIfNeeded($SKILL_POWER_DRAIN) Then Return False
-	Sleep(400)
 	If Leveler_HasMesmer() Then
-		If Not Leveler_BuySkillIfNeeded($SKILL_BACKFIRE) Then Return False
-		Sleep(400)
-	EndIf
-	Leveler_CloseTrainerWindow()
-	If Leveler_HasMesmer() Then
-		Out("[Step] Bought Cry of Frustration, Power Drain, and Backfire from Michiko")
+		Out("[Step] Bought missing trainer skills (Cry / Power Drain / Backfire / Zhao Di)")
 	Else
-		Out("[Step] Bought Cry of Frustration and Power Drain from Michiko")
+		Out("[Step] Bought missing trainer skills (Cry / Power Drain / Zhao Di)")
 	EndIf
 	Return Leveler_EquipTrainerSkills()
 EndFunc
@@ -1286,12 +1273,23 @@ Func Leveler_Step_CompleteSkillsTraining()
 		Out("[Step] Final trainer skills already acquired")
 		Return Leveler_EquipTrainerSkills()
 	EndIf
-	If Map_GetMapID() <> $MAP_KAINENG Or Not Map_GetInstanceInfo("IsOutpost") Then
-		If Not Leveler_Travel($MAP_KAINENG) Then Return False
-	EndIf
+	Leveler_LogMissingTrainerSkills()
 	Leveler_SetPacifist()
+	; After Zen the character is often in Seitung. Try the local trainer first
+	; (Masaharu sells Zhao Di skills). Cry/Power Drain/Backfire need Michiko.
+	Local $l_i_Map = Map_GetMapID()
+	If $l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_RAN_MUSU Or $l_i_Map = $MAP_SHING_JEA Or $l_i_Map = $MAP_KAINENG Then
+		If Leveler_BuyMissingTrainerSkills() And Leveler_Skills2Unlocked() Then Return True
+	EndIf
+	If Map_GetMapID() <> $MAP_KAINENG Or (Leveler_InstanceInfoTrusted() And Not Map_GetInstanceInfo("IsOutpost")) Then
+		If Not Leveler_Travel($MAP_KAINENG) Then
+			Out("[Step] Could not travel to Kaineng for Michiko")
+			Return False
+		EndIf
+	EndIf
 	If Not Leveler_BuyKainengInterrupts() Then Return False
 	If Not Leveler_Skills2Unlocked() Then
+		Leveler_LogMissingTrainerSkills()
 		Out("[Step] Michiko skills were not all learnt. Staying on the trainer.")
 		Return False
 	EndIf

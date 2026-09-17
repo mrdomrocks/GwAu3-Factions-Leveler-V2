@@ -270,9 +270,13 @@ EndFunc
 ; Target the living NPC, walk into talk range, then send the dialog.
 Func Leveler_TalkAndDialog($a_i_Npc, $a_i_Dialog)
 	If $a_i_Npc = 0 Then Return False
-	Agent_ChangeTarget($a_i_Npc)
-	Sleep(150)
-	Agent_GoNPC($a_i_Npc)
+	If Wine_IsWine() Then
+		Wine_GoNPC($a_i_Npc)
+	Else
+		Agent_ChangeTarget($a_i_Npc)
+		Sleep(150)
+		Agent_GoNPC($a_i_Npc)
+	EndIf
 
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < 5000
@@ -285,7 +289,11 @@ Func Leveler_TalkAndDialog($a_i_Npc, $a_i_Dialog)
 	EndIf
 
 	Sleep(500)
-	Ui_Dialog($a_i_Dialog)
+	If Wine_IsWine() Then
+		Wine_SendDialog($a_i_Dialog)
+	Else
+		Ui_Dialog($a_i_Dialog)
+	EndIf
 	Sleep(600)
 	Return True
 EndFunc
@@ -348,6 +356,22 @@ Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 		If Not Leveler_WaitUntilMapReady() Then Return False
 	EndIf
 	Out("[Move] Travel to map " & $a_i_MapID)
+	If Wine_IsWine() Then
+		Local $l_i_Start = $l_i_Now
+		Wine_TravelTo($a_i_MapID)
+		Map_TravelTo($a_i_MapID, Map_GetCharacterInfo("Language"), Map_GetCharacterInfo("Region"), 0, False)
+		Local $l_h_Wait = TimerInit()
+		While TimerDiff($l_h_Wait) < 25000
+			If $g_b_LevelerPaused Then Return False
+			If Map_GetMapID() = $a_i_MapID And Not Wine_MapIsLoading() And Not Leveler_MapLooksConnecting() Then
+				Sleep(800)
+				Return Leveler_WaitUntilMapReady() And Map_GetMapID() = $a_i_MapID
+			EndIf
+			Sleep(250)
+		WEnd
+		Out("[Move] Wine travel still map " & Map_GetMapID() & " (wanted " & $a_i_MapID & ", started " & $l_i_Start & ")")
+		Return Map_GetMapID() = $a_i_MapID
+	EndIf
 	If Not Map_TravelTo($a_i_MapID) Then Return False
 	Return Leveler_WaitUntilMapReady() And Map_GetMapID() = $a_i_MapID
 EndFunc
@@ -515,6 +539,7 @@ EndFunc
 
 Func Leveler_GetAgentByName($a_s_Name)
 	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
 	For $i = 1 To $l_i_Max - 1
 		If Not Leveler_IsTalkNpc($i) Then ContinueLoop
 		If StringInStr(Agent_GetAgentInfo($i, "Name"), $a_s_Name) Then Return $i
@@ -522,13 +547,81 @@ Func Leveler_GetAgentByName($a_s_Name)
 	Return 0
 EndFunc
 
+; Wine names are often empty. Prefer named trainers, then map-specific profession, then lvl 10 NPCs.
+Func Leveler_FindSkillTrainerAgent()
+	Local $l_as_Names[4] = ["Michiko", "Masaharu", "Xu Fengxia", "Zhao Di"]
+	Local $n
+	For $n = 0 To 3
+		Local $l_i_Named = Leveler_GetAgentByName($l_as_Names[$n])
+		If $l_i_Named <> 0 Then
+			Out("[Step] Skill trainer by name: " & $l_as_Names[$n] & " id=" & $l_i_Named)
+			Return $l_i_Named
+		EndIf
+	Next
+	Local $l_i_Map = Map_GetMapID()
+	Local $l_i_WantProf = 0
+	If $l_i_Map = $MAP_KAINENG Then $l_i_WantProf = $GC_I_PROFESSION_MONK
+	If $l_i_Map = $MAP_SHING_JEA Then $l_i_WantProf = $GC_I_PROFESSION_MESMER
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $l_i_ProfMatch = 0
+	Local $l_i_Lvl10 = 0
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Not Leveler_IsTalkNpc($i) Then ContinueLoop
+		Local $l_i_Lvl = Number(Agent_GetAgentInfo($i, "Level"))
+		Local $l_i_Prof = Number(Agent_GetAgentInfo($i, "Primary"))
+		If $l_i_WantProf <> 0 And $l_i_Prof = $l_i_WantProf And $l_i_Lvl >= 8 And $l_i_Lvl <= 16 Then
+			$l_i_ProfMatch = $i
+			ExitLoop
+		EndIf
+		If $l_i_Lvl = 10 And $l_i_Lvl10 = 0 Then $l_i_Lvl10 = $i
+	Next
+	If $l_i_ProfMatch <> 0 Then
+		Out("[Step] Skill trainer by profession: id=" & $l_i_ProfMatch & _
+				" lv=" & Number(Agent_GetAgentInfo($l_i_ProfMatch, "Level")) & _
+				" prof=" & Number(Agent_GetAgentInfo($l_i_ProfMatch, "Primary")) & _
+				" all=" & Number(Agent_GetAgentInfo($l_i_ProfMatch, "Allegiance")))
+		Return $l_i_ProfMatch
+	EndIf
+	If $l_i_Lvl10 <> 0 Then
+		Out("[Step] Skill trainer fallback lvl10: id=" & $l_i_Lvl10 & _
+				" prof=" & Number(Agent_GetAgentInfo($l_i_Lvl10, "Primary")) & _
+				" all=" & Number(Agent_GetAgentInfo($l_i_Lvl10, "Allegiance")))
+		Return $l_i_Lvl10
+	EndIf
+	Out("[Step] No skill trainer NPC found on map " & $l_i_Map)
+	Return 0
+EndFunc
+
 ; Town NPCs only. Skip party henchmen/heroes, who are also IsNPC.
+Func Leveler_IsPartyAgent($a_i_Agent)
+	If $a_i_Agent = 0 Then Return False
+	If Number($a_i_Agent) = Number(Agent_GetMyID()) Then Return True
+	Local $i
+	Local $l_i_Hench = Leveler_HenchmanCount()
+	For $i = 1 To $l_i_Hench
+		If Number(Party_GetMyPartyHenchmanInfo($i, "AgentID")) = Number($a_i_Agent) Then Return True
+	Next
+	Local $l_i_Hero = Leveler_HeroCount()
+	For $i = 1 To $l_i_Hero
+		If Number(Party_GetMyPartyHeroInfo($i, "AgentID")) = Number($a_i_Agent) Then Return True
+	Next
+	Return False
+EndFunc
+
 Func Leveler_IsTalkNpc($a_i_Agent)
 	If $a_i_Agent = 0 Then Return False
 	If Agent_GetAgentPtr($a_i_Agent) = 0 Then Return False
 	If Agent_GetAgentInfo($a_i_Agent, "IsDead") Then Return False
+	If Leveler_IsPartyAgent($a_i_Agent) Then Return False
+	Local $l_i_All = Number(Agent_GetAgentInfo($a_i_Agent, "Allegiance"))
+	If Wine_IsWine() Then
+		; Outpost world NPCs often read Allegiance=1 (ALLY), not 6 (NPC).
+		If $l_i_All = $GC_I_ALLEGIANCE_NPC Or $l_i_All = $GC_I_ALLEGIANCE_ALLY Then Return True
+		Return False
+	EndIf
 	If Not Agent_GetAgentInfo($a_i_Agent, "IsNPC") Then Return False
-	If Agent_GetAgentInfo($a_i_Agent, "Allegiance") <> $GC_I_ALLEGIANCE_NPC Then Return False
+	If $l_i_All <> $GC_I_ALLEGIANCE_NPC Then Return False
 	Return True
 EndFunc
 

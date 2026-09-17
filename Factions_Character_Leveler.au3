@@ -99,7 +99,7 @@ Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 If Wine_IsWine() Then
 	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID. Window title is often Guild Wars Reforged.")
 	Out("Scanner_GetLoggedCharNames is skipped on Wine so a timed local scan cannot cache 0/78 before Start.")
-	Out("Start calls Core_Initialize immediately. The first step installs a one-JMP queue (QueueBase + CommandMove). At Zen outpost 213 invite henches [2,3,1,8,5] then Enter Mission. Already-inside Zen is map/CurrentMapID 246 or mission Togo Rt20 + Vhang E15 (map may still read 213). Outpost party 1/6 and lv16 NPCs do not skip Enter.")
+	Out("Start calls Core_Initialize immediately. The first step installs a one-JMP queue (QueueBase + CommandMove). At Zen outpost 213 invite henches [2,3,1,8,5] then Enter Mission. Already-inside Zen is map/CurrentMapID 246 or mission Togo Rt20 + Vhang E15 (map may still read 213). Outpost party 1/6 and lv16 NPCs do not skip Enter. After Zen, buy missing trainer skills (Zhao Di + Michiko) via PendingMove talk/buy — do not require NPC names.")
 	Out("Log file: " & @ScriptDir & "\Logs\leveler.log")
 Else
 	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")

@@ -1437,7 +1437,7 @@ Func Wine_WaitPendingIdle($a_i_Timeout = 1500)
 	Return True
 EndFunc
 
-Func Wine_WritePendingPacket($a_i_Size, $a_i_Header, $a_i_Param1)
+Func Wine_WritePendingPacket($a_i_Size, $a_i_Header, $a_i_Param1, $a_i_Param2 = 0, $a_i_Param3 = 0, $a_i_Param4 = 0, $a_i_Param5 = 0)
 	Local $pFlag = Wine_LabelUserPtr("PendingMove")
 	Local $pXYZ = Wine_LabelUserPtr("PendingXYZ")
 	Local $pCmd = Wine_LabelUserPtr("CommandPacketSend")
@@ -1450,9 +1450,82 @@ Func Wine_WritePendingPacket($a_i_Size, $a_i_Header, $a_i_Param1)
 	Memory_Write($pXYZ, Number($a_i_Size))
 	Memory_Write($pXYZ + 4, Number($a_i_Header))
 	Memory_Write($pXYZ + 8, Number($a_i_Param1))
+	Memory_Write($pXYZ + 12, Number($a_i_Param2))
+	Memory_Write($pXYZ + 16, Number($a_i_Param3))
+	Memory_Write($pXYZ + 20, Number($a_i_Param4))
+	Memory_Write($pXYZ + 24, Number($a_i_Param5))
 	Memory_Write($pFlag, $pCmd)
-	Wine_FlushGw($pFlag, 16)
+	Wine_FlushGw($pFlag, 32)
 	Return Wine_PtrsEq(Memory_Read($pFlag), $pCmd)
+EndFunc
+
+; CommandDialog / CommandInteract: eax+4 is the single dword argument.
+Func Wine_WritePendingCommand($a_p_Cmd, $a_i_Arg)
+	Local $pFlag = Wine_LabelUserPtr("PendingMove")
+	Local $pXYZ = Wine_LabelUserPtr("PendingXYZ")
+	If $pFlag = 0 Or $pXYZ = 0 Or $a_p_Cmd = 0 Then Return False
+	If Not Wine_WaitPendingIdle(1500) Then
+		Out("Wine command: PendingMove still armed; not overwriting a live Move")
+		Return False
+	EndIf
+	Memory_Write($pFlag, 0)
+	Memory_Write($pXYZ, Number($a_i_Arg))
+	Memory_Write($pFlag, $a_p_Cmd)
+	Wine_FlushGw($pFlag, 16)
+	Return Wine_PtrsEq(Memory_Read($pFlag), $a_p_Cmd)
+EndFunc
+
+Func Wine_EnsurePendingCommands()
+	If Not Wine_IsWine() Then Return False
+	If Not Wine_CommandsReady() Then
+		If Not Wine_EnsureCommandQueue() Then
+			Wine_LogCommandGap()
+			Return False
+		EndIf
+	EndIf
+	Wine_WireCommandStructs()
+	Return Wine_LabelUserPtr("CommandPacketSend") <> 0
+EndFunc
+
+Func Wine_GoNPC($a_i_Agent)
+	Local $l_i_Id = Agent_ConvertID($a_i_Agent)
+	If $l_i_Id <= 0 Then Return False
+	If Not Wine_EnsurePendingCommands() Then Return False
+	Local $bPend = Wine_WritePendingPacket(0xC, $GC_I_HEADER_INTERACT_LIVING, $l_i_Id, 0)
+	Out("Wine npc: GoNPC id=" & $l_i_Id & " pending=" & Number($bPend))
+	Wine_WaitPendingIdle(1200)
+	Return $bPend
+EndFunc
+
+Func Wine_SendDialog($a_i_DialogID)
+	If Not Wine_EnsurePendingCommands() Then Return False
+	Local $pDlg = Wine_LabelUserPtr("CommandDialog")
+	Local $bPend = False
+	If $pDlg <> 0 Then $bPend = Wine_WritePendingCommand($pDlg, Number($a_i_DialogID))
+	If Not $bPend Then $bPend = Wine_WritePendingPacket(0x8, $GC_I_HEADER_DIALOG_SEND, Number($a_i_DialogID))
+	Out("Wine npc: dialog 0x" & Hex(Number($a_i_DialogID), 8) & " pending=" & Number($bPend))
+	Wine_WaitPendingIdle(1200)
+	Return $bPend
+EndFunc
+
+; Trainer window: 0x0Axxxxxx is "buy skill".
+Func Wine_BuySkill($a_i_SkillID)
+	If Not Wine_EnsurePendingCommands() Then Return False
+	Local $l_i_Param = BitOR(0x0A000000, Number($a_i_SkillID))
+	Local $bPend = Wine_WritePendingPacket(0x8, $GC_I_HEADER_DIALOG_SEND, $l_i_Param)
+	Out("Wine npc: buy skill " & $a_i_SkillID & " param=0x" & Hex($l_i_Param, 8) & " pending=" & Number($bPend))
+	Wine_WaitPendingIdle(1200)
+	Return $bPend
+EndFunc
+
+; Map travel. Do not wait on MapIsLoaded (LoadFinished never plants on Wine).
+Func Wine_TravelTo($a_i_MapID)
+	If Not Wine_EnsurePendingCommands() Then Return False
+	Local $l_i_Lang = Number(Map_GetCharacterInfo("Language"))
+	Local $l_i_Region = Number(Map_GetCharacterInfo("Region"))
+	Local $bPend = Wine_WritePendingPacket(0x18, $GC_I_HEADER_PARTY_TRAVEL, Number($a_i_MapID), $l_i_Region, 0, $l_i_Lang, 0)
+	Out("Wine travel: map " & $a_i_MapID & " region=" & $l_i_Region & " lang=" & $l_i_Lang & " pending=" & Number($bPend))
+	Return $bPend
 EndFunc
 
 ; Invite a hench: QueueBase Core_SendPacket (may be invisible) plus same-page
@@ -3021,7 +3094,11 @@ Func Wine_BindEngineTicks()
 	Memory_Write($pTicks + 12, 0)
 	Memory_Write($pTicks + 16, 0)
 	Memory_Write($pTicks + 20, 0)
-	Wine_FlushGw($pTicks, 24)
+	Memory_Write($pTicks + 24, 0)
+	Memory_Write($pTicks + 28, 0)
+	Memory_Write($pTicks + 32, 0)
+	Memory_Write($pTicks + 36, 0)
+	Wine_FlushGw($pTicks, 40)
 	Return $pTicks
 EndFunc
 

@@ -845,10 +845,10 @@ EndFunc
 Func Leveler_WaitSkillLearnt($a_i_SkillID)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < 8000
-		If Leveler_SkillIsLearnt($a_i_SkillID) Then Return True
+		If World_IsSkillLearnt($a_i_SkillID) Then Return True
 		Sleep(250)
 	WEnd
-	Return Leveler_SkillIsLearnt($a_i_SkillID)
+	Return World_IsSkillLearnt($a_i_SkillID)
 EndFunc
 
 ; Skill_GetSkillbarInfo only accepts slots 1-8, not skill IDs.
@@ -910,9 +910,50 @@ EndFunc
 Func Leveler_BuySkillIfNeeded($a_i_SkillID)
 	If World_IsSkillLearnt($a_i_SkillID) Then Return True
 	Skill_BuySkillByID($a_i_SkillID)
-	If Leveler_WaitSkillLearnt($a_i_SkillID) Then Return True
+	If Wine_IsWine() Then Wine_BuySkill($a_i_SkillID)
+	If Leveler_WaitSkillLearnt($a_i_SkillID) Then
+		Out("[Step] Learnt skill " & $a_i_SkillID)
+		Return True
+	EndIf
 	Out("[Step] Could not learn skill " & $a_i_SkillID)
 	Return False
+EndFunc
+
+Func Leveler_LogMissingTrainerSkills()
+	Out("[Step] Trainer skills learnt: SoD=" & Number(World_IsSkillLearnt($SKILL_SIGNET_OF_DISRUPTION)) & _
+			" Leech=" & Number(World_IsSkillLearnt($SKILL_LEECH_SIGNET)) & _
+			" Burn=" & Number(World_IsSkillLearnt($SKILL_ENERGY_BURN)) & _
+			" Cry=" & Number(World_IsSkillLearnt($SKILL_CRY_OF_FRUSTRATION)) & _
+			" Drain=" & Number(World_IsSkillLearnt($SKILL_POWER_DRAIN)) & _
+			" Backfire=" & Number(World_IsSkillLearnt($SKILL_BACKFIRE)))
+EndFunc
+
+Func Leveler_BuyMissingTrainerSkills()
+	Local $l_i_Npc = Leveler_FindSkillTrainerAgent()
+	If $l_i_Npc = 0 Then Return False
+	Local $l_f_X = Agent_GetAgentInfo($l_i_Npc, "X")
+	Local $l_f_Y = Agent_GetAgentInfo($l_i_Npc, "Y")
+	If Not Leveler_MoveAndDialog($l_f_X, $l_f_Y, $DIALOG_GENERIC_TALK, False, Agent_GetAgentInfo($l_i_Npc, "PlayerNumber")) Then
+		If Not Leveler_TalkAndDialog($l_i_Npc, $DIALOG_GENERIC_TALK) Then Return False
+	EndIf
+	Sleep(2500)
+	Leveler_BuySkillIfNeeded($SKILL_SIGNET_OF_DISRUPTION)
+	Sleep(400)
+	Leveler_BuySkillIfNeeded($SKILL_LEECH_SIGNET)
+	Sleep(400)
+	Leveler_BuySkillIfNeeded($SKILL_ENERGY_BURN)
+	Sleep(400)
+	Leveler_BuySkillIfNeeded($SKILL_CRY_OF_FRUSTRATION)
+	Sleep(400)
+	Leveler_BuySkillIfNeeded($SKILL_POWER_DRAIN)
+	Sleep(400)
+	If Leveler_HasMesmer() Then
+		Leveler_BuySkillIfNeeded($SKILL_BACKFIRE)
+		Sleep(400)
+	EndIf
+	Leveler_CloseTrainerWindow()
+	Leveler_LogMissingTrainerSkills()
+	Return Leveler_Skills2Unlocked()
 EndFunc
 
 ; Monastery: SoD, Leech Signet, Energy Burn. Kaineng: Cry, Power Drain, SoD.
