@@ -283,12 +283,11 @@ Func Leveler_FindLivingZenTogoAgent()
 	Return 0
 EndFunc
 
-; Mission Togo is Rt20. Do not return a random lv16 Ritualist at the outpost.
+; Mission Togo is Rt20. Do not return the outpost Togo model or a random lv16 Ritualist.
 Func Leveler_FindZenMissionTogoAgent()
 	If Not Leveler_AgentMemoryLive() Then Return 0
 	Local $l_i_Me = Number(Agent_GetMyID())
 	Local $l_i_Max = Agent_GetMaxAgents()
-	Local $l_i_Named = 0
 	Local $i
 	For $i = 1 To $l_i_Max - 1
 		If $l_i_Me <> 0 And Number($i) = $l_i_Me Then ContinueLoop
@@ -301,12 +300,11 @@ Func Leveler_FindZenMissionTogoAgent()
 		If StringInStr($l_s_Name, "Vhang") Then ContinueLoop
 		If StringInStr($l_s_Name, "Togo") Or Leveler_IsTogoModel($l_i_Model) Then
 			If $l_i_Lvl >= 19 Then Return $i
-			If $l_i_Named = 0 Then $l_i_Named = $i
 			ContinueLoop
 		EndIf
 		If $l_i_Lvl = 20 And $l_i_Prof = $GC_I_PROFESSION_RITUALIST Then Return $i
 	Next
-	Return $l_i_Named
+	Return 0
 EndFunc
 
 ; Headmaster Vhang is E15. Outpost false-positive was lv16 Elementalist (all=1).
@@ -320,11 +318,14 @@ Func Leveler_FindLivingZenVhangAgent()
 		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
 		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
 		Local $l_s_Name = String(Agent_GetAgentInfo($i, "Name"))
-		If StringInStr($l_s_Name, "Vhang") Then Return $i
-		If StringInStr($l_s_Name, "Togo") Then ContinueLoop
-		If Leveler_IsTogoModel(Number(Agent_GetAgentInfo($i, "PlayerNumber"))) Then ContinueLoop
 		Local $l_i_Lvl = Number(Agent_GetAgentInfo($i, "Level"))
 		Local $l_i_Prof = Number(Agent_GetAgentInfo($i, "Primary"))
+		If StringInStr($l_s_Name, "Vhang") Then
+			If $l_i_Lvl = 0 Or ($l_i_Lvl >= 14 And $l_i_Lvl <= 15) Then Return $i
+			ContinueLoop
+		EndIf
+		If StringInStr($l_s_Name, "Togo") Then ContinueLoop
+		If Leveler_IsTogoModel(Number(Agent_GetAgentInfo($i, "PlayerNumber"))) Then ContinueLoop
 		If $l_i_Lvl >= 14 And $l_i_Lvl <= 15 And $l_i_Prof = $GC_I_PROFESSION_ELEMENTALIST Then Return $i
 	Next
 	Return 0
@@ -370,8 +371,10 @@ Func Leveler_WineZenSoloParty()
 	Return True
 EndFunc
 
-; True only for real mission Togo (Rt20) + Vhang (E15) as party allies.
-; lv16 Rt + lv16 E with Allegiance=1 at outpost 213 is NOT in-mission.
+; True only for real mission Togo (Rt20) + Vhang (E14-15).
+; lv16 Rt + lv16 E with Allegiance=1 at outpost 213 is NOT in-mission (54e2209).
+; Party 1/6 (others=0) is never in-mission unless those exact mission levels are live
+; (Wine ArrayOthers can stay 0 while Togo20+Vhang15 are in the party UI).
 Func Leveler_WineZenPartyAlliesTogether()
 	If Not Wine_IsWine() Then Return False
 	If $g_b_ZenAllyCache And $g_h_ZenAllyCacheAt <> 0 And TimerDiff($g_h_ZenAllyCacheAt) < 400 Then
@@ -379,28 +382,41 @@ Func Leveler_WineZenPartyAlliesTogether()
 		Return True
 	EndIf
 	If Not Leveler_AgentMemoryLive() Then Return False
-	If Leveler_WineZenSoloParty() Then Return False
 	Local $l_i_Togo = Leveler_FindZenMissionTogoAgent()
 	If $l_i_Togo = 0 Then Return False
 	Local $l_i_Vhang = Leveler_FindLivingZenVhangAgent()
 	If $l_i_Vhang = 0 Or $l_i_Vhang = $l_i_Togo Then Return False
 	Local $l_i_TogoLvl = Number(Agent_GetAgentInfo($l_i_Togo, "Level"))
 	Local $l_i_VhangLvl = Number(Agent_GetAgentInfo($l_i_Vhang, "Level"))
+	Local $l_i_TogoProf = Number(Agent_GetAgentInfo($l_i_Togo, "Primary"))
+	Local $l_i_VhangProf = Number(Agent_GetAgentInfo($l_i_Vhang, "Primary"))
 	Local $l_s_Togo = String(Agent_GetAgentInfo($l_i_Togo, "Name"))
 	Local $l_s_Vhang = String(Agent_GetAgentInfo($l_i_Vhang, "Name"))
 	Local $l_b_Named = StringInStr($l_s_Togo, "Togo") And StringInStr($l_s_Vhang, "Vhang")
-	Local $l_b_Levels = ($l_i_TogoLvl = 20 And $l_i_VhangLvl >= 14 And $l_i_VhangLvl <= 15)
-	If Not $l_b_Named And Not $l_b_Levels And $l_i_TogoLvl < 19 Then Return False
-	If Not $l_b_Named And $l_i_VhangLvl > 15 Then Return False
-	Local $l_i_Others = Number(Party_GetMyPartyInfo("ArrayOthersPartyMemberSize"))
+	Local $l_b_Levels = ($l_i_TogoLvl = 20 And $l_i_TogoProf = $GC_I_PROFESSION_RITUALIST And _
+			$l_i_VhangLvl >= 14 And $l_i_VhangLvl <= 15 And $l_i_VhangProf = $GC_I_PROFESSION_ELEMENTALIST)
 	Local $l_b_TogoOther = Leveler_PartyOthersContains($l_i_Togo)
 	Local $l_b_VhangOther = Leveler_PartyOthersContains($l_i_Vhang)
+	; Exact mission levels: in-mission even if ArrayOthers is 0 (lying map 213).
+	If $l_b_Levels Then
+		If $l_b_TogoOther And $l_b_VhangOther Then
+			$g_s_ZenAllyDetect = "togo+vhang-party"
+		ElseIf $l_b_Named Then
+			$g_s_ZenAllyDetect = "togo+vhang"
+		Else
+			$g_s_ZenAllyDetect = "togo+vhang-lv"
+		EndIf
+		$g_h_ZenAllyCacheAt = TimerInit()
+		$g_b_ZenAllyCache = True
+		$g_s_ZenAllyCacheDetect = $g_s_ZenAllyDetect
+		Return True
+	EndIf
+	; Names / party list without Rt20+E15: never at outpost party 1/6.
+	If Leveler_WineZenSoloParty() Then Return False
 	If $l_b_TogoOther And $l_b_VhangOther Then
 		$g_s_ZenAllyDetect = "togo+vhang-party"
 	ElseIf $l_b_Named Then
 		$g_s_ZenAllyDetect = "togo+vhang"
-	ElseIf $l_i_Others >= 2 And $l_b_Levels Then
-		$g_s_ZenAllyDetect = "togo+vhang-lv"
 	Else
 		Return False
 	EndIf
