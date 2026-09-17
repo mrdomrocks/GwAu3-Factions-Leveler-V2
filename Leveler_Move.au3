@@ -36,9 +36,11 @@ EndFunc
 ; Fight in explorables. Stay pacifist in outposts. Return False for a map ID
 ; here only when Dominic says that explorable should not fight.
 Func Leveler_ShouldFightHere()
-	If Map_GetInstanceInfo("IsLoading") Then Return False
-	If Map_GetInstanceInfo("IsOutpost") Then Return False
-	Return Map_GetInstanceInfo("IsExplorable") = True
+	If Leveler_InMissionInstance() Then Return True
+	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
+	If Leveler_IsOutpost() Then Return False
+	If Leveler_InstanceInfoTrusted() Then Return Map_GetInstanceInfo("IsExplorable") = True
+	Return Number(Map_GetCharacterInfo("IsExplorable")) Or Number(Map_GetCharacterInfo("CurrentMapType")) = 1
 EndFunc
 
 ; $a_b_Combat True = fight while walking. False is ignored in explorables.
@@ -55,11 +57,22 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	EndIf
 
 	Local $l_i_StartMap = Map_GetMapID()
-	Leveler_EnsurePathfinder()
+	If Wine_IsWine() Then
+		If Wine_MapIsLoading() Then
+			Out("[Move] Map is loading; not injecting or walking yet")
+			Return False
+		EndIf
+		If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
+	EndIf
+	; Wine mid-mission: Pathfinder_MoveTo infinite-waits when Agent X,Y are 0,
+	; and Initialize can block the GUI thread. Always Map_Move.
+	If Not (Wine_IsWine() And Leveler_InMissionInstance()) Then
+		Leveler_EnsurePathfinder()
+	EndIf
 
 	Local $l_v_Obstacles = 0
 	Local $l_i_Aggro = 0
-	If $a_b_Combat Then
+	If $a_b_Combat And Not (Wine_IsWine() And Leveler_InMissionInstance()) Then
 		Leveler_PrepareCombatAI()
 		$l_v_Obstacles = "Leveler_GetObstacles"
 		$l_i_Aggro = $LEVELER_AGGRO
@@ -69,7 +82,11 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_SpiritRiftWatch Then $l_s_Callback = "Leveler_InterruptSpiritRifts"
 
 	Local $l_b_Ok = False
-	If Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
+	; Wine: never Pathfinder_MoveTo. Agent X,Y=0 makes it wait forever and blacks the GUI.
+	If Wine_IsWine() Then
+		Out("[Move] Wine Map_Move to " & Round($a_f_X) & "," & Round($a_f_Y) & " QueueBase=" & Wine_HexPtr($g_p_QueueBase))
+		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 30000, $a_b_Combat)
+	ElseIf Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
 		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 30000, $a_b_Combat)
 	Else
 		$l_b_Ok = Pathfinder_MoveTo($a_f_X, $a_f_Y, -1, $l_v_Obstacles, $l_i_Aggro, $LEVELER_FIGHT_RANGE_OUT, 0, $l_s_Callback)
@@ -77,22 +94,163 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
 	If Leveler_IsWiped() Then Return False
-	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+	If $g_b_SpiritRiftWatch Then
+		Local $l_f_Hx = 0, $l_f_Hy = 0
+		Leveler_LiveXY($l_f_Hx, $l_f_Hy)
+		If Wine_IsWine() And $l_f_Hx = 0 And $l_f_Hy = 0 Then
+			; Agent pos unread — do not block 45s on HoldForTogo from (0,0).
+		ElseIf Wine_IsWine() And Leveler_DistToXY($a_f_X, $a_f_Y) >= $LEVELER_ARRIVE_RANGE Then
+			; Missed the walk — do not sit in WaitOutOfCombat while pos is frozen.
+		Else
+			If Not Leveler_WaitOutOfCombat(45000) Then Return False
+			If Not Leveler_HoldForTogo() Then Return False
+		EndIf
+	EndIf
+	If Leveler_DistToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+	If Wine_IsWine() And $l_b_Ok Then Return True
 	Return $l_b_Ok
 EndFunc
 
+; First non-zero of agent -2, MyID, camera, living Togo. Returns the source name.
+Func Leveler_LiveXY(ByRef $a_f_X, ByRef $a_f_Y)
+	$a_f_X = Number(Agent_GetAgentInfo(-2, "X"))
+	$a_f_Y = Number(Agent_GetAgentInfo(-2, "Y"))
+	If $a_f_X <> 0 Or $a_f_Y <> 0 Then Return "agent-2"
+	Local $l_i_Me = Number(Agent_GetMyID())
+	If $l_i_Me > 0 Then
+		$a_f_X = Number(Agent_GetAgentInfo($l_i_Me, "X"))
+		$a_f_Y = Number(Agent_GetAgentInfo($l_i_Me, "Y"))
+		If $a_f_X <> 0 Or $a_f_Y <> 0 Then Return "agent-myid"
+	EndIf
+	If IsDeclared("g_p_SceneContext") And Number($g_p_SceneContext) <> 0 Then
+		$a_f_X = Number(Camera_GetCameraInfo("X"))
+		$a_f_Y = Number(Camera_GetCameraInfo("Y"))
+		If $a_f_X <> 0 Or $a_f_Y <> 0 Then Return "camera"
+	EndIf
+	Local $l_i_Togo = Leveler_FindLivingZenTogoAgent()
+	If $l_i_Togo <> 0 Then
+		$a_f_X = Number(Agent_GetAgentInfo($l_i_Togo, "X"))
+		$a_f_Y = Number(Agent_GetAgentInfo($l_i_Togo, "Y"))
+		If $a_f_X <> 0 Or $a_f_Y <> 0 Then Return "togo"
+	EndIf
+	$a_f_X = 0
+	$a_f_Y = 0
+	Return "none"
+EndFunc
+
+Func Leveler_DistToXY($a_f_X, $a_f_Y)
+	Local $l_f_X = 0, $l_f_Y = 0
+	Leveler_LiveXY($l_f_X, $l_f_Y)
+	If $l_f_X = 0 And $l_f_Y = 0 Then Return 999999
+	Local $l_f_Dx = $l_f_X - $a_f_X
+	Local $l_f_Dy = $l_f_Y - $a_f_Y
+	Return Sqrt($l_f_Dx * $l_f_Dx + $l_f_Dy * $l_f_Dy)
+EndFunc
+
+; When a direct Map_Move does not close (collision or a dead stub), walk a
+; short hop toward the dest. After a second freeze, step sideways.
+Func Leveler_WineStepToward($a_f_DestX, $a_f_DestY, ByRef $a_f_GoX, ByRef $a_f_GoY, $a_i_HopRound)
+	$a_f_GoX = $a_f_DestX
+	$a_f_GoY = $a_f_DestY
+	If $a_i_HopRound < 1 Then Return
+	Local $l_f_X = 0, $l_f_Y = 0
+	Leveler_LiveXY($l_f_X, $l_f_Y)
+	If $l_f_X = 0 And $l_f_Y = 0 Then Return
+	Local $l_f_Dx = $a_f_DestX - $l_f_X
+	Local $l_f_Dy = $a_f_DestY - $l_f_Y
+	Local $l_f_Dist = Sqrt($l_f_Dx * $l_f_Dx + $l_f_Dy * $l_f_Dy)
+	If $l_f_Dist <= 650 Then Return
+	Local $l_f_Step = 650
+	If $a_i_HopRound >= 2 And $l_f_Dist > 0 Then
+		Local $l_f_Nx = -$l_f_Dy / $l_f_Dist * 500
+		Local $l_f_Ny = $l_f_Dx / $l_f_Dist * 500
+		$a_f_GoX = $l_f_X + $l_f_Dx * 0.35 + $l_f_Nx
+		$a_f_GoY = $l_f_Y + $l_f_Dy * 0.35 + $l_f_Ny
+		Return
+	EndIf
+	$a_f_GoX = $l_f_X + $l_f_Dx * ($l_f_Step / $l_f_Dist)
+	$a_f_GoY = $l_f_Y + $l_f_Dy * ($l_f_Step / $l_f_Dist)
+EndFunc
+
 Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = False)
+	If Wine_IsWine() And $a_i_Timeout < 45000 Then $a_i_Timeout = 45000
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $l_h_Timer = TimerInit()
+	Local $l_i_LastLog = -5000
+	Local $l_i_Moves = 0
+	Local $l_f_LastX = 0, $l_f_LastY = 0
+	Local $l_b_HavePos = False
+	Local $l_h_Stuck = 0
+	Local $l_i_HopRound = 0
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
 		If Map_GetMapID() <> $l_i_StartMap Then Return True
-		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+		If Leveler_DistToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+		Local $l_f_X = 0, $l_f_Y = 0
+		Local $l_s_Src = Leveler_LiveXY($l_f_X, $l_f_Y)
+		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 5000 Then
+			Out("[Move] walking map " & $l_i_StartMap & " pos " & Round($l_f_X) & "," & Round($l_f_Y) & _
+					" src=" & $l_s_Src & " toward " & Round($a_f_X) & "," & Round($a_f_Y) & _
+					" ticks=" & Wine_EngineTickCount() & Wine_DrainStateLine())
+			If Wine_IsWine() And $l_b_HavePos And Abs($l_f_X - $l_f_LastX) < 40 And Abs($l_f_Y - $l_f_LastY) < 40 Then
+				Wine_RefreshCommandMove("pos unchanged across walk logs at " & Round($l_f_X) & "," & Round($l_f_Y))
+			EndIf
+			$l_i_LastLog = TimerDiff($l_h_Timer)
+		EndIf
+		; Wine: Agent 0,0 never shrinks distance. After ~12s of live QueueBase moves, count as arrived.
+		If Wine_IsWine() And $l_f_X = 0 And $l_f_Y = 0 And TimerDiff($l_h_Timer) >= 12000 And Wine_QueueWalkReady() Then
+			Out("[Move] Wine: pos still 0,0 after QueueBase-live moves; treating waypoint as arrived")
+			Return True
+		EndIf
+		If Wine_IsWine() And ($l_f_X <> 0 Or $l_f_Y <> 0) Then
+			If Not $l_b_HavePos Then
+				$l_h_Stuck = TimerInit()
+			Else
+				Local $l_f_Stay = Sqrt(($l_f_X - $l_f_LastX) * ($l_f_X - $l_f_LastX) + ($l_f_Y - $l_f_LastY) * ($l_f_Y - $l_f_LastY))
+				If $l_f_Stay < 40 Then
+					If $l_h_Stuck = 0 Then $l_h_Stuck = TimerInit()
+					If TimerDiff($l_h_Stuck) >= 5000 Then
+						$l_i_HopRound += 1
+						Wine_RefreshCommandMove("pos frozen at " & Round($l_f_X) & "," & Round($l_f_Y) & " for " & $l_i_HopRound)
+						$l_h_Stuck = TimerInit()
+					EndIf
+				Else
+					$l_h_Stuck = TimerInit()
+					If Leveler_DistToXY($a_f_X, $a_f_Y) < 400 Then $l_i_HopRound = 0
+				EndIf
+			EndIf
+			$l_f_LastX = $l_f_X
+			$l_f_LastY = $l_f_Y
+			$l_b_HavePos = True
+		EndIf
+		If $g_b_SpiritRiftWatch And Leveler_TogoNeedsHelp() Then
+			Leveler_FightWithTogo()
+			; Wine: still enqueue the waypoint. ContinueLoop used to skip Map_Move
+			; while standing on Togo, so pos froze at spawn (14283,8757).
+			If Not Wine_IsWine() Then
+				Sleep(250)
+				ContinueLoop
+			EndIf
+		EndIf
 		If $a_b_Combat Then Leveler_CombatTick()
-		Map_Move($a_f_X, $a_f_Y, 20)
+		If Wine_IsWine() Then
+			Local $l_f_GoX = $a_f_X, $l_f_GoY = $a_f_Y
+			Leveler_WineStepToward($a_f_X, $a_f_Y, $l_f_GoX, $l_f_GoY, $l_i_HopRound)
+			If $l_i_HopRound >= 1 And (Round($l_f_GoX) <> Round($a_f_X) Or Round($l_f_GoY) <> Round($a_f_Y)) Then
+				If TimerDiff($l_h_Timer) - $l_i_LastLog >= 4000 Then
+					Out("[Move] hop " & Round($l_f_GoX) & "," & Round($l_f_GoY) & " toward " & Round($a_f_X) & "," & Round($a_f_Y))
+				EndIf
+			EndIf
+			If Wine_MapMove($l_f_GoX, $l_f_GoY, 20) Then $l_i_Moves += 1
+		Else
+			Map_Move($a_f_X, $a_f_Y, 20)
+			$l_i_Moves += 1
+		EndIf
 		Sleep(250)
 	WEnd
-	Return Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
+	; Live pos that never closed is a CommandMove/pathing miss, not an arrival.
+	Return Leveler_DistToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
 EndFunc
 
 Func Leveler_MoveAndDialog($a_f_X, $a_f_Y, $a_i_Dialog, $a_b_Combat = False, $a_i_NpcModel = 0)
@@ -112,9 +270,13 @@ EndFunc
 ; Target the living NPC, walk into talk range, then send the dialog.
 Func Leveler_TalkAndDialog($a_i_Npc, $a_i_Dialog)
 	If $a_i_Npc = 0 Then Return False
-	Agent_ChangeTarget($a_i_Npc)
-	Sleep(150)
-	Agent_GoNPC($a_i_Npc)
+	If Wine_IsWine() Then
+		Wine_GoNPC($a_i_Npc)
+	Else
+		Agent_ChangeTarget($a_i_Npc)
+		Sleep(150)
+		Agent_GoNPC($a_i_Npc)
+	EndIf
 
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < 5000
@@ -127,7 +289,11 @@ Func Leveler_TalkAndDialog($a_i_Npc, $a_i_Dialog)
 	EndIf
 
 	Sleep(500)
-	Ui_Dialog($a_i_Dialog)
+	If Wine_IsWine() Then
+		Wine_SendDialog($a_i_Dialog)
+	Else
+		Ui_Dialog($a_i_Dialog)
+	EndIf
 	Sleep(600)
 	Return True
 EndFunc
@@ -165,7 +331,10 @@ EndFunc
 ; $a_b_Rezone True = leave and re-enter the outpost so we spawn at the portal
 ; instead of pathing across town from the last NPC (bag merchant, crafter, ...).
 Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
-	If Map_GetMapID() = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
+	Local $l_i_Now = Map_GetMapID()
+	; Wine: already at Zen 213. InstanceInfo explorable flicker must not resign.
+	If Wine_IsWine() And $l_i_Now = $a_i_MapID And $a_i_MapID = $MAP_ZEN_OP Then Return True
+	If $l_i_Now = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
 		If Not $a_b_Rezone Then Return True
 		Out("[Move] Rezoning map " & $a_i_MapID & " to reset position")
 		If Map_RndTravel($a_i_MapID, True, True) Then Return True
@@ -173,7 +342,8 @@ Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 		Return True
 	EndIf
 	If Map_GetInstanceInfo("IsExplorable") Then
-		Out("[Move] Leaving explorable map " & Map_GetMapID() & " to travel to " & $a_i_MapID)
+		If Wine_IsWine() And $l_i_Now = $a_i_MapID And $a_i_MapID = $MAP_ZEN_OP Then Return True
+		Out("[Move] Leaving explorable map " & $l_i_Now & " to travel to " & $a_i_MapID)
 		If Map_TravelTo($a_i_MapID) Then
 			If Not Leveler_WaitUntilMapReady() Then Return False
 			If Map_GetMapID() = $a_i_MapID Then Return True
@@ -186,6 +356,22 @@ Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 		If Not Leveler_WaitUntilMapReady() Then Return False
 	EndIf
 	Out("[Move] Travel to map " & $a_i_MapID)
+	If Wine_IsWine() Then
+		Local $l_i_Start = $l_i_Now
+		Wine_TravelTo($a_i_MapID)
+		Map_TravelTo($a_i_MapID, Map_GetCharacterInfo("Language"), Map_GetCharacterInfo("Region"), 0, False)
+		Local $l_h_Wait = TimerInit()
+		While TimerDiff($l_h_Wait) < 25000
+			If $g_b_LevelerPaused Then Return False
+			If Map_GetMapID() = $a_i_MapID And Not Wine_MapIsLoading() And Not Leveler_MapLooksConnecting() Then
+				Sleep(800)
+				Return Leveler_WaitUntilMapReady() And Map_GetMapID() = $a_i_MapID
+			EndIf
+			Sleep(250)
+		WEnd
+		Out("[Move] Wine travel still map " & Map_GetMapID() & " (wanted " & $a_i_MapID & ", started " & $l_i_Start & ")")
+		Return Map_GetMapID() = $a_i_MapID
+	EndIf
 	If Not Map_TravelTo($a_i_MapID) Then Return False
 	Return Leveler_WaitUntilMapReady() And Map_GetMapID() = $a_i_MapID
 EndFunc
@@ -321,6 +507,7 @@ EndFunc
 ; Map-travel to the step outpost. Stay in the explorable if the step's quest is already in the log.
 Func Leveler_EnsureStepOutpost($a_i_Step)
 	If $a_i_Step = $LEVELER_STEP_DONE Then Return True
+	If Wine_IsWine() And Leveler_InMissionInstance() Then Return True
 	If Map_GetInstanceInfo("IsLoading") Then Return Leveler_WaitUntilMapReady()
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	Local $l_i_Map = Map_GetMapID()
@@ -328,6 +515,7 @@ Func Leveler_EnsureStepOutpost($a_i_Step)
 	If $l_i_Outpost = 0 Then Return True
 	If $l_i_Map = $l_i_Outpost And Map_GetInstanceInfo("IsOutpost") Then Return True
 	If $l_i_Map = $l_i_Outpost And Map_GetInstanceInfo("IsExplorable") Then Return True
+	If Leveler_InMissionInstance() And Leveler_StepAllowsMap($a_i_Step, $l_i_Map) Then Return True
 	If Leveler_StepAllowsMap($a_i_Step, $l_i_Map) Then Return True
 	If $g_b_ExplorableResume And Not Leveler_IsOutpost() And Leveler_StepHasActiveQuest($a_i_Step) And Leveler_StepAllowsMap($a_i_Step, $l_i_Map) Then
 		Out("[Move] Restart recovery: quest is in the log on map " & $l_i_Map & ". Resuming '" & $g_as_StepNames[$a_i_Step] & "' from here.")
@@ -351,6 +539,7 @@ EndFunc
 
 Func Leveler_GetAgentByName($a_s_Name)
 	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
 	For $i = 1 To $l_i_Max - 1
 		If Not Leveler_IsTalkNpc($i) Then ContinueLoop
 		If StringInStr(Agent_GetAgentInfo($i, "Name"), $a_s_Name) Then Return $i
@@ -358,13 +547,105 @@ Func Leveler_GetAgentByName($a_s_Name)
 	Return 0
 EndFunc
 
+; Wine names are often empty. Kaineng: Michiko npc id 62 at 420,1388.
+Func Leveler_FindMichikoAgent()
+	Local $l_i_ByModel = Leveler_GetAgentByModel($MODEL_MICHIKO)
+	If $l_i_ByModel <> 0 Then Return $l_i_ByModel
+	If Agent_GetAgentPtr($MODEL_MICHIKO) <> 0 And Not Agent_GetAgentInfo($MODEL_MICHIKO, "IsDead") Then
+		If Agent_GetDistanceToXY($MICHIKO_X, $MICHIKO_Y, $MODEL_MICHIKO) < 800 Then Return $MODEL_MICHIKO
+	EndIf
+	Local $l_i_Named = Leveler_GetAgentByName("Michiko")
+	If $l_i_Named <> 0 Then Return $l_i_Named
+	Return Leveler_GetNearestNPCAt($MICHIKO_X, $MICHIKO_Y, 500)
+EndFunc
+
+; Wine names are often empty. Kaineng: Michiko id 62 at 420,1388. Then name / profession / lvl 10.
+Func Leveler_FindSkillTrainerAgent()
+	Local $l_i_Map = Map_GetMapID()
+	If $l_i_Map = $MAP_KAINENG Then
+		Local $l_i_At = Leveler_FindMichikoAgent()
+		If $l_i_At <> 0 Then
+			Out("[Step] Michiko npc id=" & $MODEL_MICHIKO & " agent=" & $l_i_At & _
+					" at " & Round(Agent_GetAgentInfo($l_i_At, "X")) & "," & Round(Agent_GetAgentInfo($l_i_At, "Y")) & _
+					" lv=" & Number(Agent_GetAgentInfo($l_i_At, "Level")) & _
+					" prof=" & Number(Agent_GetAgentInfo($l_i_At, "Primary")) & _
+					" all=" & Number(Agent_GetAgentInfo($l_i_At, "Allegiance")) & _
+					" model=" & Number(Agent_GetAgentInfo($l_i_At, "PlayerNumber")) & _
+					" name=" & String(Agent_GetAgentInfo($l_i_At, "Name")))
+			Return $l_i_At
+		EndIf
+	EndIf
+	Local $l_as_Names[4] = ["Michiko", "Masaharu", "Xu Fengxia", "Zhao Di"]
+	Local $n
+	For $n = 0 To 3
+		Local $l_i_Named = Leveler_GetAgentByName($l_as_Names[$n])
+		If $l_i_Named <> 0 Then
+			Out("[Step] Skill trainer by name: " & $l_as_Names[$n] & " id=" & $l_i_Named)
+			Return $l_i_Named
+		EndIf
+	Next
+	Local $l_i_WantProf = 0
+	If $l_i_Map = $MAP_SHING_JEA Then $l_i_WantProf = $GC_I_PROFESSION_MESMER
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $l_i_ProfMatch = 0
+	Local $l_i_Lvl10 = 0
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Not Leveler_IsTalkNpc($i) Then ContinueLoop
+		Local $l_i_Lvl = Number(Agent_GetAgentInfo($i, "Level"))
+		Local $l_i_Prof = Number(Agent_GetAgentInfo($i, "Primary"))
+		If $l_i_WantProf <> 0 And $l_i_Prof = $l_i_WantProf And $l_i_Lvl >= 8 And $l_i_Lvl <= 16 Then
+			$l_i_ProfMatch = $i
+			ExitLoop
+		EndIf
+		If $l_i_Lvl = 10 And $l_i_Lvl10 = 0 Then $l_i_Lvl10 = $i
+	Next
+	If $l_i_ProfMatch <> 0 Then
+		Out("[Step] Skill trainer by profession: id=" & $l_i_ProfMatch & _
+				" lv=" & Number(Agent_GetAgentInfo($l_i_ProfMatch, "Level")) & _
+				" prof=" & Number(Agent_GetAgentInfo($l_i_ProfMatch, "Primary")) & _
+				" all=" & Number(Agent_GetAgentInfo($l_i_ProfMatch, "Allegiance")))
+		Return $l_i_ProfMatch
+	EndIf
+	If $l_i_Lvl10 <> 0 Then
+		Out("[Step] Skill trainer fallback lvl10: id=" & $l_i_Lvl10 & _
+				" prof=" & Number(Agent_GetAgentInfo($l_i_Lvl10, "Primary")) & _
+				" all=" & Number(Agent_GetAgentInfo($l_i_Lvl10, "Allegiance")))
+		Return $l_i_Lvl10
+	EndIf
+	Out("[Step] No skill trainer NPC found on map " & $l_i_Map)
+	Return 0
+EndFunc
+
 ; Town NPCs only. Skip party henchmen/heroes, who are also IsNPC.
+Func Leveler_IsPartyAgent($a_i_Agent)
+	If $a_i_Agent = 0 Then Return False
+	If Number($a_i_Agent) = Number(Agent_GetMyID()) Then Return True
+	Local $i
+	Local $l_i_Hench = Leveler_HenchmanCount()
+	For $i = 1 To $l_i_Hench
+		If Number(Party_GetMyPartyHenchmanInfo($i, "AgentID")) = Number($a_i_Agent) Then Return True
+	Next
+	Local $l_i_Hero = Leveler_HeroCount()
+	For $i = 1 To $l_i_Hero
+		If Number(Party_GetMyPartyHeroInfo($i, "AgentID")) = Number($a_i_Agent) Then Return True
+	Next
+	Return False
+EndFunc
+
 Func Leveler_IsTalkNpc($a_i_Agent)
 	If $a_i_Agent = 0 Then Return False
 	If Agent_GetAgentPtr($a_i_Agent) = 0 Then Return False
 	If Agent_GetAgentInfo($a_i_Agent, "IsDead") Then Return False
+	If Leveler_IsPartyAgent($a_i_Agent) Then Return False
+	Local $l_i_All = Number(Agent_GetAgentInfo($a_i_Agent, "Allegiance"))
+	If Wine_IsWine() Then
+		; Outpost world NPCs often read Allegiance=1 (ALLY), not 6 (NPC).
+		If $l_i_All = $GC_I_ALLEGIANCE_NPC Or $l_i_All = $GC_I_ALLEGIANCE_ALLY Then Return True
+		Return False
+	EndIf
 	If Not Agent_GetAgentInfo($a_i_Agent, "IsNPC") Then Return False
-	If Agent_GetAgentInfo($a_i_Agent, "Allegiance") <> $GC_I_ALLEGIANCE_NPC Then Return False
+	If $l_i_All <> $GC_I_ALLEGIANCE_NPC Then Return False
 	Return True
 EndFunc
 
@@ -572,9 +853,43 @@ Func Leveler_InteractNpcAt($a_f_X, $a_f_Y, $a_b_Combat = False)
 	Return True
 EndFunc
 
+Func Leveler_ZenTogoIsDead()
+	If Not $g_b_SpiritRiftWatch And Not Leveler_WineLooksInZenMission() Then Return False
+	If Not Leveler_AgentMemoryLive() Then Return False
+	If Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Not Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
+		Local $l_s_Name = Agent_GetAgentInfo($i, "Name")
+		Local $l_i_Model = Agent_GetAgentInfo($i, "PlayerNumber")
+		If $l_s_Name = "" And Not Leveler_IsTogoModel($l_i_Model) Then ContinueLoop
+		If Leveler_IsTogoModel($l_i_Model) Or StringInStr($l_s_Name, "Togo") Then Return True
+	Next
+	Return False
+EndFunc
+
 Func Leveler_IsWiped()
+	If Leveler_MapLooksConnecting() Then Return False
+	; Wine: living Togo agent or a clearly-alive player is not a wipe.
+	; Hench slots are empty in Zen; stale IsDefeated / Party_IsWiped must not resign.
+	If Wine_IsWine() Then
+		If Leveler_WinePlayerClearlyAlive() Then Return False
+		If Leveler_PartyHasZenMissionAllies() Then
+			If Not Leveler_AgentMemoryLive() Then Return False
+			If Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
+			If Not Agent_GetAgentInfo(-2, "IsDead") Then Return False
+			If Not Leveler_ZenTogoIsDead() Then Return False
+			Return True
+		EndIf
+		If Not Leveler_AgentMemoryLive() Then Return False
+		If Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
+	EndIf
+	If Not Leveler_AgentMemoryLive() Then Return False
 	If Party_GetPartyContextInfo("IsDefeated") Then Return True
 	If Party_IsWiped() Then Return True
+	If Leveler_ZenTogoIsDead() Then Return True
 	Return False
 EndFunc
 
@@ -604,7 +919,75 @@ EndFunc
 Func Leveler_CombatTick()
 	If Not Leveler_ShouldFightHere() Then Return
 	If Not Leveler_PrepareCombatAI() Then Return
+	If $g_b_SpiritRiftWatch Then
+		Leveler_InterruptSpiritRifts()
+		If Leveler_TogoNeedsHelp() Then
+			Leveler_FightWithTogo()
+			Return
+		EndIf
+	EndIf
 	UAI_Fight(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $LEVELER_AGGRO, $LEVELER_FIGHT_RANGE_OUT)
+EndFunc
+
+Func Leveler_EnemiesNearAgent($a_i_Agent, $a_f_Range = 900)
+	If $a_i_Agent = 0 Then Return False
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
+		If Agent_GetAgentInfo($i, "Allegiance") <> $GC_I_ALLEGIANCE_ENEMY Then ContinueLoop
+		If Agent_GetDistance($i, $a_i_Agent) < $a_f_Range Then Return True
+	Next
+	Return False
+EndFunc
+
+; Togo must survive Zen. Stay on him when he is pulled, low, or left behind.
+Func Leveler_TogoNeedsHelp()
+	Local $l_i_Togo = Leveler_GetTogo()
+	If $l_i_Togo = 0 Then Return False
+	Local $l_f_HP = Number(Agent_GetAgentInfo($l_i_Togo, "HP"))
+	If $l_f_HP > 0 And $l_f_HP <= 0.65 Then Return True
+	Local $l_f_Mx = 0, $l_f_My = 0
+	Leveler_LiveXY($l_f_Mx, $l_f_My)
+	If $l_f_Mx = 0 And $l_f_My = 0 Then Return Leveler_EnemiesNearAgent($l_i_Togo, 900)
+	If Agent_GetDistance($l_i_Togo) > 850 Then Return True
+	Return Leveler_EnemiesNearAgent($l_i_Togo, 900)
+EndFunc
+
+Func Leveler_FightWithTogo()
+	If Not Leveler_ShouldFightHere() Then Return
+	If Not Leveler_PrepareCombatAI() Then Return
+	Leveler_InterruptSpiritRifts()
+	Local $l_i_Togo = Leveler_GetTogo()
+	Local $l_f_X = Agent_GetAgentInfo(-2, "X")
+	Local $l_f_Y = Agent_GetAgentInfo(-2, "Y")
+	If $l_i_Togo <> 0 Then
+		$l_f_X = Agent_GetAgentInfo($l_i_Togo, "X")
+		$l_f_Y = Agent_GetAgentInfo($l_i_Togo, "Y")
+		If Agent_GetDistance($l_i_Togo) > 400 Then
+			If Wine_IsWine() Then
+				Wine_MapMove($l_f_X, $l_f_Y, 20)
+			Else
+				Map_Move($l_f_X, $l_f_Y, 20)
+			EndIf
+		EndIf
+	EndIf
+	UAI_Fight($l_f_X, $l_f_Y, $LEVELER_AGGRO, $LEVELER_FIGHT_RANGE_OUT)
+EndFunc
+
+Func Leveler_HoldForTogo($a_i_Timeout = 25000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_IsWiped() Then Return False
+		Local $l_i_Togo = Leveler_GetTogo()
+		If $l_i_Togo = 0 Then Return True
+		If Agent_GetDistance($l_i_Togo) < 700 And Not Leveler_TogoNeedsHelp() And Not Leveler_InDanger($LEVELER_AGGRO) Then Return True
+		Leveler_FightWithTogo()
+		Sleep(250)
+	WEnd
+	Return Not Leveler_IsWiped()
 EndFunc
 
 Func Leveler_WaitCombat($a_i_Ms)
@@ -796,7 +1179,7 @@ Func Leveler_LootNearby($a_i_Model = 0, $a_f_Range = 2000, $a_i_Timeout = 10000)
 EndFunc
 
 Func Leveler_InterruptSpiritRifts()
-	If Map_GetMapID() <> $MAP_ZEN_OP Then Return
+	If Map_GetMapID() <> $MAP_ZEN_OP And Leveler_LiveMapID() <> $MAP_ZEN_EXP And Map_GetMapID() <> $MAP_ZEN_EXP Then Return
 	If $g_h_RiftCooldown <> 0 And TimerDiff($g_h_RiftCooldown) < 1000 Then Return
 
 	Local $l_i_Max = Agent_GetMaxAgents()
@@ -955,7 +1338,14 @@ EndFunc
 ; After a disconnect the client can sit on a loading / zero map. Wait until we can act.
 Func Leveler_ClientIsReady()
 	If Map_GetMapID() <= 0 Then Return False
-	If Map_GetInstanceInfo("IsLoading") Then Return False
+	If Leveler_MapLooksConnecting() Then Return False
+	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
+	If Wine_IsWine() Then
+		If Leveler_InMissionInstance() Then Return True
+		If Map_GetInstanceInfo("IsOutpost") Or Map_GetInstanceInfo("IsExplorable") Then Return True
+		; Partial Core_Initialize: a live map id is enough. AgentBase=0 is not a DC.
+		Return True
+	EndIf
 	If Agent_GetAgentPtr(-2) = 0 Then Return False
 	If Agent_GetAgentInfo(-2, "X") = 0 And Agent_GetAgentInfo(-2, "Y") = 0 Then Return False
 	Return True
@@ -963,6 +1353,8 @@ EndFunc
 
 Func Leveler_ClientDisconnected()
 	If Map_GetMapID() <= 0 Then Return True
+	; Wine: AgentBase=0 with a live map id is a scan gap, not a disconnect.
+	If Wine_IsWine() And Map_GetMapID() > 0 Then Return False
 	If Agent_GetAgentPtr(-2) = 0 And Not Map_GetInstanceInfo("IsLoading") Then Return True
 	Return False
 EndFunc
@@ -976,7 +1368,8 @@ Func Leveler_ResumeFromCurrentPosition()
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_f_X = Agent_GetAgentInfo(-2, "X")
 	Local $l_f_Y = Agent_GetAgentInfo(-2, "Y")
-	Out("[Recover] Connection resumed. Map " & $l_i_Map & "  Pos " & Round($l_f_X) & ", " & Round($l_f_Y) & ". Continuing from here.")
+	Out("[Recover] Connection resumed. Map " & $l_i_Map & "  Pos " & Round($l_f_X) & ", " & Round($l_f_Y) & ". Re-evaluating status from here.")
+	$g_b_NeedStatusCheck = True
 	Sleep(2000)
 	If Map_GetInstanceInfo("IsExplorable") Then Leveler_PrepareCombatAI()
 	$g_b_ConnectionLost = False
@@ -1073,23 +1466,90 @@ Func Leveler_RecoverWipe()
 		Return True
 	EndIf
 
-	Out("[Recover] Party wiped or dead. Resigning and returning to outpost.")
-	Chat_SendChat("resign", "/")
-	Sleep(1200)
+	Return Leveler_ReturnWipeToOutpost()
+EndFunc
 
+; True once we are sitting in the mission outpost (213 / 214), not Connecting and not still in the instance.
+Func Leveler_AtWipeOutpost()
+	If Leveler_MapLooksConnecting() Then Return False
+	; 213 with Togo NPC only is the outpost. 246 or Togo+Vhang is the instance.
+	If Leveler_WineHeldZenExplorable() Or Leveler_InMissionInstance() Then Return False
+	Local $l_i_Map = Map_GetMapID()
+	If $l_i_Map <= 0 Then Return False
+	If Leveler_InstanceInfoTrusted() And Map_GetInstanceInfo("IsOutpost") Then Return True
+	If Leveler_InMissionInstance() Then Return False
+	If Number(Map_GetCharacterInfo("CurrentMapType")) = 2 Then Return False
+	If $l_i_Map = $MAP_ZEN_OP Or $l_i_Map = $MAP_CHO_OUTPOST Or $l_i_Map = $MAP_SEITUNG Then
+		If Number(Map_GetCharacterInfo("CurrentMapType")) = 0 Then Return True
+		If Number(Map_GetCharacterInfo("IsExplorable")) = 0 And Not Leveler_HasMissionObjectives() Then Return True
+	EndIf
+	Return False
+EndFunc
+
+; Wait for the outpost after a wipe. Do not send travel/return packets here.
+Func Leveler_WaitReturnToOutpost($a_i_Timeout = 90000)
 	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < 60000
-		If Map_GetInstanceInfo("IsOutpost") Then ExitLoop
-		If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
+	Local $l_i_LastLog = -8000
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Game_GetGameInfo("IsCinematic") Then
+			Cinematic_SkipCinematic()
+			Sleep(400)
+		EndIf
+		If Wine_IsWine() And Leveler_WineHeldZenExplorable() And (Leveler_PartyHasZenMissionAllies() Or Leveler_WinePlayerClearlyAlive()) Then
+			$g_b_WipeReturnSent = False
+			Out("[Recover] Still in Zen with Togo/alive player (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "); aborting wipe wait.")
+			Return False
+		EndIf
+		If Leveler_AtWipeOutpost() Then
+			$g_b_WipeReturnSent = False
+			$g_b_WineEnterSent = False
+			$g_b_NeedStatusCheck = True
+			Out("[Recover] Back in outpost map " & Map_GetMapID() & ". Re-evaluating status, then retrying: " & $g_s_CurrentHeader)
+			Return True
+		EndIf
+		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 8000 Then
+			Out("[Recover] Waiting for outpost (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & _
+					" type " & Map_GetInstanceInfo("Type") & " connecting=" & Number(Leveler_MapLooksConnecting()) & ")")
+			$l_i_LastLog = TimerDiff($l_h_Timer)
+		EndIf
 		Sleep(500)
 	WEnd
+	Out("[Recover] Outpost return timed out. Not sending more return packets.")
+	Return False
+EndFunc
 
-	Map_WaitMapLoading()
-	Sleep(1000)
-	If Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Recover] Back in outpost. Retrying: " & $g_s_CurrentHeader)
+; Resign once, Return-to-Outpost once, then wait. Repeating 0xA7 while Connecting hangs Gw at 0%.
+Func Leveler_ReturnWipeToOutpost()
+	If Wine_IsWine() And Leveler_WineHeldZenExplorable() And (Leveler_PartyHasZenMissionAllies() Or Leveler_WinePlayerClearlyAlive()) Then
+		$g_b_WipeReturnSent = False
+		Out("[Recover] Togo/alive player in Zen; not resigning.")
+		Return False
+	EndIf
+	If Leveler_AtWipeOutpost() Then
+		$g_b_WipeReturnSent = False
+		$g_b_WineEnterSent = False
+		Out("[Recover] Already at the outpost after the wipe.")
 		Return True
 	EndIf
-	Out("[Recover] Failed to reach an outpost.")
-	Return False
+	If Leveler_MapLooksConnecting() Then
+		Out("[Recover] Client is connecting; waiting without sending return packets.")
+		Return Leveler_WaitReturnToOutpost()
+	EndIf
+
+	If Not $g_b_WipeReturnSent Then
+		Out("[Recover] Party wiped or Togo fell. Resigning once, then returning to outpost once.")
+		Chat_SendChat("resign", "/")
+		Sleep(1500)
+		If Party_GetPartyContextInfo("IsDefeated") Or Leveler_InMissionInstance() Or Leveler_HasMissionObjectives() Then
+			If Wine_IsWine() Then Wine_EnsureCommandQueue()
+			Map_ReturnToOutpost(False)
+			$g_b_WipeReturnSent = True
+			$g_h_WipeReturnAt = TimerInit()
+			Out("[Recover] Sent Return-to-Outpost. Waiting for the outpost (no further packets).")
+		EndIf
+	Else
+		Out("[Recover] Return-to-Outpost already sent this wipe; waiting.")
+	EndIf
+	Return Leveler_WaitReturnToOutpost()
 EndFunc

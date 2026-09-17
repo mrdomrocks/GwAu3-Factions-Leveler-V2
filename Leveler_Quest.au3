@@ -346,7 +346,20 @@ EndFunc
 
 ; True in an explorable / mission. False in towns and while loading.
 Func Leveler_IsOutpost()
-	If Map_GetInstanceInfo("IsLoading") Then Return False
+	If Leveler_InMissionInstance() Then Return False
+	If Map_GetInstanceInfo("IsLoading") And Leveler_InstanceInfoTrusted() Then Return False
+	; Wine 213 without 246 / Togo+Vhang is the outpost even if InstanceInfo flickers explorable.
+	If Leveler_WineAtZenOutpost() Then Return True
+	If Not Leveler_InstanceInfoTrusted() Then
+		Local $l_i_Map = Map_GetMapID()
+		Local $l_i_Cur = Number(Map_GetCharacterInfo("CurrentMapID"))
+		If $l_i_Cur = $MAP_ZEN_EXP Or $l_i_Map = $MAP_ZEN_EXP Then Return False
+		If $l_i_Cur = $MAP_CHO_EXPLORABLE Or $l_i_Map = $MAP_CHO_EXPLORABLE Then Return False
+		If Number(Map_GetCharacterInfo("IsExplorable")) Then Return False
+		If Number(Map_GetCharacterInfo("CurrentMapType")) = 1 Then Return False
+		If Leveler_HasMissionObjectives() Then Return False
+		Return True
+	EndIf
 	Return Map_GetInstanceInfo("IsOutpost") = True
 EndFunc
 

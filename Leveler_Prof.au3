@@ -120,9 +120,10 @@ Func Leveler_LoadProfessionSkillBar($a_i_Kind = -1)
 EndFunc
 
 Func Leveler_LoadZenSkillBar()
-	If Not Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Party] Skill template can only be loaded in an outpost")
-		Return False
+	; Slot-by-slot, not Skill_LoadSkillBar. Safe in the mission as well as the outpost.
+	If Wine_IsWine() And Wine_MapIsLoading() Then
+		Out("[Party] Skipping Zen bar writes while the map is loading")
+		Return True
 	EndIf
 	$g_b_UAIReady = False
 	; OwVCEnYyHw1cQPoBoQRIAA skills. Do not use Skill_LoadSkillBar (0x005D);

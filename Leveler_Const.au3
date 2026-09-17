@@ -324,6 +324,13 @@ Global Const $SKILL_CRY_OF_FRUSTRATION = 57
 Global Const $SKILL_POWER_DRAIN = 25
 Global Const $SKILL_BACKFIRE = 54
 Global Const $SKILL_SPIRIT_RIFT = 910
+; Michiko in Kaineng Center (Complete Skills Training). NPC id 62 at 420,1388.
+Global Const $MICHIKO_X = 420.00
+Global Const $MICHIKO_Y = 1388.00
+Global Const $MODEL_MICHIKO = 62
+; Zhao Di in Shing Jea Monastery courtyard.
+Global Const $ZHAO_DI_X = -8790.00
+Global Const $ZHAO_DI_Y = 10366.00
 
 ; Weapon / armor gold
 Global Const $MODEL_CLAIRVOYANT_STAFF = 11647
@@ -364,8 +371,23 @@ Global $g_h_RiftCooldown = 0
 Global $g_s_CurrentHeader = ""
 Global $g_b_UAIReady = False
 Global $g_i_LastUAIMap = 0
+Global $g_h_WineUAICacheAt = 0
 Global $g_b_ConnectionLost = False
+; One Return-to-Outpost packet per wipe. Re-sending while Connecting hangs Gw.
+Global $g_b_WipeReturnSent = False
+Global $g_h_WipeReturnAt = 0
 ; One-time recovery after a completed Lost Treasure restart: path Cho -> Ran Musu -> Tengu.
 Global $g_b_LostTreasureToTenguOnce = False
 ; Set on Start only. Stay in an explorable after a client/script restart; do not block the next quest.
 Global $g_b_ExplorableResume = False
+; Out() also appends here so a black Wine GUI still leaves a log.
+Global $g_s_LevelerLogFile = ""
+Global $g_h_LastGuiOut = 0
+; How we last saw Zen mission allies: hench / agent-togo / togo+vhang / togo+vhang-party / togo+vhang-lv (Rt20+E15 only).
+Global $g_s_ZenAllyDetect = ""
+Global $g_h_ZenAllyCacheAt = 0
+Global $g_b_ZenAllyCache = False
+Global $g_s_ZenAllyCacheDetect = ""
+Global $g_h_ZenAllyLogAt = 0
+; Zen escort waypoint index. Survives a single MoveTo timeout so we do not restart at 0.
+Global $g_i_ZenEscortWp = 0
