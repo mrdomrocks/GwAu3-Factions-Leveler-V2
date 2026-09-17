@@ -324,9 +324,10 @@ Global Const $SKILL_CRY_OF_FRUSTRATION = 57
 Global Const $SKILL_POWER_DRAIN = 25
 Global Const $SKILL_BACKFIRE = 54
 Global Const $SKILL_SPIRIT_RIFT = 910
-; Michiko in Kaineng Center (Complete Skills Training).
+; Michiko in Kaineng Center (Complete Skills Training). NPC id 62 at 420,1388.
 Global Const $MICHIKO_X = 420.00
 Global Const $MICHIKO_Y = 1388.00
+Global Const $MODEL_MICHIKO = 62
 ; Zhao Di in Shing Jea Monastery courtyard.
 Global Const $ZHAO_DI_X = -8790.00
 Global Const $ZHAO_DI_Y = 10366.00

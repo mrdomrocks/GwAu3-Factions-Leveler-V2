@@ -547,17 +547,30 @@ Func Leveler_GetAgentByName($a_s_Name)
 	Return 0
 EndFunc
 
-; Wine names are often empty. Kaineng: Michiko at 420,1388. Then name / profession / lvl 10.
+; Wine names are often empty. Kaineng: Michiko npc id 62 at 420,1388.
+Func Leveler_FindMichikoAgent()
+	Local $l_i_ByModel = Leveler_GetAgentByModel($MODEL_MICHIKO)
+	If $l_i_ByModel <> 0 Then Return $l_i_ByModel
+	If Agent_GetAgentPtr($MODEL_MICHIKO) <> 0 And Not Agent_GetAgentInfo($MODEL_MICHIKO, "IsDead") Then
+		If Agent_GetDistanceToXY($MICHIKO_X, $MICHIKO_Y, $MODEL_MICHIKO) < 800 Then Return $MODEL_MICHIKO
+	EndIf
+	Local $l_i_Named = Leveler_GetAgentByName("Michiko")
+	If $l_i_Named <> 0 Then Return $l_i_Named
+	Return Leveler_GetNearestNPCAt($MICHIKO_X, $MICHIKO_Y, 500)
+EndFunc
+
+; Wine names are often empty. Kaineng: Michiko id 62 at 420,1388. Then name / profession / lvl 10.
 Func Leveler_FindSkillTrainerAgent()
 	Local $l_i_Map = Map_GetMapID()
 	If $l_i_Map = $MAP_KAINENG Then
-		Local $l_i_At = Leveler_GetAgentByName("Michiko")
-		If $l_i_At = 0 Then $l_i_At = Leveler_GetNearestNPCAt($MICHIKO_X, $MICHIKO_Y, 500)
+		Local $l_i_At = Leveler_FindMichikoAgent()
 		If $l_i_At <> 0 Then
-			Out("[Step] Michiko at " & Round(Agent_GetAgentInfo($l_i_At, "X")) & "," & Round(Agent_GetAgentInfo($l_i_At, "Y")) & _
-					" id=" & $l_i_At & " lv=" & Number(Agent_GetAgentInfo($l_i_At, "Level")) & _
+			Out("[Step] Michiko npc id=" & $MODEL_MICHIKO & " agent=" & $l_i_At & _
+					" at " & Round(Agent_GetAgentInfo($l_i_At, "X")) & "," & Round(Agent_GetAgentInfo($l_i_At, "Y")) & _
+					" lv=" & Number(Agent_GetAgentInfo($l_i_At, "Level")) & _
 					" prof=" & Number(Agent_GetAgentInfo($l_i_At, "Primary")) & _
 					" all=" & Number(Agent_GetAgentInfo($l_i_At, "Allegiance")) & _
+					" model=" & Number(Agent_GetAgentInfo($l_i_At, "PlayerNumber")) & _
 					" name=" & String(Agent_GetAgentInfo($l_i_At, "Name")))
 			Return $l_i_At
 		EndIf

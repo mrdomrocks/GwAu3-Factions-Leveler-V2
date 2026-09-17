@@ -933,10 +933,10 @@ Func Leveler_BuyMissingTrainerSkills()
 	Local $l_f_Y = 0
 	Local $l_i_Npc = 0
 	If Map_GetMapID() = $MAP_KAINENG Then
-		Out("[Step] Walk to Michiko at " & Round($MICHIKO_X) & "," & Round($MICHIKO_Y))
+		Out("[Step] Walk to Michiko npc id " & $MODEL_MICHIKO & " at " & Round($MICHIKO_X) & "," & Round($MICHIKO_Y))
 		$l_f_X = $MICHIKO_X
 		$l_f_Y = $MICHIKO_Y
-		$l_i_Npc = Leveler_FindSkillTrainerAgent()
+		$l_i_Npc = Leveler_FindMichikoAgent()
 	ElseIf Map_GetMapID() = $MAP_SHING_JEA Then
 		$l_f_X = $ZHAO_DI_X
 		$l_f_Y = $ZHAO_DI_Y
@@ -948,7 +948,11 @@ Func Leveler_BuyMissingTrainerSkills()
 		$l_f_Y = Agent_GetAgentInfo($l_i_Npc, "Y")
 	EndIf
 	Local $l_i_Model = 0
-	If $l_i_Npc <> 0 Then $l_i_Model = Agent_GetAgentInfo($l_i_Npc, "PlayerNumber")
+	If Map_GetMapID() = $MAP_KAINENG Then
+		$l_i_Model = $MODEL_MICHIKO
+	ElseIf $l_i_Npc <> 0 Then
+		$l_i_Model = Agent_GetAgentInfo($l_i_Npc, "PlayerNumber")
+	EndIf
 	If Not Leveler_MoveAndDialog($l_f_X, $l_f_Y, $DIALOG_GENERIC_TALK, False, $l_i_Model) Then
 		If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetNearestNPCAt($l_f_X, $l_f_Y, 500)
 		If $l_i_Npc = 0 Then Return False
