@@ -380,5 +380,6 @@ Global $g_s_ZenAllyDetect = ""
 Global $g_h_ZenAllyCacheAt = 0
 Global $g_b_ZenAllyCache = False
 Global $g_s_ZenAllyCacheDetect = ""
+Global $g_h_ZenAllyLogAt = 0
 ; Zen escort waypoint index. Survives a single MoveTo timeout so we do not restart at 0.
 Global $g_i_ZenEscortWp = 0

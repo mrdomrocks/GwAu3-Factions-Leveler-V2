@@ -210,6 +210,10 @@ Func Leveler_AttachToGw()
 	$g_s_WineExitReplay = ""
 	$g_i_WineDrainSeenLast = 0
 	$g_h_WineEnterMissAt = 0
+	$g_h_ZenAllyCacheAt = 0
+	$g_b_ZenAllyCache = False
+	$g_s_ZenAllyCacheDetect = ""
+	$g_h_ZenAllyLogAt = 0
 	$g_b_WipeReturnSent = False
 	$g_h_WipeReturnAt = 0
 	Local $l_s_Name = StringStripWS(GUICtrlRead($g_h_NameCombo), 3)

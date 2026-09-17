@@ -804,6 +804,7 @@ Func Wine_EnterChallenge()
 				Int(TimerDiff($g_h_WineEnterMissAt) / 1000) & "s ago).")
 		Return False
 	EndIf
+	Leveler_WineLogZenAllyScan("before Enter clicks")
 
 	Local $hWnd = $g_h_GWWindow
 	If $hWnd = 0 Then $hWnd = Wine_FindGwHwnd($g_i_GWProcessId)

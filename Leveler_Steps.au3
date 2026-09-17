@@ -30,10 +30,13 @@ Func Leveler_ExecuteStep($a_i_Step)
 		If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	EndIf
 	If Wine_IsWine() And Leveler_WineHeldZenExplorable() And Leveler_PartyHasZenMissionAllies() Then
+		Leveler_WineLogZenAllyScan("in-mission")
 		Out("[Step] Wine: mission allies present (" & $g_s_ZenAllyDetect & "); map " & Map_GetMapID() & _
 				" current " & Leveler_LiveMapID() & "; not a wipe")
 	ElseIf Wine_IsWine() And Leveler_WineAtZenOutpost() Then
-		Out("[Step] Wine: Zen outpost map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "; not in-mission (Togo NPC does not skip Enter)")
+		Leveler_WineLogZenAllyScan("outpost")
+		Out("[Step] Wine: Zen outpost map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & _
+				"; not in-mission (Togo NPC does not skip Enter)")
 	ElseIf Wine_IsWine() And Leveler_WinePlayerClearlyAlive() Then
 		Out("[Step] Wine: player alive on map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "; not a wipe")
 	ElseIf Leveler_IsWiped() Then

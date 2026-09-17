@@ -244,11 +244,14 @@ Func Leveler_HasMissionObjectives()
 EndFunc
 
 ; Master Togo / Vhang are mission allies, not hired hench. Hench count is 0 in Zen.
+; Wine often leaves Agent Name empty (26a90ef logged agent-togo-rt, not "Togo").
 Func Leveler_FindLivingZenTogoAgent()
 	If Not Leveler_AgentMemoryLive() Then Return 0
+	Local $l_i_Me = Number(Agent_GetMyID())
 	Local $l_i_Max = Agent_GetMaxAgents()
 	Local $i
 	For $i = 1 To $l_i_Max - 1
+		If $l_i_Me <> 0 And Number($i) = $l_i_Me Then ContinueLoop
 		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
 		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
 		Local $l_s_Name = String(Agent_GetAgentInfo($i, "Name"))
@@ -267,21 +270,25 @@ Func Leveler_FindLivingZenTogoAgent()
 EndFunc
 
 ; Headmaster Vhang (E15) is a Zen mission ally. He is never the outpost town NPC.
+; Do not require ALLY: mission allies often read as NPC under Wine, same as Togo.
 Func Leveler_FindLivingZenVhangAgent()
 	If Not Leveler_AgentMemoryLive() Then Return 0
+	Local $l_i_Me = Number(Agent_GetMyID())
 	Local $l_i_Max = Agent_GetMaxAgents()
 	Local $i
 	For $i = 1 To $l_i_Max - 1
+		If $l_i_Me <> 0 And Number($i) = $l_i_Me Then ContinueLoop
 		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
 		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
 		Local $l_s_Name = String(Agent_GetAgentInfo($i, "Name"))
 		If StringInStr($l_s_Name, "Vhang") Then Return $i
 		If StringInStr($l_s_Name, "Togo") Then ContinueLoop
+		If Leveler_IsTogoModel(Number(Agent_GetAgentInfo($i, "PlayerNumber"))) Then ContinueLoop
 		Local $l_i_Lvl = Number(Agent_GetAgentInfo($i, "Level"))
 		Local $l_i_Prof = Number(Agent_GetAgentInfo($i, "Primary"))
 		Local $l_i_All = Number(Agent_GetAgentInfo($i, "Allegiance"))
 		If $l_i_Lvl >= 14 And $l_i_Lvl <= 16 And $l_i_Prof = $GC_I_PROFESSION_ELEMENTALIST Then
-			If $l_i_All = $GC_I_ALLEGIANCE_ALLY Then Return $i
+			If $l_i_All = 0 Or $l_i_All = $GC_I_ALLEGIANCE_NPC Or $l_i_All = $GC_I_ALLEGIANCE_ALLY Then Return $i
 		EndIf
 	Next
 	Return 0
@@ -300,52 +307,69 @@ Func Leveler_PartyOthersContains($a_i_Agent)
 	Return False
 EndFunc
 
-; True only when Master Togo AND Headmaster Vhang are both living. Outpost town
-; Togo (NPC, no Vhang) must not count. Map/CurrentMapID may still read 213.
+Func Leveler_WineZenAllyAgentBrief($a_i_Agent)
+	If $a_i_Agent = 0 Then Return "0"
+	Local $l_s_Name = String(Agent_GetAgentInfo($a_i_Agent, "Name"))
+	If $l_s_Name = "" Then $l_s_Name = "-"
+	Return $a_i_Agent & " lv=" & Number(Agent_GetAgentInfo($a_i_Agent, "Level")) & _
+			" prof=" & Number(Agent_GetAgentInfo($a_i_Agent, "Primary")) & _
+			" all=" & Number(Agent_GetAgentInfo($a_i_Agent, "Allegiance")) & _
+			" name=" & $l_s_Name
+EndFunc
+
+Func Leveler_WineZenAllyScanText()
+	Local $l_i_Togo = Leveler_FindLivingZenTogoAgent()
+	Local $l_i_Vhang = Leveler_FindLivingZenVhangAgent()
+	Local $l_i_Others = Number(Party_GetMyPartyInfo("ArrayOthersPartyMemberSize"))
+	Return "togo=" & Leveler_WineZenAllyAgentBrief($l_i_Togo) & " vhang=" & Leveler_WineZenAllyAgentBrief($l_i_Vhang) & _
+			" others=" & $l_i_Others
+EndFunc
+
+; True only when Master Togo AND Headmaster Vhang are both living (or Togo is
+; in party Others with a second ally). Outpost town Togo (NPC, no Vhang, not
+; in party Others) must not count. Map/CurrentMapID may still read 213.
+; Wine names are often empty; profession/level is enough. Do not require ALLY.
 Func Leveler_WineZenPartyAlliesTogether()
 	If Not Wine_IsWine() Then Return False
-	If $g_h_ZenAllyCacheAt <> 0 And TimerDiff($g_h_ZenAllyCacheAt) < 400 Then
-		If $g_b_ZenAllyCache Then $g_s_ZenAllyDetect = $g_s_ZenAllyCacheDetect
-		Return $g_b_ZenAllyCache
+	If $g_b_ZenAllyCache And $g_h_ZenAllyCacheAt <> 0 And TimerDiff($g_h_ZenAllyCacheAt) < 400 Then
+		$g_s_ZenAllyDetect = $g_s_ZenAllyCacheDetect
+		Return True
 	EndIf
 	If Not Leveler_AgentMemoryLive() Then Return False
 	Local $l_i_Togo = Leveler_FindLivingZenTogoAgent()
-	If $l_i_Togo = 0 Then
-		$g_h_ZenAllyCacheAt = TimerInit()
-		$g_b_ZenAllyCache = False
-		$g_s_ZenAllyCacheDetect = ""
-		Return False
-	EndIf
+	If $l_i_Togo = 0 Then Return False
 	Local $l_i_Vhang = Leveler_FindLivingZenVhangAgent()
-	If $l_i_Vhang = 0 Or $l_i_Vhang = $l_i_Togo Then
+	Local $l_i_Others = Number(Party_GetMyPartyInfo("ArrayOthersPartyMemberSize"))
+	Local $l_b_TogoOther = Leveler_PartyOthersContains($l_i_Togo)
+	If $l_i_Vhang <> 0 And $l_i_Vhang <> $l_i_Togo Then
+		If $l_b_TogoOther And Leveler_PartyOthersContains($l_i_Vhang) Then
+			$g_s_ZenAllyDetect = "togo+vhang-party"
+		ElseIf StringInStr(String(Agent_GetAgentInfo($l_i_Togo, "Name")), "Togo") And _
+				StringInStr(String(Agent_GetAgentInfo($l_i_Vhang, "Name")), "Vhang") Then
+			$g_s_ZenAllyDetect = "togo+vhang"
+		Else
+			$g_s_ZenAllyDetect = "togo+vhang-lv"
+		EndIf
 		$g_h_ZenAllyCacheAt = TimerInit()
-		$g_b_ZenAllyCache = False
-		$g_s_ZenAllyCacheDetect = ""
-		Return False
+		$g_b_ZenAllyCache = True
+		$g_s_ZenAllyCacheDetect = $g_s_ZenAllyDetect
+		Return True
 	EndIf
-	Local $l_s_Togo = String(Agent_GetAgentInfo($l_i_Togo, "Name"))
-	Local $l_s_Vhang = String(Agent_GetAgentInfo($l_i_Vhang, "Name"))
-	Local $l_i_TogoAll = Number(Agent_GetAgentInfo($l_i_Togo, "Allegiance"))
-	Local $l_i_VhangAll = Number(Agent_GetAgentInfo($l_i_Vhang, "Allegiance"))
-	Local $l_b_Named = StringInStr($l_s_Togo, "Togo") And StringInStr($l_s_Vhang, "Vhang")
-	Local $l_b_Ally = ($l_i_TogoAll = $GC_I_ALLEGIANCE_ALLY And $l_i_VhangAll = $GC_I_ALLEGIANCE_ALLY)
-	If Not $l_b_Named And Not $l_b_Ally Then
+	; Party Others list is the Allies pane (Togo+Vhang). Town Togo is not in it.
+	If $l_b_TogoOther And $l_i_Others >= 2 Then
+		$g_s_ZenAllyDetect = "togo+others"
 		$g_h_ZenAllyCacheAt = TimerInit()
-		$g_b_ZenAllyCache = False
-		$g_s_ZenAllyCacheDetect = ""
-		Return False
+		$g_b_ZenAllyCache = True
+		$g_s_ZenAllyCacheDetect = $g_s_ZenAllyDetect
+		Return True
 	EndIf
-	If Leveler_PartyOthersContains($l_i_Togo) And Leveler_PartyOthersContains($l_i_Vhang) Then
-		$g_s_ZenAllyDetect = "togo+vhang-party"
-	ElseIf $l_b_Named Then
-		$g_s_ZenAllyDetect = "togo+vhang"
-	Else
-		$g_s_ZenAllyDetect = "togo+vhang-ally"
-	EndIf
-	$g_h_ZenAllyCacheAt = TimerInit()
-	$g_b_ZenAllyCache = True
-	$g_s_ZenAllyCacheDetect = $g_s_ZenAllyDetect
-	Return True
+	Return False
+EndFunc
+
+Func Leveler_WineLogZenAllyScan($a_s_Why)
+	If $g_h_ZenAllyLogAt <> 0 And TimerDiff($g_h_ZenAllyLogAt) < 3000 Then Return
+	$g_h_ZenAllyLogAt = TimerInit()
+	Out("Wine: Zen ally scan (" & $a_s_Why & "): " & Leveler_WineZenAllyScanText())
 EndFunc
 
 Func Leveler_PartyHasZenMissionAllies()
