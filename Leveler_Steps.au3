@@ -367,7 +367,8 @@ EndFunc
 ; Michiko in Kaineng sells Cry of Frustration, Power Drain, and Backfire.
 Func Leveler_BuyKainengInterrupts()
 	If Leveler_Skills2Unlocked() Then
-		Return Leveler_EquipTrainerSkills()
+		Out("[Step] Michiko skills already learnt; skip buy")
+		Return True
 	EndIf
 	If Map_GetMapID() <> $MAP_KAINENG Then Return False
 	Local $l_i_Npc = Leveler_GetAgentByName("Michiko")
@@ -393,7 +394,7 @@ Func Leveler_BuyKainengInterrupts()
 	Else
 		Out("[Step] Bought Cry of Frustration and Power Drain from Michiko")
 	EndIf
-	Return Leveler_EquipTrainerSkills()
+	Return True
 EndFunc
 
 Func Leveler_NearSunquaTogoStart()
@@ -1247,19 +1248,29 @@ EndFunc
 Func Leveler_Step_CompleteSkillsTraining()
 	$g_s_CurrentHeader = "Complete Skills Training"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_Skills2Unlocked() Then
-		Out("[Step] Final trainer skills already acquired")
-		Return Leveler_EquipTrainerSkills()
+	If Leveler_Skills2OnBar() Then
+		Out("[Step] Skills training bar is already equipped")
+		Return True
 	EndIf
-	If Map_GetMapID() <> $MAP_KAINENG Or Not Map_GetInstanceInfo("IsOutpost") Then
-		If Not Leveler_Travel($MAP_KAINENG) Then Return False
-	EndIf
-	Leveler_SetPacifist()
-	If Not Leveler_BuyKainengInterrupts() Then Return False
 	If Not Leveler_Skills2Unlocked() Then
-		Out("[Step] Michiko skills were not all learnt. Staying on the trainer.")
+		If Map_GetMapID() <> $MAP_KAINENG Or Not Map_GetInstanceInfo("IsOutpost") Then
+			If Not Leveler_Travel($MAP_KAINENG) Then Return False
+		EndIf
+		Leveler_SetPacifist()
+		If Not Leveler_BuyKainengInterrupts() Then Return False
+		If Not Leveler_Skills2Unlocked() Then
+			Out("[Step] Michiko skills were not all learnt. Staying on the trainer.")
+			Return False
+		EndIf
+	Else
+		Out("[Step] Final trainer skills already acquired. Applying the skill bar.")
+	EndIf
+	If Not Leveler_ApplySkills2Bar() Then Return False
+	If Not Leveler_Skills2OnBar() Then
+		Out("[Step] Required skills are not all on the bar yet")
 		Return False
 	EndIf
+	Out("[Step] Skills training bar equipped")
 	Return True
 EndFunc
 

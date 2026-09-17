@@ -320,9 +320,10 @@ Global Const $SKILL_ENERGY_BURN = 42
 Global Const $SKILL_LEECH_SIGNET = 61
 Global Const $SKILL_SIGNET_OF_DISRUPTION = 860
 ; Xu Fengxia / Michiko (Ran Musu, then Kaineng).
+; GwAu3 Const_Skill: 25 Power Drain, 28 Backfire, 54 is Crippling Anguish (elite).
 Global Const $SKILL_CRY_OF_FRUSTRATION = 57
 Global Const $SKILL_POWER_DRAIN = 25
-Global Const $SKILL_BACKFIRE = 54
+Global Const $SKILL_BACKFIRE = 28
 Global Const $SKILL_SPIRIT_RIFT = 910
 
 ; Weapon / armor gold
