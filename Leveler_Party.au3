@@ -220,12 +220,13 @@ EndFunc
 Func Leveler_InMissionInstance($a_i_MapID = 0)
 	If Map_GetInstanceInfo("IsLoading") Then Return False
 	If Map_GetInstanceInfo("IsOutpost") Then Return False
-	If Not Map_GetInstanceInfo("IsExplorable") Then Return False
-	If $a_i_MapID <> 0 And Map_GetMapID() = $a_i_MapID Then Return True
-	; Cho and Zen keep the outpost map ID when the mission instance loads.
+	; Cho and Zen keep the outpost map ID in the mission. Wine may also
+	; leave IsExplorable unset while still inside those instances.
 	If Map_GetMapID() = $MAP_CHO_OUTPOST Then Return True
 	If Map_GetMapID() = $MAP_ZEN_OP Then Return True
 	If Map_GetMapID() = $MAP_ZEN_EXP Then Return True
+	If Not Map_GetInstanceInfo("IsExplorable") Then Return False
+	If $a_i_MapID <> 0 And Map_GetMapID() = $a_i_MapID Then Return True
 	Return False
 EndFunc
 

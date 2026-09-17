@@ -1263,22 +1263,34 @@ Func Leveler_Step_CompleteSkillsTraining()
 	Return True
 EndFunc
 
+; Past-Zen character stranded on map 213 / 246: travel onward. Never Enter Challenge.
+Func Leveler_LeaveCompletedZenMap()
+	Out("[Step] Zen Daijun is already complete. Leaving this map instead of Enter Challenge.")
+	Local $l_ai_Dest[5] = [$MAP_EOTN, $MAP_BOREAL, $MAP_KAINENG, $MAP_MARKETPLACE, $MAP_SEITUNG]
+	Local $i
+	For $i = 0 To 4
+		If Map_IsMapUnlocked($l_ai_Dest[$i]) Then
+			Out("[Step] Traveling onward to unlocked map " & $l_ai_Dest[$i])
+			If Leveler_Travel($l_ai_Dest[$i]) Then Return True
+		EndIf
+	Next
+	For $i = 0 To 4
+		Out("[Step] Unlock flags may be stale; trying map " & $l_ai_Dest[$i])
+		If Leveler_Travel($l_ai_Dest[$i]) Then Return True
+	Next
+	Out("[Step] Could not leave the Zen map")
+	Return False
+EndFunc
+
 Func Leveler_Step_ZenDaijunMission()
 	$g_s_CurrentHeader = "Zen Daijun Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_ZenDaijunAlreadyComplete() Then
-		If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
-			Out("[Step] Zen Daijun is already complete. Leaving the mission instance instead of replaying the escort.")
-			If Map_IsMapUnlocked($MAP_MARKETPLACE) Then
-				If Not Leveler_Travel($MAP_MARKETPLACE) Then Leveler_Travel($MAP_SEITUNG)
-			ElseIf Map_IsMapUnlocked($MAP_KAINENG) Then
-				If Not Leveler_Travel($MAP_KAINENG) Then Leveler_Travel($MAP_SEITUNG)
-			Else
-				Leveler_Travel($MAP_SEITUNG)
-			EndIf
-		Else
-			Out("[Step] Zen Daijun already completed (Marketplace / Kaineng / EotN progress)")
+		Local $l_i_Map = Map_GetMapID()
+		If Leveler_InMissionInstance($MAP_ZEN_EXP) Or $l_i_Map = $MAP_ZEN_OP Or $l_i_Map = $MAP_ZEN_EXP Then
+			Return Leveler_LeaveCompletedZenMap()
 		EndIf
+		Out("[Step] Zen Daijun already completed (Marketplace / Kaineng / EotN / max armor)")
 		Return True
 	EndIf
 	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
