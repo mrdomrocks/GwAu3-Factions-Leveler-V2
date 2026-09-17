@@ -1425,6 +1425,63 @@ Func Wine_WritePendingMove($a_f_X, $a_f_Y)
 	Return Wine_PtrsEq(Memory_Read($pFlag), $pCmd)
 EndFunc
 
+; Reuse the same-page PendingMove slot (EngineTicks page) for PacketSend.
+; MainProc already `call ebx`s whatever ptr is in PendingMove; do not change MainProc.
+; Layout after the consume clears the ptr: [flag+4]=size [flag+8]=header [flag+12]=param.
+Func Wine_WaitPendingIdle($a_i_Timeout = 1500)
+	Local $h = TimerInit()
+	While Wine_ReadPendingMove() <> 0
+		If TimerDiff($h) >= $a_i_Timeout Then Return False
+		Sleep(40)
+	WEnd
+	Return True
+EndFunc
+
+Func Wine_WritePendingPacket($a_i_Size, $a_i_Header, $a_i_Param1)
+	Local $pFlag = Wine_LabelUserPtr("PendingMove")
+	Local $pXYZ = Wine_LabelUserPtr("PendingXYZ")
+	Local $pCmd = Wine_LabelUserPtr("CommandPacketSend")
+	If $pFlag = 0 Or $pXYZ = 0 Or $pCmd = 0 Then Return False
+	If Not Wine_WaitPendingIdle(1500) Then
+		Out("Wine packet: PendingMove still armed; not overwriting a live Move")
+		Return False
+	EndIf
+	Memory_Write($pFlag, 0)
+	Memory_Write($pXYZ, Number($a_i_Size))
+	Memory_Write($pXYZ + 4, Number($a_i_Header))
+	Memory_Write($pXYZ + 8, Number($a_i_Param1))
+	Memory_Write($pFlag, $pCmd)
+	Wine_FlushGw($pFlag, 16)
+	Return Wine_PtrsEq(Memory_Read($pFlag), $pCmd)
+EndFunc
+
+; Invite a hench: QueueBase Core_SendPacket (may be invisible) plus same-page
+; PendingMove -> CommandPacketSend (the path that walked).
+Func Wine_InviteHench($a_i_NpcId)
+	If Not Wine_IsWine() Then
+		Party_AddNpc($a_i_NpcId)
+		Return True
+	EndIf
+	If Not Wine_CommandsReady() Then
+		If Not Wine_EnsureCommandQueue() Then
+			Wine_LogCommandGap()
+			Party_AddNpc($a_i_NpcId)
+			Return False
+		EndIf
+	EndIf
+	Wine_WireCommandStructs()
+	Local $pCmd = Wine_LabelUserPtr("CommandPacketSend")
+	Party_AddNpc($a_i_NpcId)
+	Local $bPend = False
+	If $pCmd <> 0 Then
+		$bPend = Wine_WritePendingPacket(0x8, $GC_I_HEADER_PARTY_INVITE_NPC, $a_i_NpcId)
+	EndIf
+	Out("Wine hench: invite id=" & $a_i_NpcId & " pending=" & Number($bPend) & _
+			" cmdPkt=" & Wine_HexPtr($pCmd) & Wine_DrainStateLine("invite"))
+	Wine_WaitPendingIdle(1200)
+	Return $bPend
+EndFunc
+
 ; Re-wire CommandMove, rewrite stubs on our Queue page, and re-point the one
 ; Engine JMP at the current MainProc. A live-looking 8D4004 stub is not enough
 ; if Engine never runs that page.

@@ -1321,8 +1321,9 @@ Func Leveler_Step_ZenDaijunMission()
 			EndIf
 		EndIf
 		If Wine_IsWine() Then
-			Out("[Step] Wine: set the Zen bar by slot, then click Enter Mission (no Skill_LoadSkillBar / hench packets)")
+			Out("[Step] Wine: set the Zen bar by slot, invite Zen henches, then click Enter Mission")
 			Leveler_LoadZenSkillBar()
+			If Not Leveler_PrepareMissionParty($MAP_ZEN_OP) Then Return False
 		Else
 			Out("[Step] Load skill bar, then henchmen, then enter")
 			If Not Leveler_LoadZenSkillBar() Then Return False

@@ -114,7 +114,11 @@ Func Leveler_AddHenchmanList(ByRef $a_ai_Hench)
 	For $i = 0 To UBound($a_ai_Hench) - 1
 		If $i > 0 Then $l_s_List &= ", "
 		$l_s_List &= $a_ai_Hench[$i]
-		Party_AddNpc($a_ai_Hench[$i])
+		If Wine_IsWine() Then
+			Wine_InviteHench($a_ai_Hench[$i])
+		Else
+			Party_AddNpc($a_ai_Hench[$i])
+		EndIf
 		Sleep(250)
 	Next
 	Sleep(500)
@@ -193,12 +197,20 @@ Func Leveler_PrepareForBattle()
 	Return True
 EndFunc
 
-Func Leveler_PrepareMissionParty()
+Func Leveler_PrepareMissionParty($a_i_Map = 0)
 	$g_b_CombatMode = True
-	Local $l_ai_Want = Leveler_HenchmenForMap()
+	; Mid-mission (246 or Togo+Vhang) cannot add henches. Outpost 213 only.
+	If Wine_IsWine() And Leveler_WineHeldZenExplorable() Then
+		Out("[Party] Wine: already in Zen; not inviting henches")
+		Return True
+	EndIf
+	If $a_i_Map = 0 Then $a_i_Map = Map_GetMapID()
+	If Wine_IsWine() And Leveler_WineAtZenOutpost() Then $a_i_Map = $MAP_ZEN_OP
+	Local $l_ai_Want = Leveler_HenchmenForMap($a_i_Map)
 	Local $l_i_Want = UBound($l_ai_Want)
 	If Leveler_HenchmanCount() < $l_i_Want Then
 		; Do not LeaveGroup here. Kick + Enter Mission disconnects.
+		Out("[Party] Inviting mission henchmen for map " & $a_i_Map)
 		Leveler_AddHenchmanList($l_ai_Want)
 		Local $l_h_Timer = TimerInit()
 		While TimerDiff($l_h_Timer) < 5000
@@ -208,6 +220,7 @@ Func Leveler_PrepareMissionParty()
 		Out("[Party] Henchmen in party: " & Leveler_HenchmanCount() & "/" & $l_i_Want)
 	Else
 		Out("[Party] Mission henchmen already in the party")
+		Out("[Party] Henchmen in party: " & Leveler_HenchmanCount() & "/" & $l_i_Want)
 	EndIf
 	Sleep(1500)
 	Return True
