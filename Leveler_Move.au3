@@ -99,6 +99,8 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 		Leveler_LiveXY($l_f_Hx, $l_f_Hy)
 		If Wine_IsWine() And $l_f_Hx = 0 And $l_f_Hy = 0 Then
 			; Agent pos unread — do not block 45s on HoldForTogo from (0,0).
+		ElseIf Wine_IsWine() And Leveler_DistToXY($a_f_X, $a_f_Y) >= $LEVELER_ARRIVE_RANGE Then
+			; Missed the walk — do not sit in WaitOutOfCombat while pos is frozen.
 		Else
 			If Not Leveler_WaitOutOfCombat(45000) Then Return False
 			If Not Leveler_HoldForTogo() Then Return False
@@ -189,7 +191,11 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 		Local $l_s_Src = Leveler_LiveXY($l_f_X, $l_f_Y)
 		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 5000 Then
 			Out("[Move] walking map " & $l_i_StartMap & " pos " & Round($l_f_X) & "," & Round($l_f_Y) & _
-					" src=" & $l_s_Src & " toward " & Round($a_f_X) & "," & Round($a_f_Y))
+					" src=" & $l_s_Src & " toward " & Round($a_f_X) & "," & Round($a_f_Y) & _
+					" ticks=" & Wine_EngineTickCount())
+			If Wine_IsWine() And $l_b_HavePos And Abs($l_f_X - $l_f_LastX) < 40 And Abs($l_f_Y - $l_f_LastY) < 40 Then
+				Wine_RefreshCommandMove("pos unchanged across walk logs at " & Round($l_f_X) & "," & Round($l_f_Y))
+			EndIf
 			$l_i_LastLog = TimerDiff($l_h_Timer)
 		EndIf
 		; Wine: Agent 0,0 never shrinks distance. After ~12s of live QueueBase moves, count as arrived.
@@ -198,17 +204,19 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 			Return True
 		EndIf
 		If Wine_IsWine() And ($l_f_X <> 0 Or $l_f_Y <> 0) Then
-			If $l_b_HavePos Then
+			If Not $l_b_HavePos Then
+				$l_h_Stuck = TimerInit()
+			Else
 				Local $l_f_Stay = Sqrt(($l_f_X - $l_f_LastX) * ($l_f_X - $l_f_LastX) + ($l_f_Y - $l_f_LastY) * ($l_f_Y - $l_f_LastY))
-				If $l_f_Stay < 25 Then
+				If $l_f_Stay < 40 Then
 					If $l_h_Stuck = 0 Then $l_h_Stuck = TimerInit()
-					If TimerDiff($l_h_Stuck) >= 7000 Then
+					If TimerDiff($l_h_Stuck) >= 5000 Then
 						$l_i_HopRound += 1
 						Wine_RefreshCommandMove("pos frozen at " & Round($l_f_X) & "," & Round($l_f_Y) & " for " & $l_i_HopRound)
 						$l_h_Stuck = TimerInit()
 					EndIf
 				Else
-					$l_h_Stuck = 0
+					$l_h_Stuck = TimerInit()
 					If Leveler_DistToXY($a_f_X, $a_f_Y) < 400 Then $l_i_HopRound = 0
 				EndIf
 			EndIf

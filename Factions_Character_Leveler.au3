@@ -180,6 +180,9 @@ Func Leveler_AttachToGw()
 	$g_h_WineQueueLastTry = 0
 	$g_h_WineMoveLog = 0
 	$g_h_WineRefreshAt = 0
+	$g_i_WineTicksLast = -1
+	$g_h_WineTicksAt = 0
+	$g_p_WineEngineHook = 0
 	$g_b_WipeReturnSent = False
 	$g_h_WipeReturnAt = 0
 	Local $l_s_Name = StringStripWS(GUICtrlRead($g_h_NameCombo), 3)
