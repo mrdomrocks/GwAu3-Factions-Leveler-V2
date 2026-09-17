@@ -168,7 +168,7 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 			$l_i_LastLog = TimerDiff($l_h_Timer)
 		EndIf
 		; Wine: Agent 0,0 never shrinks distance. After ~12s of live QueueBase moves, count as arrived.
-		If Wine_IsWine() And $l_f_X = 0 And $l_f_Y = 0 And $l_i_Moves >= 40 And Wine_QueueWalkReady() Then
+		If Wine_IsWine() And $l_f_X = 0 And $l_f_Y = 0 And TimerDiff($l_h_Timer) >= 12000 And Wine_QueueWalkReady() Then
 			Out("[Move] Wine: pos still 0,0 after QueueBase-live moves; treating waypoint as arrived")
 			Return True
 		EndIf
