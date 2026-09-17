@@ -100,6 +100,7 @@ If Wine_IsWine() Then
 	Out("Runtime: " & Wine_RuntimeLabel() & " — attach by Gw.exe PID. Window title is often Guild Wars Reforged.")
 	Out("Scanner_GetLoggedCharNames is skipped on Wine so a timed local scan cannot cache 0/78 before Start.")
 	Out("Start calls Core_Initialize immediately. The first step installs a one-JMP queue (QueueBase + CommandMove) and will not re-click Enter Mission if already inside Zen.")
+	Out("Log file: " & @ScriptDir & "\Logs\leveler.log")
 Else
 	Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
 EndIf
@@ -419,8 +420,39 @@ Func GuiButtonHandler()
 	EndSwitch
 EndFunc
 
+Func Leveler_LogToFile($a_s_Text)
+	If $g_s_LevelerLogFile = "" Then
+		Local $l_s_Dir = @ScriptDir & "\Logs"
+		If Not FileExists($l_s_Dir) Then DirCreate($l_s_Dir)
+		$g_s_LevelerLogFile = $l_s_Dir & "\leveler.log"
+	EndIf
+	Local $l_h = FileOpen($g_s_LevelerLogFile, 1)
+	If $l_h = -1 Then Return
+	FileWriteLine($l_h, @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC & " " & $a_s_Text)
+	FileClose($l_h)
+EndFunc
+
+; Wine Sleep() often fails to paint. Invalidate so the window stays readable.
+Func Leveler_PumpGui()
+	If Wine_IsWine() And $g_h_MainGui <> 0 Then
+		DllCall("user32.dll", "bool", "InvalidateRect", "hwnd", $g_h_MainGui, "ptr", 0, "bool", False)
+	EndIf
+	Sleep(10)
+EndFunc
+
 Func Out($a_s_Text)
-	If $g_h_EditText = 0 Then Return
+	Leveler_LogToFile($a_s_Text)
+	If $g_h_EditText = 0 Then
+		Leveler_PumpGui()
+		Return
+	EndIf
+	; Wine RichEdit + TOPMOST goes solid black if we append on every scan tick.
+	If Wine_IsWine() And StringInStr($a_s_Text, "4KB scan:") Then
+		If $g_h_LastGuiOut <> 0 And TimerDiff($g_h_LastGuiOut) < 1500 Then
+			Leveler_PumpGui()
+			Return
+		EndIf
+	EndIf
 	Local $l_i_TextLen = StringLen($a_s_Text)
 	Local $l_i_ConsoleLen = _GUICtrlEdit_GetTextLen($g_h_EditText)
 	If $l_i_TextLen + $l_i_ConsoleLen > 30000 Then
@@ -429,6 +461,8 @@ Func Out($a_s_Text)
 	_GUICtrlRichEdit_SetCharColor($g_h_EditText, $COLOR_BLACK)
 	_GUICtrlEdit_AppendText($g_h_EditText, @CRLF & $a_s_Text)
 	_GUICtrlEdit_Scroll($g_h_EditText, $SB_BOTTOM)
+	$g_h_LastGuiOut = TimerInit()
+	Leveler_PumpGui()
 EndFunc
 
 Func GetChecked($a_h_Ctrl)

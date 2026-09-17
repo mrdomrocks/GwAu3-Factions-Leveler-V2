@@ -372,3 +372,6 @@ Global $g_h_WipeReturnAt = 0
 Global $g_b_LostTreasureToTenguOnce = False
 ; Set on Start only. Stay in an explorable after a client/script restart; do not block the next quest.
 Global $g_b_ExplorableResume = False
+; Out() also appends here so a black Wine GUI still leaves a log.
+Global $g_s_LevelerLogFile = ""
+Global $g_h_LastGuiOut = 0

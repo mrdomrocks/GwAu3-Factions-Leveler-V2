@@ -68,11 +68,15 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 			If Not Wine_EnsureCommandQueue() Then Wine_LogCommandGap()
 		EndIf
 	EndIf
-	Leveler_EnsurePathfinder()
+	; Wine mid-mission: Pathfinder_MoveTo infinite-waits when Agent X,Y are 0,
+	; and Initialize can block the GUI thread. Always Map_Move.
+	If Not (Wine_IsWine() And Leveler_InMissionInstance()) Then
+		Leveler_EnsurePathfinder()
+	EndIf
 
 	Local $l_v_Obstacles = 0
 	Local $l_i_Aggro = 0
-	If $a_b_Combat Then
+	If $a_b_Combat And Not (Wine_IsWine() And Leveler_InMissionInstance()) Then
 		Leveler_PrepareCombatAI()
 		$l_v_Obstacles = "Leveler_GetObstacles"
 		$l_i_Aggro = $LEVELER_AGGRO
@@ -82,8 +86,11 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_SpiritRiftWatch Then $l_s_Callback = "Leveler_InterruptSpiritRifts"
 
 	Local $l_b_Ok = False
-	; Wine mid-mission still reports map 213. Do not Pathfinder the outpost.
-	If (Wine_IsWine() And Leveler_InMissionInstance()) Or Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
+	; Wine: never Pathfinder_MoveTo. Agent X,Y=0 makes it wait forever and blacks the GUI.
+	If Wine_IsWine() Then
+		Out("[Move] Wine Map_Move to " & Round($a_f_X) & "," & Round($a_f_Y) & " QueueBase=" & Wine_HexPtr($g_p_QueueBase))
+		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 30000, $a_b_Combat)
+	ElseIf Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
 		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 30000, $a_b_Combat)
 	Else
 		$l_b_Ok = Pathfinder_MoveTo($a_f_X, $a_f_Y, -1, $l_v_Obstacles, $l_i_Aggro, $LEVELER_FIGHT_RANGE_OUT, 0, $l_s_Callback)
@@ -102,10 +109,16 @@ EndFunc
 Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $l_h_Timer = TimerInit()
+	Local $l_i_LastLog = -5000
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
 		If Map_GetMapID() <> $l_i_StartMap Then Return True
 		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 5000 Then
+			Out("[Move] walking map " & $l_i_StartMap & " toward " & Round($a_f_X) & "," & Round($a_f_Y))
+			$l_i_LastLog = TimerDiff($l_h_Timer)
+		EndIf
 		If $g_b_SpiritRiftWatch And Leveler_TogoNeedsHelp() Then
 			Leveler_FightWithTogo()
 			Sleep(250)
@@ -348,6 +361,7 @@ EndFunc
 ; Map-travel to the step outpost. Stay in the explorable if the step's quest is already in the log.
 Func Leveler_EnsureStepOutpost($a_i_Step)
 	If $a_i_Step = $LEVELER_STEP_DONE Then Return True
+	If Wine_IsWine() And Leveler_InMissionInstance() Then Return True
 	If Map_GetInstanceInfo("IsLoading") Then Return Leveler_WaitUntilMapReady()
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	Local $l_i_Map = Map_GetMapID()

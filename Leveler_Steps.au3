@@ -15,8 +15,12 @@ Func Leveler_ExecuteStep($a_i_Step)
 		Out("[Recover] Client is connecting; waiting for the outpost without sending packets.")
 		Return Leveler_WaitReturnToOutpost()
 	EndIf
-	If Not Leveler_WaitUntilMapReady() Then Return False
-	If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
+	If Wine_IsWine() And Leveler_InMissionInstance() Then
+		Out("[Step] Wine mid-mission: skip map-ready / outpost travel, run the step")
+	Else
+		If Not Leveler_WaitUntilMapReady() Then Return False
+		If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
+	EndIf
 	If Leveler_IsWiped() Then
 		Out("[Step] Wipe detected before '" & $g_as_StepNames[$a_i_Step] & "'. Recovering.")
 		Leveler_RecoverWipe()
@@ -1312,8 +1316,16 @@ Func Leveler_Step_ZenDaijunMission()
 	Else
 		If Not Leveler_WaitUntilMapReady() Then Return False
 	EndIf
-	Leveler_LoadZenSkillBar()
-	If Not Leveler_PrepareCombatAI() Then Return False
+	If Not (Wine_IsWine() And Leveler_InMissionInstance($MAP_ZEN_EXP)) Then
+		Leveler_LoadZenSkillBar()
+	EndIf
+	If Not Leveler_PrepareCombatAI() Then
+		If Wine_IsWine() And Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+			Out("[Step] Wine: combat cache failed; escorting anyway")
+		Else
+			Return False
+		EndIf
+	EndIf
 	If Leveler_IsWiped() Then Return False
 	; Wine: never escort on outpost 213. In-mission is held 246 or Togo (lvl20 Rt).
 	If Wine_IsWine() And Not Leveler_InMissionInstance($MAP_ZEN_EXP) Then

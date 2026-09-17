@@ -393,6 +393,11 @@ EndFunc
 ; After held 246 / Togo: wait out the load before skill bar, queue refresh, or Move.
 Func Leveler_WaitWineWorldSettled($a_i_Timeout = 25000)
 	If Not Wine_IsWine() Then Return True
+	; Mid-mission Start: already standing in Zen with Togo. Do not block the GUI.
+	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+		Out("[Step] Wine: already in Zen (map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "); skip settle wait")
+		Return True
+	EndIf
 	Out("[Step] Wine: waiting for the mission world to settle before skill bar / queue / move")
 	Local $l_h_Timer = TimerInit()
 	Local $l_h_Held = 0
@@ -496,6 +501,12 @@ Func Leveler_PrepareCombatAI()
 		Return True
 	EndIf
 	If $g_b_UAIReady And $g_i_LastUAIMap = $l_i_Map Then Return True
+	; Wine InstanceInfo Type stays 0 in Zen. Cache_SkillBar refuses non-explorable
+	; and used to abort the step before Escort / Map_Move.
+	If Wine_IsWine() And (Leveler_InMissionInstance() Or Not Map_GetInstanceInfo("IsExplorable")) Then
+		Out("[Combat] Wine: skip Cache_SkillBar on map " & $l_i_Map & " (Type not explorable). Escort will still walk.")
+		Return True
+	EndIf
 	If Not Cache_SkillBar() Then
 		Out("[Combat] Cache_SkillBar failed on map " & $l_i_Map)
 		Return False

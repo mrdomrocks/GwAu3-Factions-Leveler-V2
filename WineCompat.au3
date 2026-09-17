@@ -1351,7 +1351,7 @@ Func Wine_ScanPatternsChunked()
 			EndIf
 		Next
 		$iN += 1
-		If Mod($iN, 8) = 0 Then Sleep(1)
+		If Mod($iN, 8) = 0 Then Sleep(10)
 		If Mod($p - $pStart, 262144) < $iRead Then
 			Out("Wine 4KB scan: " & ($p - $pStart + $iRead) & "/" & $iTextSize & " (" & $iFound & " hits)")
 		EndIf
