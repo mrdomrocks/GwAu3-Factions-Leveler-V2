@@ -1266,6 +1266,21 @@ EndFunc
 Func Leveler_Step_ZenDaijunMission()
 	$g_s_CurrentHeader = "Zen Daijun Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_ZenDaijunAlreadyComplete() Then
+		If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+			Out("[Step] Zen Daijun is already complete. Leaving the mission instance instead of replaying the escort.")
+			If Map_IsMapUnlocked($MAP_MARKETPLACE) Then
+				If Not Leveler_Travel($MAP_MARKETPLACE) Then Leveler_Travel($MAP_SEITUNG)
+			ElseIf Map_IsMapUnlocked($MAP_KAINENG) Then
+				If Not Leveler_Travel($MAP_KAINENG) Then Leveler_Travel($MAP_SEITUNG)
+			Else
+				Leveler_Travel($MAP_SEITUNG)
+			EndIf
+		Else
+			Out("[Step] Zen Daijun already completed (Marketplace / Kaineng / EotN progress)")
+		EndIf
+		Return True
+	EndIf
 	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
 		Out("[Step] Already inside Zen Daijun")
 	Else
@@ -1538,6 +1553,10 @@ EndFunc
 Func Leveler_Step_AMastersBurden()
 	$g_s_CurrentHeader = "Quest: A Master's Burden"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_MastersBurdenAlreadyComplete() Then
+		Out("[Step] A Master's Burden already completed (EotN-area progress / later markers)")
+		Return True
+	EndIf
 	If Leveler_SkipIfQuestDone($QUEST_MASTERS_BURDEN, "A Master's Burden") Then Return True
 	If Leveler_ShouldResumeExplorable($QUEST_MASTERS_BURDEN) Then
 		Out("[Step] A Master's Burden is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")

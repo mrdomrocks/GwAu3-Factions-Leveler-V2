@@ -50,6 +50,7 @@ Func Leveler_QuestFinished($a_i_QuestID)
 	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
 	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
 	If $a_i_QuestID = $QUEST_ROAD_LESS Then Return Leveler_RoadLessTraveledDone()
+	If $a_i_QuestID = $QUEST_MASTERS_BURDEN Then Return Leveler_MastersBurdenAlreadyComplete()
 	If Leveler_QuestNeedsHandIn($a_i_QuestID) Then Return False
 	If Quest_GetQuestInfo($a_i_QuestID, "IsCompleted") Then Return True
 	If Leveler_IsQuestDone($a_i_QuestID) Then Return True
@@ -349,6 +350,9 @@ Func Leveler_HasEotnCharacterProgress()
 	If Leveler_QuestProgress($QUEST_UNWELCOME) Then Return True
 	If Leveler_QuestProgress($QUEST_NORNBEAR) Then Return True
 	If Leveler_QuestProgress($QUEST_PUNCH_CLOWN) Then Return True
+	If Leveler_QuestProgress($QUEST_CHAOS_KRYTA) Then Return True
+	If Leveler_QuestProgress($QUEST_SUNSPEARS_CANTHA) Then Return True
+	If Leveler_QuestProgress($QUEST_OLIAS) Then Return True
 	Return False
 EndFunc
 
@@ -359,6 +363,28 @@ Func Leveler_HasEotnAreaProgress()
 	If Map_IsMapUnlocked($MAP_EOTN) Then Return True
 	If Map_IsMapUnlocked($MAP_HOM) Then Return True
 	If Map_IsMapUnlocked($MAP_GUNNAR) Then Return True
+	Return False
+EndFunc
+
+; Marketplace unlock is the usual post-mission flag. Wine may miss it while
+; still reporting Kaineng. Kaineng / EotN-area progress means Zen is behind us.
+Func Leveler_ZenDaijunAlreadyComplete()
+	Local $l_i_Map = Map_GetMapID()
+	If Map_IsMapUnlocked($MAP_MARKETPLACE) Then Return True
+	If Map_IsMapUnlocked($MAP_KAINENG) Then Return True
+	If $l_i_Map = $MAP_MARKETPLACE Or $l_i_Map = $MAP_KAINENG_DOCKS Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN Or $l_i_Map = $MAP_KAINENG Then Return True
+	If Leveler_HasEotnAreaProgress() Then Return True
+	Return False
+EndFunc
+
+; #349 IsCompleted / in-log state is often stale under Wine. Infer done from
+; EotN-area progress, or from level 20 once Zen / Kaineng is already behind us.
+Func Leveler_MastersBurdenAlreadyComplete()
+	If Leveler_HasEotnAreaProgress() Then Return True
+	If Leveler_PlayerLevel() >= 20 And Leveler_ZenDaijunAlreadyComplete() Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then Return False
+	If Quest_GetQuestInfo($QUEST_MASTERS_BURDEN, "IsCompleted") Then Return True
+	If Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Then Return True
 	Return False
 EndFunc
 
@@ -408,7 +434,10 @@ Func Leveler_StatusCheck()
 	Next
 	Out("[Status] Quest flags: " & $l_i_QDone & "/" & $LEVELER_Q_COUNT & " complete")
 	Local $l_b_EotnStory = Leveler_HasEotnAreaProgress()
-	If $l_b_EotnStory Then Out("[Status] EotN-area progress detected. Zen Daijun and A Master's Burden are complete unless still in the log.")
+	Local $l_b_ZenDone = Leveler_ZenDaijunAlreadyComplete()
+	Local $l_b_BurdenDone = Leveler_MastersBurdenAlreadyComplete()
+	If $l_b_EotnStory Then Out("[Status] EotN-area progress detected. Zen Daijun and A Master's Burden are complete unless Burden is still a live pickup.")
+	Out("[Status] Zen complete=" & $l_b_ZenDone & "  Marketplace=" & $l_b_Marketplace & "  Kaineng=" & $l_b_Kaineng & "  Burden complete=" & $l_b_BurdenDone & "  Burden in log=" & Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) & "  Level=" & $l_i_Level)
 
 	; Monastery tutorial is character-specific. Account map unlocks, storage
 	; pointers, and account skill unlocks must not skip Secondary / Xunlai / craft.
@@ -467,24 +496,24 @@ Func Leveler_StatusCheck()
 		Out("[Status] Road is handed in. Next armor craft is Seitung Harbor, not monastery.")
 	EndIf
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_MON] = $l_b_SeitungArmor And (Not Leveler_HasMonasteryArmor() Or $l_b_ZenOp Or $l_b_ToZenPath Or $l_b_EotnStory)
-	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp Or $l_b_ToZenPath Or $l_b_EotnStory
-	; Marketplace unlock is enough, but Wine may not report it. Seitung-after-Zen is
-	; the post-mission return. EotN-area progress means the mission is already behind us.
-	; Stay on this step while still inside the Zen explorable so a first run can resume.
-	If $l_i_Map = $MAP_ZEN_EXP Then
+	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp Or $l_b_ToZenPath Or $l_b_EotnStory Or $l_b_ZenDone
+	; Zen Daijun keeps the outpost map ID (213) inside the mission. Only resume
+	; the escort when we are actually in that instance and Zen is not already done.
+	If Leveler_InMissionInstance($MAP_ZEN_EXP) And Not $l_b_ZenDone Then
 		$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = False
 	Else
-		$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or $l_b_EotnStory Or ($l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Not $l_b_ToZenPath)
+		$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_ZenDone Or ($l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Not $l_b_ToZenPath)
 	EndIf
-	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = ((Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) Or $l_b_EotnStory) And $l_i_Map <> $MAP_KAINENG_DOCKS
+	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = ((Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) Or $l_b_EotnStory Or $l_b_ZenDone) And $l_i_Map <> $MAP_KAINENG_DOCKS
 	$g_ab_StepDone[$LEVELER_STEP_TO_KC] = $l_b_Kaineng Or $l_b_EotnStory
 	; Michiko in Kaineng Center. Zhao Di Leech Signet (61) must not skip this.
 	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = Leveler_Skills2Unlocked()
 	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())
-	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $l_b_MaxArmor And (Not $l_b_SeitungArmor Or Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_SEARCH_CURE) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Or $l_b_EotnStory)
-	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_BROTHER_TOSAI) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Or ($l_b_EotnStory And Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE))
-	$g_ab_StepDone[$LEVELER_STEP_BURDEN] = (Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Or $l_b_EotnStory) And Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN)
-	$g_ab_StepDone[$LEVELER_STEP_UNLOCK_MOX] = $l_b_Boreal
+	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $l_b_MaxArmor And (Not $l_b_SeitungArmor Or Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_SEARCH_CURE) Or $l_b_BurdenDone Or $l_b_EotnStory)
+	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_BROTHER_TOSAI) Or $l_b_BurdenDone Or ($l_b_EotnStory And Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE))
+	; Stale Wine in-log #349 must not keep Burden Incoming once EotN-area progress exists.
+	$g_ab_StepDone[$LEVELER_STEP_BURDEN] = $l_b_BurdenDone
+	$g_ab_StepDone[$LEVELER_STEP_UNLOCK_MOX] = $l_b_Boreal Or $l_b_EotnStory
 	$g_ab_StepDone[$LEVELER_STEP_TO_BOREAL] = (Map_IsMapUnlocked($MAP_BOREAL) Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_ICE_CLIFF Or $l_b_Eotn) And $l_i_Map <> $MAP_TUNNELS
 	$g_ab_StepDone[$LEVELER_STEP_TO_EOTN] = $l_b_Eotn And $l_i_Map <> $MAP_ICE_CLIFF
 	$g_ab_StepDone[$LEVELER_STEP_EOTN_POOL] = $l_b_Hom Or Leveler_HasKeiranBow()
@@ -512,18 +541,18 @@ Func Leveler_StatusCheck()
 EndFunc
 
 Func Leveler_LogActiveQuests()
-	Local $l_ai_Ids[8] = [$QUEST_FORMING_A_PARTY, $QUEST_SECONDARY, $QUEST_FORMAL_INTRO, $QUEST_LOST_TREASURE, $QUEST_WARNING_TENGU, $QUEST_THREAT_GROWS, $QUEST_JOURNEY_MASTER, $QUEST_ROAD_LESS]
-	Local $l_as_Names[8] = ["Forming A Party", "Choose Secondary", "Formal Introduction", "Lost Treasure", "Warning the Tengu", "The Threat Grows", "Journey of the Master", "The Road Less Traveled"]
+	Local $l_ai_Ids[11] = [$QUEST_FORMING_A_PARTY, $QUEST_SECONDARY, $QUEST_FORMAL_INTRO, $QUEST_LOST_TREASURE, $QUEST_WARNING_TENGU, $QUEST_THREAT_GROWS, $QUEST_JOURNEY_MASTER, $QUEST_ROAD_LESS, $QUEST_SEARCH_CURE, $QUEST_MASTERS_BURDEN, $QUEST_EARTH_MOVE]
+	Local $l_as_Names[11] = ["Forming A Party", "Choose Secondary", "Formal Introduction", "Lost Treasure", "Warning the Tengu", "The Threat Grows", "Journey of the Master", "The Road Less Traveled", "Search For A Cure", "A Master's Burden", "The Earth Moves"]
 	Local $i
 	Local $l_b_Any = False
-	For $i = 0 To 7
+	For $i = 0 To 10
 		If Leveler_QuestInLog($l_ai_Ids[$i]) Then
 			If Not $l_b_Any Then Out("[Status] Quests still in the log:")
 			$l_b_Any = True
 			Leveler_LogQuestState($l_ai_Ids[$i], $l_as_Names[$i])
 		EndIf
 	Next
-	If Not $l_b_Any Then Out("[Status] No Phase 1 quests are in the log")
+	If Not $l_b_Any Then Out("[Status] No Phase 1 / Burden / Earth Moves quests are in the log")
 EndFunc
 
 Func Leveler_FirstIncompleteStep()
