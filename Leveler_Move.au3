@@ -907,9 +907,27 @@ Func Leveler_PlayerLevel()
 EndFunc
 
 Func Leveler_FollowCoords(ByRef $a_af_Path, $a_b_Combat = False)
+	Return Leveler_FollowCoordsFrom($a_af_Path, $a_b_Combat, 0)
+EndFunc
+
+; Walk a coordinate list. $a_i_Start < 0 means begin at the nearest point so a
+; retry does not walk back through geometry already cleared.
+Func Leveler_FollowCoordsFrom(ByRef $a_af_Path, $a_b_Combat = False, $a_i_Start = -1)
 	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_i_Start = $a_i_Start
 	Local $i
-	For $i = 0 To UBound($a_af_Path) - 1
+	If $l_i_Start < 0 Then
+		Local $l_f_Best = 99999999
+		$l_i_Start = 0
+		For $i = 0 To UBound($a_af_Path) - 1
+			Local $l_f_Dist = Agent_GetDistanceToXY($a_af_Path[$i][0], $a_af_Path[$i][1])
+			If $l_f_Dist < $l_f_Best Then
+				$l_f_Best = $l_f_Dist
+				$l_i_Start = $i
+			EndIf
+		Next
+	EndIf
+	For $i = $l_i_Start To UBound($a_af_Path) - 1
 		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
 		If $g_b_KilroyMode Then Leveler_HandleKilroyDeath()
@@ -917,6 +935,36 @@ Func Leveler_FollowCoords(ByRef $a_af_Path, $a_b_Combat = False)
 		Leveler_MoveTo($a_af_Path[$i][0], $a_af_Path[$i][1], $a_b_Combat)
 	Next
 	Return Not Leveler_IsWiped()
+EndFunc
+
+; Walk toward a portal. Stop if we are not moving (wall) instead of grinding Map_Move.
+Func Leveler_ApproachPortal($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False, $a_i_Timeout = 25000)
+	If Map_GetMapID() = $a_i_MapID Then Return True
+	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_h_Timer = TimerInit()
+	Local $l_f_LastX = Agent_GetAgentInfo(-2, "X")
+	Local $l_f_LastY = Agent_GetAgentInfo(-2, "Y")
+	Local $l_h_Stuck = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_IsWiped() Then Return False
+		If Map_GetMapID() = $a_i_MapID Or Map_GetMapID() <> $l_i_StartMap Then Return True
+		If $a_b_Combat Then Leveler_CombatTick()
+		Map_Move($a_f_X, $a_f_Y, 20)
+		Sleep(250)
+		Local $l_f_X = Agent_GetAgentInfo(-2, "X")
+		Local $l_f_Y = Agent_GetAgentInfo(-2, "Y")
+		If Abs($l_f_X - $l_f_LastX) > 40 Or Abs($l_f_Y - $l_f_LastY) > 40 Then
+			$l_f_LastX = $l_f_X
+			$l_f_LastY = $l_f_Y
+			$l_h_Stuck = TimerInit()
+		ElseIf TimerDiff($l_h_Stuck) > 8000 Then
+			Out("[Move] Portal approach stopped at " & Round($l_f_X) & ", " & Round($l_f_Y) & " (not moving toward " & Round($a_f_X) & ", " & Round($a_f_Y) & ")")
+			ExitLoop
+		EndIf
+	WEnd
+	If Map_GetMapID() = $a_i_MapID Or Map_GetMapID() <> $l_i_StartMap Then Return True
+	Return Leveler_WaitForMap($a_i_MapID, 15000)
 EndFunc
 
 Func Leveler_WaitMs($a_i_Ms)
