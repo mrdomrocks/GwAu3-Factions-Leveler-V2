@@ -119,9 +119,18 @@ While 1
 	Sleep(80)
 	If $g_b_BotCoreInitialized And $g_b_BotRunning And Not $g_b_LevelerPaused Then
 		If $g_b_NeedStatusCheck Then
-			$g_i_Step = Leveler_StatusCheck()
-			$g_b_NeedStatusCheck = False
-			Out("Starting at step: " & $g_i_Step & " — " & $g_as_StepNames[$g_i_Step])
+			If Not Leveler_StatusMapReady() Then
+				If Not Leveler_WaitStatusMap() Then
+					Sleep(500)
+				EndIf
+			EndIf
+			If Leveler_StatusMapReady() Then
+				$g_i_Step = Leveler_StatusCheck()
+				$g_b_NeedStatusCheck = False
+				Out("Starting at step: " & $g_i_Step & " — " & $g_as_StepNames[$g_i_Step])
+			Else
+				Out("[Status] Map still 0/connecting (raw " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "); will re-evaluate after recover.")
+			EndIf
 		ElseIf $g_i_Step >= $LEVELER_STEP_DONE Then
 			Out("Phase 1-5 complete. Post-20 unlocks finished (Kilroy, Olias, GToB, Vaettir NPC if A/Me).")
 			$g_b_BotRunning = False
@@ -163,6 +172,7 @@ Func StartBot()
 	Out("Map: " & Map_GetMapID() & "  Pos: " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")))
 	If Not Leveler_IsOutpost() Then Out("Restart recovery is on. Will resume the current quest here if it is in the log.")
 	Out("Core ready. Returning to the run loop.")
+	If Wine_IsWine() Then Wine_RestoreOrphanReplayHooks()
 EndFunc
 
 ; Attach by character name on Windows. On Wine the client title is often
@@ -198,6 +208,7 @@ Func Leveler_AttachToGw()
 	$g_h_WineVerifyAt = 0
 	$g_h_WineGwHwnd = 0
 	$g_s_WineExitReplay = ""
+	$g_i_WineDrainSeenLast = 0
 	$g_b_WipeReturnSent = False
 	$g_h_WipeReturnAt = 0
 	Local $l_s_Name = StringStripWS(GUICtrlRead($g_h_NameCombo), 3)

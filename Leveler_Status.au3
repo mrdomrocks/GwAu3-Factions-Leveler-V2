@@ -249,9 +249,46 @@ Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
 	Return True
 EndFunc
 
-Func Leveler_OnOverlook()
-	Local $l_i_Map = Map_GetMapID()
-	Return $l_i_Map = 212 Or $l_i_Map = 285 Or $l_i_Map = 416
+Func Leveler_OnOverlook($a_i_Map = -1)
+	If $a_i_Map < 0 Then $a_i_Map = Map_GetMapID()
+	Return $a_i_Map = 212 Or $a_i_Map = 285 Or $a_i_Map = 416
+EndFunc
+
+; Map_GetMapID() is 0 while Connecting (CurrentMapID often 897). Use the live
+; story map when it is a real outpost/explorable so Zen 213 is not Overlook.
+Func Leveler_StatusMapID()
+	Local $l_i_Map = Number(Map_GetMapID())
+	If $l_i_Map > 0 And $l_i_Map <> 897 Then Return $l_i_Map
+	Local $l_i_Live = Leveler_LiveMapID()
+	If $l_i_Live > 0 And $l_i_Live <> 897 Then Return $l_i_Live
+	Return $l_i_Map
+EndFunc
+
+; Do not lock step 0 while map=0/connecting/AgentBase=0. 213/246 are ready.
+Func Leveler_StatusMapReady()
+	Local $l_i_Map = Number(Map_GetMapID())
+	Local $l_i_Live = Leveler_LiveMapID()
+	If $l_i_Map = 897 Then Return False
+	If $l_i_Map > 0 And Not Leveler_MapLooksConnecting() Then Return True
+	If $l_i_Map > 0 And Leveler_StoryFloorFromMap($l_i_Map) >= 0 Then Return True
+	If $l_i_Live > 0 And $l_i_Live <> 897 And Leveler_StoryFloorFromMap($l_i_Live) >= 0 Then Return True
+	Return False
+EndFunc
+
+Func Leveler_WaitStatusMap($a_i_Timeout = 90000)
+	Local $l_h_Timer = TimerInit()
+	Local $l_i_LastLog = -8000
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_StatusMapReady() Then Return True
+		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 8000 Then
+			Out("[Status] Waiting for a live story map before picking a step (map " & Map_GetMapID() & _
+					" current " & Leveler_LiveMapID() & " connecting=" & Number(Leveler_MapLooksConnecting()) & ")")
+			$l_i_LastLog = TimerDiff($l_h_Timer)
+		EndIf
+		Sleep(500)
+	WEnd
+	Return Leveler_StatusMapReady()
 EndFunc
 
 Func Leveler_HasStorageAccess()
@@ -439,7 +476,12 @@ EndFunc
 ; Brief inventory / quest / map check. Greys finished steps and returns the first incomplete one.
 Func Leveler_StatusCheck()
 	Out("[Status] Checking character progress...")
-	Local $l_i_Map = Map_GetMapID()
+	Local $l_i_Raw = Number(Map_GetMapID())
+	Local $l_i_Live = Leveler_LiveMapID()
+	Local $l_i_Map = Leveler_StatusMapID()
+	If $l_i_Map <> $l_i_Raw Then
+		Out("[Status] Map_GetMapID=" & $l_i_Raw & " current " & $l_i_Live & " — using story map " & $l_i_Map)
+	EndIf
 	If Not Leveler_AgentMemoryLive() Then
 		Local $sQ = "0"
 		If IsDeclared("g_p_QueueBase") Then $sQ = Hex(Number($g_p_QueueBase), 8)
@@ -447,7 +489,7 @@ Func Leveler_StatusCheck()
 		If IsDeclared("g_p_AgentBase") Then $sA = Hex(Number($g_p_AgentBase), 8)
 		Out("[Status] AgentBase=" & $sA & " QueueBase=" & $sQ & _
 				" — profession/position reads are dead. Using map " & $l_i_Map & _
-				" current " & Number(Map_GetCharacterInfo("CurrentMapID")) & _
+				" (raw " & $l_i_Raw & " current " & $l_i_Live & ")" & _
 				" objectives " & Number(World_GetWorldInfo("MissionObjectiveArraySize")) & _
 				" and quest flags.")
 	EndIf
@@ -486,7 +528,7 @@ Func Leveler_StatusCheck()
 
 	; Monastery tutorial is character-specific. Account map unlocks, storage
 	; pointers, and account skill unlocks must not skip Secondary / Xunlai / craft.
-	$g_ab_StepDone[$LEVELER_STEP_OVERLOOK] = $l_b_ShingJea And Not Leveler_OnOverlook()
+	$g_ab_StepDone[$LEVELER_STEP_OVERLOOK] = $l_b_ShingJea And Not Leveler_OnOverlook($l_i_Map)
 	; AgentBase=0 makes HasSecondaryProfession false even when A/Me9 is in-world.
 	; Later quests / current map must still count Forming A Party as done.
 	Local $l_b_PastParty = Leveler_IsQuestDone($QUEST_FORMING_A_PARTY) Or Leveler_LostTreasureAlreadyDone() Or _
@@ -584,7 +626,7 @@ Func Leveler_StatusCheck()
 	Leveler_ApplyStoryMonotonicity($l_i_Map)
 
 	Local $l_i_Next = Leveler_FirstIncompleteStep()
-	Out("[Status] Map " & $l_i_Map & "  Next step: " & $l_i_Next & " — " & $g_as_StepNames[$l_i_Next])
+	Out("[Status] Map " & $l_i_Map & " current " & $l_i_Live & "  Next step: " & $l_i_Next & " — " & $g_as_StepNames[$l_i_Next])
 	Leveler_RefreshStepList($l_i_Next)
 	Return $l_i_Next
 EndFunc

@@ -57,6 +57,7 @@ If Not IsDeclared("g_p_WineCleanEpi") Then Global $g_p_WineCleanEpi = 0
 If Not IsDeclared("g_h_WineVerifyAt") Then Global $g_h_WineVerifyAt = 0
 If Not IsDeclared("g_h_WineGwHwnd") Then Global $g_h_WineGwHwnd = 0
 If Not IsDeclared("g_s_WineExitReplay") Then Global $g_s_WineExitReplay = ""
+If Not IsDeclared("g_i_WineDrainSeenLast") Then Global $g_i_WineDrainSeenLast = 0
 
 Func Wine_IsWine()
 	If $g_b_WineChecked Then Return $g_b_IsWine
@@ -1065,6 +1066,48 @@ Func Wine_EngineTickCount()
 	Return $i
 EndFunc
 
+Func Wine_ReadDrainSeen()
+	Local $pSeen = Wine_LabelUserPtr("DrainSeen")
+	If $pSeen = 0 Then Return 0
+	Return Number(Memory_Read($pSeen))
+EndFunc
+
+Func Wine_ReadPendingMove()
+	Local $pPend = Wine_LabelUserPtr("PendingMove")
+	If $pPend = 0 Then Return 0
+	Return Number(Memory_Read($pPend))
+EndFunc
+
+Func Wine_ReadMemQC()
+	Local $pQC = Wine_LabelUserPtr("QueueCounter")
+	If $pQC = 0 Then Return 0
+	Return Number(Memory_Read($pQC))
+EndFunc
+
+; PendingMove on the EngineTicks page is the live Move path (pos changes even
+; when enqueue still prints drainSeen=0 — that read is pre-consume).
+Func Wine_MovePathName($a_i_Pend, $a_i_Seen, $a_i_SeenBefore = -1)
+	If $a_i_Pend <> 0 Then Return "PendingMove-armed"
+	If $a_i_SeenBefore >= 0 Then
+		If $a_i_Seen > $a_i_SeenBefore Then Return "PendingMove"
+		Return "PendingMove (flag cleared; drainSeen still " & $a_i_Seen & ")"
+	EndIf
+	If $a_i_Seen > 0 Then Return "PendingMove"
+	Return "RegularFlow-or-idle"
+EndFunc
+
+Func Wine_DrainStateLine($a_s_When = "", $a_i_SeenBefore = -1)
+	If Not Wine_IsWine() Then Return ""
+	Local $iSeen = Wine_ReadDrainSeen()
+	Local $iPend = Wine_ReadPendingMove()
+	Local $iMem = Wine_ReadMemQC()
+	Local $sPath = Wine_MovePathName($iPend, $iSeen, $a_i_SeenBefore)
+	Local $sWhen = $a_s_When
+	If $sWhen <> "" Then $sWhen = $sWhen & " "
+	Return " " & $sWhen & "drainSeen=" & $iSeen & " pending=" & Wine_HexPtr($iPend) & _
+			" memQC=" & $iMem & " path=" & $sPath
+EndFunc
+
 Func Wine_ResolveEngineHookSite($a_b_Scan = True)
 	If $g_p_WineEngineHook <> 0 Then
 		Local $sCached = Wine_CompactHex(Wine_ReadBytesHex($g_p_WineEngineHook, 5))
@@ -1274,6 +1317,7 @@ Func Wine_MapMove($a_f_X, $a_f_Y, $a_f_Randomize = 20)
 	DllStructSetData($g_d_Move, 3, $a_f_Y)
 	DllStructSetData($g_d_Move, 4, 0)
 
+	Local $iSeenBefore = Wine_ReadDrainSeen()
 	Local $bPend = Wine_WritePendingMove($a_f_X, $a_f_Y)
 	Local $pCmd = Wine_LabelUserPtr("CommandMove")
 	Local $iSlot = Number($g_i_QueueCounter)
@@ -1300,25 +1344,20 @@ Func Wine_MapMove($a_f_X, $a_f_Y, $a_f_Randomize = 20)
 	If Not $bPend Then $bLog = True
 	If $bLog Then
 		$g_h_WineMoveLog = TimerInit()
-		Local $pQC = Wine_LabelUserPtr("QueueCounter")
-		Local $iMem = 0
-		If $pQC <> 0 Then $iMem = Number(Memory_Read($pQC))
-		Local $pSeen = Wine_LabelUserPtr("DrainSeen")
-		Local $iSeen = 0
-		If $pSeen <> 0 Then $iSeen = Number(Memory_Read($pSeen))
-		Local $pPend = Wine_LabelUserPtr("PendingMove")
-		Local $iPend = 0
-		If $pPend <> 0 Then $iPend = Number(Memory_Read($pPend))
 		Out("[Move] enqueue ok=" & Number($bOk) & " slot=" & $iSlot & _
 				" cmd=" & Wine_HexPtr($pCmd) & " struct=" & Wine_HexPtr(DllStructGetData($g_d_Move, 1)) & _
-				" qc=" & $iSlot & "/" & $iMem & " drainSeen=" & $iSeen & " pending=" & $iPend & "/" & Number($bPend) & _
 				" dest=" & Round($a_f_X) & "," & Round($a_f_Y) & _
+				Wine_DrainStateLine("pre-consume") & _
 				" head " & $sBefore & " -> " & $sAfter)
 		If $bOk And $iHead <> 0 And BitAND($iHead, 0xFFFFFFFF) <> BitAND(Number($pCmd), 0xFFFFFFFF) Then
 			Out("[Move] queue head dword " & Wine_HexPtr($iHead) & " is not CommandMove " & Wine_HexPtr($pCmd))
 		EndIf
-		Out("[Move] engine ticks=" & Wine_EngineTickCount() & " jmp=" & Wine_HexPtr(Wine_EngineJmpTarget()) & _
-				" MainProc=" & Wine_HexPtr(Wine_LabelUserPtr("MainProc")) & " memQC=" & $iMem & " drainSeen=" & $iSeen & " pending=" & $iPend)
+		Sleep(120)
+		Local $iSeenAfter = Wine_ReadDrainSeen()
+		If $iSeenAfter > $g_i_WineDrainSeenLast Then $g_i_WineDrainSeenLast = $iSeenAfter
+		Out("[Move] post-consume ticks=" & Wine_EngineTickCount() & " jmp=" & Wine_HexPtr(Wine_EngineJmpTarget()) & _
+				" MainProc=" & Wine_HexPtr(Wine_LabelUserPtr("MainProc")) & _
+				Wine_DrainStateLine("post-consume", $iSeenBefore))
 	EndIf
 	Wine_WatchEngineTicks()
 	Return $bOk Or $bPend

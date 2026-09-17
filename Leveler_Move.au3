@@ -192,7 +192,7 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 5000 Then
 			Out("[Move] walking map " & $l_i_StartMap & " pos " & Round($l_f_X) & "," & Round($l_f_Y) & _
 					" src=" & $l_s_Src & " toward " & Round($a_f_X) & "," & Round($a_f_Y) & _
-					" ticks=" & Wine_EngineTickCount())
+					" ticks=" & Wine_EngineTickCount() & Wine_DrainStateLine())
 			If Wine_IsWine() And $l_b_HavePos And Abs($l_f_X - $l_f_LastX) < 40 And Abs($l_f_Y - $l_f_LastY) < 40 Then
 				Wine_RefreshCommandMove("pos unchanged across walk logs at " & Round($l_f_X) & "," & Round($l_f_Y))
 			EndIf
@@ -1251,7 +1251,8 @@ Func Leveler_ResumeFromCurrentPosition()
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_f_X = Agent_GetAgentInfo(-2, "X")
 	Local $l_f_Y = Agent_GetAgentInfo(-2, "Y")
-	Out("[Recover] Connection resumed. Map " & $l_i_Map & "  Pos " & Round($l_f_X) & ", " & Round($l_f_Y) & ". Continuing from here.")
+	Out("[Recover] Connection resumed. Map " & $l_i_Map & "  Pos " & Round($l_f_X) & ", " & Round($l_f_Y) & ". Re-evaluating status from here.")
+	$g_b_NeedStatusCheck = True
 	Sleep(2000)
 	If Map_GetInstanceInfo("IsExplorable") Then Leveler_PrepareCombatAI()
 	$g_b_ConnectionLost = False
@@ -1386,7 +1387,8 @@ Func Leveler_WaitReturnToOutpost($a_i_Timeout = 90000)
 		If Leveler_AtWipeOutpost() Then
 			$g_b_WipeReturnSent = False
 			$g_b_WineEnterSent = False
-			Out("[Recover] Back in outpost map " & Map_GetMapID() & ". Retrying: " & $g_s_CurrentHeader)
+			$g_b_NeedStatusCheck = True
+			Out("[Recover] Back in outpost map " & Map_GetMapID() & ". Re-evaluating status, then retrying: " & $g_s_CurrentHeader)
 			Return True
 		EndIf
 		If TimerDiff($l_h_Timer) - $l_i_LastLog >= 8000 Then

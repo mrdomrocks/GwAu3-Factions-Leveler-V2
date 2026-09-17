@@ -11,7 +11,12 @@ Func Leveler_ExecuteStep($a_i_Step)
 	EndIf
 	If Leveler_MapLooksConnecting() Then
 		Out("[Recover] Client is connecting; waiting for the outpost without sending packets.")
-		Return Leveler_WaitReturnToOutpost()
+		Leveler_WaitReturnToOutpost()
+		If Leveler_StatusMapReady() Then
+			$g_b_NeedStatusCheck = True
+			Out("[Status] Recovered to map " & Map_GetMapID() & " current " & Leveler_LiveMapID() & "; re-evaluating story floor.")
+		EndIf
+		Return False
 	EndIf
 	If Wine_IsWine() And Leveler_InMissionInstance() Then
 		Out("[Step] Wine mid-mission: skip map-ready / outpost travel, run the step")
