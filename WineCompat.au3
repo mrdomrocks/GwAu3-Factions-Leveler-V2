@@ -1273,6 +1273,7 @@ Func Wine_MapMove($a_f_X, $a_f_Y, $a_f_Randomize = 20)
 	Local $bData = Wine_Wpm($pSlot + 4, $g_p_Move + 4, 12)
 	Local $bPtr = Wine_Wpm($pSlot, $g_p_Move, 4)
 	Local $bOk = $bData And $bPtr
+	If $bOk Then Wine_FlushGw($pSlot, 16)
 	Local $sAfter = Wine_ReadBytesHex($pSlot, 16)
 	Local $iHead = Number(Memory_Read($pSlot))
 	If $bOk Then
@@ -1291,15 +1292,19 @@ Func Wine_MapMove($a_f_X, $a_f_Y, $a_f_Randomize = 20)
 		Local $pQC = Wine_LabelUserPtr("QueueCounter")
 		Local $iMem = 0
 		If $pQC <> 0 Then $iMem = Number(Memory_Read($pQC))
+		Local $pSeen = Wine_LabelUserPtr("DrainSeen")
+		Local $iSeen = 0
+		If $pSeen <> 0 Then $iSeen = Number(Memory_Read($pSeen))
 		Out("[Move] enqueue ok=" & Number($bOk) & " slot=" & $iSlot & _
 				" cmd=" & Wine_HexPtr($pCmd) & " struct=" & Wine_HexPtr(DllStructGetData($g_d_Move, 1)) & _
-				" qc=" & $iSlot & "/" & $iMem & " dest=" & Round($a_f_X) & "," & Round($a_f_Y) & _
+				" qc=" & $iSlot & "/" & $iMem & " drainSeen=" & $iSeen & _
+				" dest=" & Round($a_f_X) & "," & Round($a_f_Y) & _
 				" head " & $sBefore & " -> " & $sAfter)
 		If $bOk And $iHead <> 0 And BitAND($iHead, 0xFFFFFFFF) <> BitAND(Number($pCmd), 0xFFFFFFFF) Then
 			Out("[Move] queue head dword " & Wine_HexPtr($iHead) & " is not CommandMove " & Wine_HexPtr($pCmd))
 		EndIf
 		Out("[Move] engine ticks=" & Wine_EngineTickCount() & " jmp=" & Wine_HexPtr(Wine_EngineJmpTarget()) & _
-				" MainProc=" & Wine_HexPtr(Wine_LabelUserPtr("MainProc")))
+				" MainProc=" & Wine_HexPtr(Wine_LabelUserPtr("MainProc")) & " memQC=" & $iMem & " drainSeen=" & $iSeen)
 	EndIf
 	Wine_WatchEngineTicks()
 	Return $bOk
@@ -1795,34 +1800,46 @@ Func Wine_CountNearCallers($a_p_Target)
 	Return $iN
 EndFunc
 
-; 10-byte MainProc dump + decoded [EngineTicks] / [QueueCounter] vs labels.
+; 32-byte MainProc dump + decoded [EngineTicks] / [QueueCounter] / DrainSeen vs labels.
 Func Wine_LogMainProcProof($a_s_Why = "proof", $a_b_Callers = False)
 	Local $pMain = Wine_LabelUserPtr("MainProc")
 	Local $pTicks = Wine_LabelUserPtr("EngineTicks")
 	Local $pQC = Wine_LabelUserPtr("QueueCounter")
+	Local $pQB = Wine_LabelUserPtr("QueueBase")
+	Local $pSeen = Wine_LabelUserPtr("DrainSeen")
 	Local $pHook = Wine_ResolveEngineHookSite(False)
 	If $pHook = 0 Then $pHook = $g_p_WineEngineHook
 	If $pHook = 0 Then $pHook = Wine_LabelUserPtr("MainStart")
-	Local $sMain = Wine_ReadBytesHex($pMain, 14)
+	Local $sMain = Wine_ReadBytesHex($pMain, 32)
 	Local $sHook = Wine_ReadBytesHex($pHook, 8)
 	Local $iInc = 0
 	Local $iQcOp = 0
+	Local $iQbOp = 0
 	If $pMain <> 0 Then
 		$iInc = Wine_ReadImm32($pMain + 2)
 		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 2, 2)) = "FF05" Then $iInc = Wine_ReadImm32($pMain + 4)
 		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 8, 1)) = "A1" Then $iQcOp = Wine_ReadImm32($pMain + 9)
+		; RegularFlow: A1 QC (5) + 8BC8 (2) + C1E008 (3) + 05 QueueBase (5) starts at MainProc+18
+		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 18, 1)) = "05" Then $iQbOp = Wine_ReadImm32($pMain + 19)
 	EndIf
+	Local $iSeen = 0
+	If $pSeen <> 0 Then $iSeen = Number(Memory_Read($pSeen))
 	Local $sCallers = "skip"
 	If $a_b_Callers And $pHook <> 0 Then $sCallers = Wine_CountNearCallers($pHook)
 	Out("[Move] MainProc proof (" & $a_s_Why & ") kind=" & $g_s_WineDrainKind & _
 			" MainProc=" & Wine_HexPtr($pMain) & " bytes=" & Wine_CompactHex($sMain) & _
 			" inc=[" & Wine_HexPtr($iInc) & "] EngineTicks=" & Wine_HexPtr($pTicks) & _
 			" qcOp=[" & Wine_HexPtr($iQcOp) & "] QueueCounter=" & Wine_HexPtr($pQC) & _
+			" qbOp=[" & Wine_HexPtr($iQbOp) & "] QueueBase=" & Wine_HexPtr($pQB) & _
+			" drainSeen=" & $iSeen & _
 			" ticks=" & Wine_EngineTickCount() & " hook=" & Wine_HexPtr($pHook) & " hookBytes=" & $sHook & _
 			" nearCallers=" & $sCallers & " jmp=" & Wine_HexPtr(Wine_EngineJmpTarget()))
 	If $pTicks <> 0 And $iInc <> 0 And Not Wine_PtrsEq($iInc, $pTicks) Then
 		Out("[Move] MainProc inc target is NOT EngineTicks — patching FF05")
 		Wine_PatchMainProcHeartbeat()
+	EndIf
+	If $pQB <> 0 And $iQbOp <> 0 And Not Wine_PtrsEq($iQbOp, $pQB) Then
+		Out("[Move] MainProc add eax,QueueBase is NOT QueueBase — qbOp=" & Wine_HexPtr($iQbOp))
 	EndIf
 EndFunc
 
@@ -2559,22 +2576,28 @@ Func Wine_AssembleMinimalEngine()
 	_("mov ebx,dword[eax]")
 	_("test ebx,ebx")
 	_("jz MainExit")
+	; Consume the slot and bump mem QC BEFORE the command runs. SkillTimer
+	; `jmp ebx` never came back through CommandReturn (ticks rose, mem QC
+	; stayed 0, pos frozen). call/ret plus QC-first still advances the
+	; queue if Move does not return.
+	_("inc dword[DrainSeen]")
 	_("mov dword[SavedIndex],ecx")
 	_("mov dword[eax],0")
-	_("jmp ebx")
-
-	_("CommandReturn:")
-	_("mov ecx,dword[SavedIndex]")
-	_("mov edx,dword[QueueCounter]")
-	_("cmp edx,ecx")
-	_("jnz MainExit")
 	_("mov eax,ecx")
 	_("inc eax")
 	_("cmp eax,QueueSize")
-	_("jnz MainSkipReset")
+	_("jnz DrainSkipReset")
 	_("xor eax,eax")
-	_("MainSkipReset:")
+	_("DrainSkipReset:")
 	_("mov dword[QueueCounter],eax")
+	_("mov eax,dword[SavedIndex]")
+	_("shl eax,8")
+	_("add eax,QueueBase")
+	_("call ebx -> FF D3")
+	_("jmp MainExit")
+
+	_("CommandReturn:")
+	_("jmp MainExit")
 
 	_("MainExit:")
 	_("popfd")
@@ -2608,32 +2631,32 @@ Func Wine_AssembleMinimalEngine()
 	_("pop eax")
 	_("pop ebx")
 	_("pop edx")
-	_("ljmp CommandReturn")
+	_("retn")
 
 	_("CommandMove:")
 	_("lea eax,dword[eax+4]")
 	_("push eax")
 	_("call Move")
 	_("pop eax")
-	_("ljmp CommandReturn")
+	_("retn")
 
 	_("CommandDialog:")
 	_("push dword[eax+4]")
 	_("call Dialog")
 	_("add esp,4")
-	_("ljmp CommandReturn")
+	_("retn")
 
 	_("CommandInteract:")
 	_("push dword[eax+4]")
 	_("call Interact")
 	_("add esp,4")
-	_("ljmp CommandReturn")
+	_("retn")
 
 	_("CommandEnterMission:")
 	_("push dword[eax+4]")
 	_("call EnterMission")
 	_("add esp,4")
-	_("ljmp CommandReturn")
+	_("retn")
 
 	_("CommandUIMsg:")
 	_("push 0")
@@ -2643,7 +2666,7 @@ Func Wine_AssembleMinimalEngine()
 	_("push dword[eax+4]")
 	_("call UIMessage")
 	_("add esp,C")
-	_("ljmp CommandReturn")
+	_("retn")
 EndFunc
 
 ; EngineTicks is the first dword after the written stubs (still on the RWX page).
@@ -2653,6 +2676,8 @@ Func Wine_BindEngineTicks()
 	If Not Wine_IsUserPtr($pTicks) Then Return 0
 	Wine_ReplaceValue("EngineTicks", Ptr($pTicks))
 	Memory_Write($pTicks, 0)
+	Wine_ReplaceValue("DrainSeen", Ptr($pTicks + 4))
+	Memory_Write($pTicks + 4, 0)
 	Return $pTicks
 EndFunc
 
