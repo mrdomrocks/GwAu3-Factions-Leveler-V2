@@ -224,10 +224,11 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 	If Leveler_QuestProgress($QUEST_ROAD_LESS) Then
 		Leveler_MarkQuestDone($QUEST_JOURNEY_MASTER)
 	EndIf
-	If Leveler_QuestProgress($QUEST_BROTHER_TOSAI) Or Leveler_QuestFinished($QUEST_MASTERS_BURDEN) Then
+	If Leveler_QuestProgress($QUEST_BROTHER_TOSAI) Or Leveler_QuestFinished($QUEST_MASTERS_BURDEN) Or Leveler_HasEotnCharacterProgress() Then
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 	EndIf
-	If Leveler_QuestFinished($QUEST_MASTERS_BURDEN) Then
+	If Leveler_QuestFinished($QUEST_MASTERS_BURDEN) Or Leveler_HasEotnCharacterProgress() Then
+		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
 		Leveler_MarkQuestDone($QUEST_ROAD_LESS)
 	EndIf
 	If Leveler_QuestFinished($QUEST_AGAINST_DESTROYERS) Then
@@ -322,6 +323,45 @@ Func Leveler_RoadLessTraveledDone()
 	Return False
 EndFunc
 
+; Character is already in the Eye of the North region, or has later EotN-area
+; quests / HoM rewards. Used to infer that Zen Daijun and A Master's Burden
+; are behind this character without relying on Marketplace unlock or #349 flags.
+Func Leveler_OnEotnAreaMap($a_i_Map = -1)
+	If $a_i_Map < 0 Then $a_i_Map = Map_GetMapID()
+	Switch $a_i_Map
+		Case $MAP_TUNNELS, $MAP_BOREAL, $MAP_ICE_CLIFF, $MAP_EOTN, $MAP_HOM, $MAP_AB
+			Return True
+		Case $MAP_NORRHART, $MAP_GUNNAR, $MAP_KILROY, $MAP_LONGEYE, $MAP_BJORA, $MAP_JAGA
+			Return True
+	EndSwitch
+	Return False
+EndFunc
+
+; Location, later quests, and Keiran's Bow are character-specific.
+Func Leveler_HasEotnCharacterProgress()
+	If Leveler_OnEotnAreaMap() Then Return True
+	If Leveler_HasKeiranBow() Then Return True
+	If Leveler_QuestProgress($QUEST_EARTH_MOVE) Then Return True
+	If Leveler_QuestProgress($QUEST_AGAINST_DESTROYERS) Then Return True
+	If Leveler_QuestProgress($QUEST_MISSING_VANGUARD) Then Return True
+	If Leveler_QuestProgress($QUEST_NORTHERN_ALLIES) Then Return True
+	If Leveler_QuestProgress($QUEST_KNOWLEDGEABLE_ASURA) Then Return True
+	If Leveler_QuestProgress($QUEST_UNWELCOME) Then Return True
+	If Leveler_QuestProgress($QUEST_NORNBEAR) Then Return True
+	If Leveler_QuestProgress($QUEST_PUNCH_CLOWN) Then Return True
+	Return False
+EndFunc
+
+; Also accepts the Boreal / EotN / HoM / Gunnar unlocks StatusCheck already uses.
+Func Leveler_HasEotnAreaProgress()
+	If Leveler_HasEotnCharacterProgress() Then Return True
+	If Map_IsMapUnlocked($MAP_BOREAL) Then Return True
+	If Map_IsMapUnlocked($MAP_EOTN) Then Return True
+	If Map_IsMapUnlocked($MAP_HOM) Then Return True
+	If Map_IsMapUnlocked($MAP_GUNNAR) Then Return True
+	Return False
+EndFunc
+
 Func Leveler_LostTreasureAlreadyDone()
 	If Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then Return False
 	If Quest_GetQuestInfo($QUEST_LOST_TREASURE, "IsCompleted") Then Return True
@@ -367,6 +407,8 @@ Func Leveler_StatusCheck()
 		If $g_ab_QuestDone[$i] Then $l_i_QDone += 1
 	Next
 	Out("[Status] Quest flags: " & $l_i_QDone & "/" & $LEVELER_Q_COUNT & " complete")
+	Local $l_b_EotnStory = Leveler_HasEotnAreaProgress()
+	If $l_b_EotnStory Then Out("[Status] EotN-area progress detected. Zen Daijun and A Master's Burden are complete unless still in the log.")
 
 	; Monastery tutorial is character-specific. Account map unlocks, storage
 	; pointers, and account skill unlocks must not skip Secondary / Xunlai / craft.
@@ -418,23 +460,30 @@ Func Leveler_StatusCheck()
 	If Leveler_QuestNeedsHandIn($QUEST_ROAD_LESS) Or Leveler_HasQuest($QUEST_JOURNEY_MASTER) Then
 		$g_ab_StepDone[$LEVELER_STEP_ROAD] = False
 	Else
-		$g_ab_StepDone[$LEVELER_STEP_ROAD] = Leveler_RoadLessTraveledDone()
+		$g_ab_StepDone[$LEVELER_STEP_ROAD] = Leveler_RoadLessTraveledDone() Or $l_b_EotnStory
 	EndIf
 	$g_ab_StepDone[$LEVELER_STEP_SEITUNG] = Leveler_ArmorSetEquipped(Leveler_GetSeitungPieces()) Or $l_b_MaxArmor
 	If Not $g_ab_StepDone[$LEVELER_STEP_SEITUNG] And $g_ab_StepDone[$LEVELER_STEP_ROAD] Then
 		Out("[Status] Road is handed in. Next armor craft is Seitung Harbor, not monastery.")
 	EndIf
-	$g_ab_StepDone[$LEVELER_STEP_DESTROY_MON] = $l_b_SeitungArmor And (Not Leveler_HasMonasteryArmor() Or $l_b_ZenOp Or $l_b_ToZenPath)
-	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp Or $l_b_ToZenPath
-	$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or ($l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Not $l_b_ToZenPath)
-	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = (Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) And $l_i_Map <> $MAP_KAINENG_DOCKS
-	$g_ab_StepDone[$LEVELER_STEP_TO_KC] = $l_b_Kaineng
+	$g_ab_StepDone[$LEVELER_STEP_DESTROY_MON] = $l_b_SeitungArmor And (Not Leveler_HasMonasteryArmor() Or $l_b_ZenOp Or $l_b_ToZenPath Or $l_b_EotnStory)
+	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp Or $l_b_ToZenPath Or $l_b_EotnStory
+	; Marketplace unlock is enough, but Wine may not report it. Seitung-after-Zen is
+	; the post-mission return. EotN-area progress means the mission is already behind us.
+	; Stay on this step while still inside the Zen explorable so a first run can resume.
+	If $l_i_Map = $MAP_ZEN_EXP Then
+		$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = False
+	Else
+		$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or $l_b_EotnStory Or ($l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Not $l_b_ToZenPath)
+	EndIf
+	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = ((Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) Or $l_b_EotnStory) And $l_i_Map <> $MAP_KAINENG_DOCKS
+	$g_ab_StepDone[$LEVELER_STEP_TO_KC] = $l_b_Kaineng Or $l_b_EotnStory
 	; Michiko in Kaineng Center. Zhao Di Leech Signet (61) must not skip this.
 	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = Leveler_Skills2Unlocked()
 	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())
-	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $l_b_MaxArmor And (Not $l_b_SeitungArmor Or Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_SEARCH_CURE) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN))
-	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_BROTHER_TOSAI) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN)
-	$g_ab_StepDone[$LEVELER_STEP_BURDEN] = Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) And Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN)
+	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $l_b_MaxArmor And (Not $l_b_SeitungArmor Or Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_SEARCH_CURE) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Or $l_b_EotnStory)
+	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_IsQuestDone($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_BROTHER_TOSAI) Or Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Or ($l_b_EotnStory And Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE))
+	$g_ab_StepDone[$LEVELER_STEP_BURDEN] = (Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Or $l_b_EotnStory) And Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN)
 	$g_ab_StepDone[$LEVELER_STEP_UNLOCK_MOX] = $l_b_Boreal
 	$g_ab_StepDone[$LEVELER_STEP_TO_BOREAL] = (Map_IsMapUnlocked($MAP_BOREAL) Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_ICE_CLIFF Or $l_b_Eotn) And $l_i_Map <> $MAP_TUNNELS
 	$g_ab_StepDone[$LEVELER_STEP_TO_EOTN] = $l_b_Eotn And $l_i_Map <> $MAP_ICE_CLIFF
