@@ -17,10 +17,11 @@
 ; (tail 8B D8 8B 47 08 / 8B CE / 8B 01) so a retest does not need a manual
 ; restore before the pattern scan. SkillTimer ticks live on the MainProc page
 ; while WPM to QueueBase (64KB earlier) is invisible to that thread
-; (195ad24: ticks rose, drainSeen stayed 0, slot 0 written). Move is a
-; PendingMove flag+xyz beside EngineTicks; the handler is a stub after
-; MainExit — never `call Move` in the SkillTimer entry block (745157e
-; put E8 there and Wine stopped translating MainProc, ticks stayed 0).
+; (195ad24: ticks rose, drainSeen stayed 0, slot 0 written). PendingMove is
+; a same-page CommandMove ptr + xyz; MainProc consumes it with `call ebx`
+; (195ad24 already had that). Do not put E8/E9-to-Move in MainProc — Wine
+; followed 745157e's E8 and f1bb311's `E9 B1000000` trampoline and never
+; translated `inc EngineTicks`.
 
 If Not IsDeclared("g_b_IsWine") Then Global $g_b_IsWine = False
 If Not IsDeclared("g_b_WineChecked") Then Global $g_b_WineChecked = False
@@ -1333,9 +1334,11 @@ Func Wine_WritePendingMove($a_f_X, $a_f_Y)
 	DllStructSetData($g_d_Move, 4, 0)
 	Memory_Write($pFlag, 0)
 	If Not Wine_Wpm($pXYZ, $g_p_Move + 4, 12) Then Return False
-	Memory_Write($pFlag, 1)
+	Local $pCmd = Wine_LabelUserPtr("CommandMove")
+	If $pCmd = 0 Then Return False
+	Memory_Write($pFlag, $pCmd)
 	Wine_FlushGw($pFlag, 16)
-	Return Number(Memory_Read($pFlag)) = 1
+	Return Wine_PtrsEq(Memory_Read($pFlag), $pCmd)
 EndFunc
 
 ; Re-wire CommandMove, rewrite stubs on our Queue page, and re-point the one
@@ -1848,7 +1851,8 @@ Func Wine_LogMainProcProof($a_s_Why = "proof", $a_b_Callers = False)
 	Local $iPendOp = 0
 	If $pMain <> 0 Then
 		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 2, 2)) = "FF05" Then $iInc = Wine_ReadImm32($pMain + 4)
-		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 8, 1)) = "A1" Then $iPendOp = Wine_ReadImm32($pMain + 9)
+		If Wine_CompactHex(Wine_ReadBytesHex($pMain + 8, 2)) = "8B1D" Then $iPendOp = Wine_ReadImm32($pMain + 10)
+		If $iPendOp = 0 And Wine_CompactHex(Wine_ReadBytesHex($pMain + 8, 1)) = "A1" Then $iPendOp = Wine_ReadImm32($pMain + 9)
 		Local $iReg = StringInStr($sComp, "8BC8C1E00805")
 		If $iReg > 0 Then
 			Local $iOff = Int(($iReg - 1) / 2)
@@ -2747,25 +2751,20 @@ Func Wine_AssembleMinimalEngine()
 	; here — a trailing /N bumps $g_i_ASMCodeOffset and writes MainProc 4 bytes
 	; late, so the Engine JMP lands on zeros and never ticks.
 	_("inc dword[EngineTicks]")
-	; Do NOT emit `call Move` (E8) in this basic block. 745157e put E8 in
-	; MainProc; Wine's translator then failed the whole unit, so even the
-	; EngineTicks inc never ran (SkillTimer ticks stayed 0). PendingMove is
-	; a same-page flag test + ljmp to a stub after MainExit (like CommandMove).
-	_("RegularFlow:")
-	_("mov eax,dword[PendingMove]")
-	_("test eax,eax")
-	_("jz QueueFlow")
-	_("inc dword[DrainSeen]")
+	; 195ad24 MainProc ticked. 745157e (E8 in-block) and f1bb311 (`E9` trampoline
+	; to call Move) did not — Wine follows direct E8/E9 and fails the unit.
+	; Smallest delta: same-page CommandMove ptr, consume with `call ebx`
+	; like RegularFlow (indirect; Wine does not follow).
+	_("mov ebx,dword[PendingMove]")
+	_("test ebx,ebx")
+	_("jz RegularFlow")
 	_("mov dword[PendingMove],0")
-	_("mov eax,dword[QueueCounter]")
-	_("inc eax")
-	_("cmp eax,QueueSize")
-	_("jnz PendSkipReset")
-	_("xor eax,eax")
-	_("PendSkipReset:")
-	_("mov dword[QueueCounter],eax")
-	_("ljmp PendingDoMove")
-	_("QueueFlow:")
+	_("inc dword[DrainSeen]")
+	_("inc dword[QueueCounter]")
+	_("mov eax,PendingMove")
+	_("call ebx -> FF D3")
+	_("jmp MainExit")
+	_("RegularFlow:")
 	_("mov eax,dword[QueueCounter]")
 	_("mov ecx,eax")
 	_("shl eax,8")
@@ -2864,15 +2863,6 @@ Func Wine_AssembleMinimalEngine()
 	_("call UIMessage")
 	_("add esp,C")
 	_("retn")
-
-	; Separate from MainProc so Wine does not translate `call Move` as part
-	; of the SkillTimer entry block (745157e ticks=0). eax/stack already saved.
-	_("PendingDoMove:")
-	_("mov eax,PendingXYZ")
-	_("push eax")
-	_("call Move")
-	_("pop eax")
-	_("ljmp MainExit")
 EndFunc
 
 ; EngineTicks is the first dword after the written stubs (still on the RWX page).
