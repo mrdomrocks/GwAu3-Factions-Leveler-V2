@@ -1263,6 +1263,12 @@ Func Leveler_Step_CompleteSkillsTraining()
 	Return True
 EndFunc
 
+Func Leveler_ZenMissionAbort()
+	$g_b_SpiritRiftWatch = False
+	$g_b_ZunraaWatch = False
+	Return False
+EndFunc
+
 Func Leveler_Step_ZenDaijunMission()
 	$g_s_CurrentHeader = "Zen Daijun Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1282,123 +1288,107 @@ Func Leveler_Step_ZenDaijunMission()
 	If Not Leveler_PrepareCombatAI() Then Return False
 	If Leveler_IsWiped() Then Return False
 
+	Leveler_ResetZunraaState()
 	$g_b_SpiritRiftWatch = True
+	$g_b_ZunraaWatch = True
 	$g_h_RiftCooldown = TimerInit()
 	$g_b_CombatMode = True
+	If Leveler_ZunraaAlive() Then
+		$g_b_ZunraaSummoned = True
+		Local $l_i_Near = 0
+		Local $l_f_Near = 3000
+		Local $s
+		For $s = 0 To $ZEN_SHRINE_COUNT - 1
+			Local $l_f_Dist = Agent_GetDistanceToXY($ZEN_SHRINE_X[$s], $ZEN_SHRINE_Y[$s])
+			If $l_f_Dist < $l_f_Near Then
+				$l_f_Near = $l_f_Dist
+				$l_i_Near = $s
+			EndIf
+		Next
+		If $l_f_Near < 3000 Then Leveler_MarkZenShrineUsed($ZEN_SHRINE_X[$l_i_Near], $ZEN_SHRINE_Y[$l_i_Near], $l_i_Near)
+		Out("[Zen] Zunraa is already in the party")
+	EndIf
 
-	If Not Leveler_MoveTo(15120.68, 10456.73, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
+	If Not Leveler_MoveTo(15120.68, 10456.73, True) Then Return Leveler_ZenMissionAbort()
 	Sleep(15000)
-	If Not Leveler_MoveTo(11990.38, 10782.05, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
+	If Not Leveler_MoveTo(11990.38, 10782.05, True) Then Return Leveler_ZenMissionAbort()
 	Sleep(10000)
-	If Not Leveler_MoveTo(10161.92, 9751.41, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+	If Not Leveler_MoveTo(10161.92, 9751.41, True) Then Return Leveler_ZenMissionAbort()
+	If Not Leveler_MoveTo(9723.10, 7968.76, True) Then Return Leveler_ZenMissionAbort()
+	If Not Leveler_WaitOutOfCombat() Then Return Leveler_ZenMissionAbort()
+	If Not Leveler_SummonZunraa() Then
+		Out("[Zen] Zunraa is required for Zen Daijun")
+		Return Leveler_ZenMissionAbort()
 	EndIf
-	If Not Leveler_MoveTo(9723.10, 7968.76, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_WaitOutOfCombat() Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
-	If Not Leveler_InteractGadgetAt(9632.00, 8058.00, True) Then
-		Out("[Step] Gadget interact failed; continuing the path")
-	EndIf
-	If Not Leveler_MoveTo(9412.15, 7257.83, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
+	If Not Leveler_MoveTo(9412.15, 7257.83, True) Then Return Leveler_ZenMissionAbort()
 	If Not Leveler_MoveTo(9183.47, 6653.42, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(8966.42, 6203.29, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(3510.94, 2724.63, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(2120.18, 1690.91, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(928.27, 2782.67, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(744.67, 4187.17, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(242.27, 6558.48, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-4565.76, 8326.51, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-5374.88, 8626.30, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-10291.65, 8519.68, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-11009.76, 6292.73, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-12762.20, 6112.31, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-14029.90, 3699.97, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-13243.47, 1253.06, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-11907.05, 28.87, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-11306.09, 802.47, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
-	Sleep(5000)
+	If Not Leveler_WaitMs(5000) Then Return Leveler_ZenMissionAbort()
 	If Not Leveler_MoveTo(-10255.23, 178.48, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	If Not Leveler_MoveTo(-9068.41, -553.94, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
-	Sleep(5000)
+	If Not Leveler_WaitMs(5000) Then Return Leveler_ZenMissionAbort()
 	If Not Leveler_MoveTo(-7949.79, -1376.02, True) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
+	EndIf
+	If Not Leveler_ZunraaAlive() And Map_GetMapID() <> $MAP_SEITUNG Then
+		If Not Leveler_EnsureZunraa() Then Return Leveler_ZenMissionAbort()
 	EndIf
 	Leveler_MoveTo(-7688.63, -1538.34, True)
 	If Not Map_WaitMapLoading($MAP_SEITUNG) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
+		Return Leveler_ZenMissionAbort()
 	EndIf
 	$g_b_SpiritRiftWatch = False
+	$g_b_ZunraaWatch = False
 	Out("[Step] Zen Daijun complete. Arrived in Seitung Harbor.")
 	Return True
 EndFunc

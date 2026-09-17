@@ -46,6 +46,9 @@ EndFunc
 Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_LevelerPaused Then Return False
 	If Leveler_IsWiped() Then Return False
+	If $g_b_ZunraaWatch And Not $g_b_ZunraaResummoning Then
+		If Not Leveler_EnsureZunraa() Then Return False
+	EndIf
 
 	If Leveler_ShouldFightHere() Then
 		$a_b_Combat = True
@@ -77,6 +80,9 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
 	If Leveler_IsWiped() Then Return False
+	If $g_b_ZunraaWatch And Not $g_b_ZunraaResummoning Then
+		If Not Leveler_EnsureZunraa() Then Return False
+	EndIf
 	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
 	Return $l_b_Ok
 EndFunc
@@ -617,6 +623,9 @@ Func Leveler_WaitCombat($a_i_Ms)
 	While TimerDiff($l_h_Timer) < $a_i_Ms
 		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
+		If $g_b_ZunraaWatch Then
+			If Not Leveler_EnsureZunraa() Then Return False
+		EndIf
 		Leveler_CombatTick()
 		Sleep(50)
 	WEnd
@@ -642,6 +651,9 @@ Func Leveler_WaitOutOfCombat($a_i_Timeout = 120000)
 		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
 		If $g_b_SpiritRiftWatch Then Leveler_InterruptSpiritRifts()
+		If $g_b_ZunraaWatch Then
+			If Not Leveler_EnsureZunraa() Then Return False
+		EndIf
 		If Not Leveler_InDanger($LEVELER_AGGRO) Then
 			If $l_h_Clear = 0 Then $l_h_Clear = TimerInit()
 			If TimerDiff($l_h_Clear) >= 2000 Then Return True
@@ -727,6 +739,7 @@ Func Leveler_FollowLostTreasurePath($a_i_Timeout = 600000)
 EndFunc
 
 Func Leveler_GetNearestGadget($a_f_Range = 400)
+	; Player-nearest gadget. Do not use this to resummon Zunraa; used shrines cannot be rung again.
 	Local $l_i_MyID = Agent_GetMyID()
 	Local $l_i_Best = 0
 	Local $l_f_Best = $a_f_Range
@@ -754,6 +767,240 @@ Func Leveler_InteractGadgetAt($a_f_X, $a_f_Y, $a_b_Combat = False)
 	Sleep(800)
 	Return True
 EndFunc
+
+#Region Zunraa
+
+Func Leveler_ResetZunraaState()
+	$g_b_ZunraaWatch = False
+	$g_b_ZunraaSummoned = False
+	$g_b_ZunraaResummoning = False
+	$g_i_ZunraaShrineExtraType = 0
+	$g_i_ZenLastShrineIndex = -1
+	$g_i_ZenUsedCount = 0
+	Local $i
+	For $i = 0 To $ZEN_SHRINE_COUNT - 1
+		$g_ab_ZenShrineUsed[$i] = False
+	Next
+	Local $l_af_Empty[1][2] = [[0, 0]]
+	$g_af_ZenUsedXY = $l_af_Empty
+EndFunc
+
+Func Leveler_ZunraaAlive()
+	Local $l_i_Agent = Leveler_GetAgentByModel($MODEL_ZUNRAA)
+	If $l_i_Agent = 0 Then Return False
+	If Agent_GetAgentInfo($l_i_Agent, "HP") = 0 Then Return False
+	Return True
+EndFunc
+
+Func Leveler_WaitForZunraa($a_i_Timeout = 10000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_IsWiped() Then Return False
+		If Leveler_ZunraaAlive() Then Return True
+		Sleep(250)
+	WEnd
+	Return Leveler_ZunraaAlive()
+EndFunc
+
+Func Leveler_ZenShrineUsedAt($a_f_X, $a_f_Y)
+	Local $i
+	For $i = 0 To $g_i_ZenUsedCount - 1
+		Local $l_f_Dx = $g_af_ZenUsedXY[$i][0] - $a_f_X
+		Local $l_f_Dy = $g_af_ZenUsedXY[$i][1] - $a_f_Y
+		If Sqrt($l_f_Dx * $l_f_Dx + $l_f_Dy * $l_f_Dy) < $ZEN_SHRINE_MATCH_RANGE Then Return True
+	Next
+	Return False
+EndFunc
+
+Func Leveler_MarkZenShrineUsed($a_f_X, $a_f_Y, $a_i_Index = -1)
+	If $a_i_Index >= 0 And $a_i_Index < $ZEN_SHRINE_COUNT Then
+		$g_ab_ZenShrineUsed[$a_i_Index] = True
+		$g_i_ZenLastShrineIndex = $a_i_Index
+	EndIf
+	If Leveler_ZenShrineUsedAt($a_f_X, $a_f_Y) Then Return
+	ReDim $g_af_ZenUsedXY[$g_i_ZenUsedCount + 1][2]
+	$g_af_ZenUsedXY[$g_i_ZenUsedCount][0] = $a_f_X
+	$g_af_ZenUsedXY[$g_i_ZenUsedCount][1] = $a_f_Y
+	$g_i_ZenUsedCount += 1
+EndFunc
+
+; Gadget nearest to a map coordinate. Do not use the player's nearest spawn.
+Func Leveler_GetGadgetNearXY($a_f_X, $a_f_Y, $a_f_Range = 400, $a_b_ZunraaOnly = False)
+	Local $l_i_Best = 0
+	Local $l_f_Best = $a_f_Range
+	Local $l_i_Named = 0
+	Local $l_f_Named = $a_f_Range
+	Local $l_i_Max = Agent_GetMaxAgents()
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Not Agent_GetAgentInfo($i, "IsGadgetType") Then ContinueLoop
+		If Not Leveler_IsZunraaShrineGadget($i) Then
+			If $a_b_ZunraaOnly Then ContinueLoop
+		EndIf
+		Local $l_f_Dist = Agent_GetDistanceToXY($a_f_X, $a_f_Y, $i)
+		If $l_f_Dist >= $l_f_Best And $l_f_Dist >= $l_f_Named Then ContinueLoop
+		If Leveler_GadgetNameLooksLikeZunraaShrine($i) And $l_f_Dist < $l_f_Named Then
+			$l_f_Named = $l_f_Dist
+			$l_i_Named = $i
+		EndIf
+		If $l_f_Dist < $l_f_Best Then
+			$l_f_Best = $l_f_Dist
+			$l_i_Best = $i
+		EndIf
+	Next
+	If $l_i_Named <> 0 Then Return $l_i_Named
+	Return $l_i_Best
+EndFunc
+
+Func Leveler_GadgetNameLooksLikeZunraaShrine($a_i_Agent)
+	Local $l_s_Name = Agent_GetAgentInfo($a_i_Agent, "Name")
+	If $l_s_Name = "" Then Return False
+	If StringInStr($l_s_Name, "Zunraa") Then Return True
+	Return False
+EndFunc
+
+Func Leveler_IsZunraaShrineGadget($a_i_Agent)
+	If $a_i_Agent = 0 Then Return False
+	If Agent_GetAgentPtr($a_i_Agent) = 0 Then Return False
+	If Not Agent_GetAgentInfo($a_i_Agent, "IsGadgetType") Then Return False
+	If Leveler_GadgetNameLooksLikeZunraaShrine($a_i_Agent) Then Return True
+	If $g_i_ZunraaShrineExtraType <> 0 And Agent_GetAgentInfo($a_i_Agent, "ExtraType") = $g_i_ZunraaShrineExtraType Then Return True
+	Local $l_f_X = Agent_GetAgentInfo($a_i_Agent, "X")
+	Local $l_f_Y = Agent_GetAgentInfo($a_i_Agent, "Y")
+	Local $i
+	For $i = 0 To $ZEN_SHRINE_COUNT - 1
+		Local $l_f_Dx = $ZEN_SHRINE_X[$i] - $l_f_X
+		Local $l_f_Dy = $ZEN_SHRINE_Y[$i] - $l_f_Y
+		If Sqrt($l_f_Dx * $l_f_Dx + $l_f_Dy * $l_f_Dy) < $ZEN_SHRINE_MATCH_RANGE Then Return True
+	Next
+	Return False
+EndFunc
+
+; Next unused shrine in route order. Never the nearest spawn to the player.
+Func Leveler_NextUnusedZenShrine(ByRef $a_f_X, ByRef $a_f_Y, ByRef $a_i_Index)
+	$a_i_Index = -1
+	$a_f_X = 0
+	$a_f_Y = 0
+	Local $i
+	Local $l_i_Start = $g_i_ZenLastShrineIndex + 1
+	If $l_i_Start < 0 Then $l_i_Start = 0
+	For $i = $l_i_Start To $ZEN_SHRINE_COUNT - 1
+		If $g_ab_ZenShrineUsed[$i] Then ContinueLoop
+		If Leveler_ZenShrineUsedAt($ZEN_SHRINE_X[$i], $ZEN_SHRINE_Y[$i]) Then ContinueLoop
+		$a_i_Index = $i
+		$a_f_X = $ZEN_SHRINE_X[$i]
+		$a_f_Y = $ZEN_SHRINE_Y[$i]
+		Return True
+	Next
+	For $i = 0 To $l_i_Start - 1
+		If $g_ab_ZenShrineUsed[$i] Then ContinueLoop
+		If Leveler_ZenShrineUsedAt($ZEN_SHRINE_X[$i], $ZEN_SHRINE_Y[$i]) Then ContinueLoop
+		$a_i_Index = $i
+		$a_f_X = $ZEN_SHRINE_X[$i]
+		$a_f_Y = $ZEN_SHRINE_Y[$i]
+		Return True
+	Next
+
+	; Extra live shrines not in the hardcoded list, east-to-west, skipping used ones.
+	Local $l_i_Best = 0
+	Local $l_f_BestX = -99999
+	Local $l_i_Max = Agent_GetMaxAgents()
+	For $i = 1 To $l_i_Max - 1
+		If Not Leveler_IsZunraaShrineGadget($i) Then ContinueLoop
+		Local $l_f_GX = Agent_GetAgentInfo($i, "X")
+		Local $l_f_GY = Agent_GetAgentInfo($i, "Y")
+		If Leveler_ZenShrineUsedAt($l_f_GX, $l_f_GY) Then ContinueLoop
+		If $l_f_GX > $l_f_BestX Then
+			$l_f_BestX = $l_f_GX
+			$l_i_Best = $i
+		EndIf
+	Next
+	If $l_i_Best = 0 Then Return False
+	$a_f_X = Agent_GetAgentInfo($l_i_Best, "X")
+	$a_f_Y = Agent_GetAgentInfo($l_i_Best, "Y")
+	Return True
+EndFunc
+
+Func Leveler_InteractUnusedZunraaShrine($a_f_X, $a_f_Y, $a_i_Index)
+	If Not Leveler_MoveTo($a_f_X, $a_f_Y, True) Then Return False
+	Local $l_i_Gadget = Leveler_GetGadgetNearXY($a_f_X, $a_f_Y, 400, True)
+	If $l_i_Gadget = 0 Then $l_i_Gadget = Leveler_GetGadgetNearXY($a_f_X, $a_f_Y, 400, False)
+	If $l_i_Gadget = 0 Then
+		Out("[Zen] No shrine gadget at " & Round($a_f_X) & ", " & Round($a_f_Y))
+		Leveler_MarkZenShrineUsed($a_f_X, $a_f_Y, $a_i_Index)
+		Return False
+	EndIf
+	Local $l_f_GX = Agent_GetAgentInfo($l_i_Gadget, "X")
+	Local $l_f_GY = Agent_GetAgentInfo($l_i_Gadget, "Y")
+	Local $l_i_Extra = Agent_GetAgentInfo($l_i_Gadget, "ExtraType")
+	If $l_i_Extra <> 0 Then $g_i_ZunraaShrineExtraType = $l_i_Extra
+	Agent_GoSignpost($l_i_Gadget)
+	Sleep(800)
+	Leveler_MarkZenShrineUsed($l_f_GX, $l_f_GY, $a_i_Index)
+	Return True
+EndFunc
+
+; Ring an unused Shrine of Zunraa. Used shrines cannot summon again.
+Func Leveler_SummonZunraa()
+	If Leveler_ZunraaAlive() Then
+		$g_b_ZunraaSummoned = True
+		Return True
+	EndIf
+	If Map_GetMapID() = $MAP_SEITUNG Then Return True
+	If Not Map_GetInstanceInfo("IsExplorable") Then Return False
+
+	$g_b_ZunraaResummoning = True
+	Local $l_i_Attempts
+	Local $l_b_Ok = False
+	For $l_i_Attempts = 1 To $ZEN_SHRINE_COUNT + 4
+		If $g_b_LevelerPaused Or Leveler_IsWiped() Then ExitLoop
+		If Map_GetMapID() = $MAP_SEITUNG Then
+			$l_b_Ok = True
+			ExitLoop
+		EndIf
+		Local $l_f_X = 0
+		Local $l_f_Y = 0
+		Local $l_i_Index = -1
+		If Not Leveler_NextUnusedZenShrine($l_f_X, $l_f_Y, $l_i_Index) Then
+			Out("[Zen] No unused Shrine of Zunraa left")
+			ExitLoop
+		EndIf
+		Out("[Zen] Summoning Zunraa at unused shrine " & Round($l_f_X) & ", " & Round($l_f_Y))
+		If Not Leveler_InteractUnusedZunraaShrine($l_f_X, $l_f_Y, $l_i_Index) Then ContinueLoop
+		If Leveler_WaitForZunraa(10000) Then
+			$g_b_ZunraaSummoned = True
+			Out("[Zen] Zunraa is with the party")
+			$l_b_Ok = True
+			ExitLoop
+		EndIf
+		Out("[Zen] Shrine did not summon Zunraa; trying another unused shrine")
+	Next
+	$g_b_ZunraaResummoning = False
+	Return $l_b_Ok
+EndFunc
+
+; Zunraa is required for Zen Daijun. If it dies, resummon from an unused shrine.
+Func Leveler_EnsureZunraa()
+	If Not $g_b_ZunraaWatch Then Return True
+	If $g_b_ZunraaResummoning Then Return True
+	If Map_GetMapID() = $MAP_SEITUNG Then Return True
+	If Map_GetInstanceInfo("IsLoading") Then Return True
+	If Not Map_GetInstanceInfo("IsExplorable") Then Return True
+	If Leveler_ZunraaAlive() Then
+		$g_b_ZunraaSummoned = True
+		Return True
+	EndIf
+	If Not $g_b_ZunraaSummoned Then Return True
+	Out("[Zen] Zunraa died. Resummoning from an unused shrine, not the nearest spawn.")
+	If Not Leveler_SummonZunraa() Then
+		Out("[Zen] Could not resummon Zunraa. The mission cannot continue without it.")
+		Return False
+	EndIf
+	Return True
+EndFunc
+
+#EndRegion Zunraa
 
 Func Leveler_GetGroundItemByModel($a_i_Model, $a_f_Range = 2500)
 	Local $l_i_MyID = Agent_GetMyID()
@@ -913,6 +1160,9 @@ Func Leveler_FollowCoords(ByRef $a_af_Path, $a_b_Combat = False)
 		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
 		If $g_b_KilroyMode Then Leveler_HandleKilroyDeath()
+		If $g_b_ZunraaWatch Then
+			If Not Leveler_EnsureZunraa() Then Return False
+		EndIf
 		If Map_GetMapID() <> $l_i_StartMap Then Return True
 		Leveler_MoveTo($a_af_Path[$i][0], $a_af_Path[$i][1], $a_b_Combat)
 	Next
@@ -925,6 +1175,9 @@ Func Leveler_WaitMs($a_i_Ms)
 		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
 		If $g_b_KilroyMode Then Leveler_HandleKilroyDeath()
+		If $g_b_ZunraaWatch Then
+			If Not Leveler_EnsureZunraa() Then Return False
+		EndIf
 		Sleep(250)
 	WEnd
 	Return True
@@ -1043,6 +1296,7 @@ EndFunc
 
 Func Leveler_RecoverWipe()
 	$g_b_SpiritRiftWatch = False
+	Leveler_ResetZunraaState()
 	If $g_b_KilroyMode Then
 		Out("[Recover] Wiped during Kilroy. Returning to Gunnar's Hold.")
 		$g_b_KilroyMode = False

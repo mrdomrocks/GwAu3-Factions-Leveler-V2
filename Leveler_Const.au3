@@ -301,6 +301,7 @@ Global Const $MODEL_EOTN_POOL = 5959
 Global Const $MODEL_OGDEN = 5983
 Global Const $MODEL_VEKK = 5964
 Global Const $MODEL_KEIRAN_BOW = 35829
+; Seitung Harbor NPC and the Zen Daijun mission kirin.
 Global Const $MODEL_ZUNRAA = 4009
 Global Const $MODEL_CHAOS_STEP1 = 3267
 Global Const $MODEL_CHAOS_STEP2 = 2020
@@ -341,6 +342,12 @@ Global Const $LEVELER_AGGRO = 1320
 Global Const $LEVELER_FIGHT_RANGE_OUT = 3500
 Global Const $LEVELER_AREA_RANGE = 322
 Global Const $LEVELER_SPIRIT_RANGE = 2500
+; Match a live shrine gadget to a known Shrine of Zunraa coordinate.
+Global Const $ZEN_SHRINE_MATCH_RANGE = 500
+; Shrines of Zunraa along the mission route, in path order. Do not pick "nearest".
+Global Const $ZEN_SHRINE_COUNT = 3
+Global Const $ZEN_SHRINE_X[3] = [9632.00, 4754.00, -4862.00]
+Global Const $ZEN_SHRINE_Y[3] = [8058.00, 1451.00, 3005.00]
 
 ; Quest completion flag indices. Sticky during a run; rebuilt on Refresh.
 Global Enum $LEVELER_Q_FORMING, $LEVELER_Q_SECONDARY, $LEVELER_Q_FORMAL, $LEVELER_Q_LOST, _
@@ -358,6 +365,14 @@ Global $g_b_LevelerPaused = False
 Global $g_b_LevelerFailed = False
 Global $g_b_CombatMode = False
 Global $g_b_SpiritRiftWatch = False
+Global $g_b_ZunraaWatch = False
+Global $g_b_ZunraaSummoned = False
+Global $g_b_ZunraaResummoning = False
+Global $g_i_ZunraaShrineExtraType = 0
+Global $g_i_ZenLastShrineIndex = -1
+Global $g_i_ZenUsedCount = 0
+Global $g_ab_ZenShrineUsed[$ZEN_SHRINE_COUNT]
+Global $g_af_ZenUsedXY[1][2]
 Global $g_b_FarmMode = False
 Global $g_b_KilroyMode = False
 Global $g_h_RiftCooldown = 0
