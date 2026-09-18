@@ -1405,7 +1405,17 @@ Func Leveler_Step_ZenDaijunMission()
 		Out("[Step] Already inside Zen Daijun")
 	Else
 		If Map_GetMapID() <> $MAP_ZEN_OP Or Not Map_GetInstanceInfo("IsOutpost") Then
-			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
+			If Map_GetMapID() = $MAP_ZEN_OP Or Map_IsMapUnlocked($MAP_ZEN_OP) Then
+				If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
+			Else
+				Out("[Step] Zen Daijun (213) is not unlocked. Using the Haiju / Hanjui path instead of traveling.")
+				If Not Leveler_Step_ToZenDaijun() Then Return False
+				$g_s_CurrentHeader = "Zen Daijun Mission"
+			EndIf
+		EndIf
+		If Map_GetMapID() <> $MAP_ZEN_OP Or Not Map_GetInstanceInfo("IsOutpost") Then
+			Out("[Step] Not at Zen Daijun outpost (map " & Map_GetMapID() & "). Cannot enter the mission.")
+			Return False
 		EndIf
 		Out("[Step] Load skill bar, then henchmen, then enter")
 		If Not Leveler_LoadZenSkillBar() Then Return False

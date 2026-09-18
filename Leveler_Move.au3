@@ -376,6 +376,11 @@ Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 		Out("[Move] Rezone failed; walking from the current position")
 		Return True
 	EndIf
+	; Travel to a locked mission OP from Haiju resigns/wipes and never loads 213.
+	If Not Map_IsMapUnlocked($a_i_MapID) Then
+		Out("[Move] Not traveling to map " & $a_i_MapID & "; it is not unlocked")
+		Return False
+	EndIf
 	If Map_GetInstanceInfo("IsExplorable") Then
 		Out("[Move] Leaving explorable map " & Map_GetMapID() & " to travel to " & $a_i_MapID)
 		If Map_TravelTo($a_i_MapID) Then
@@ -414,7 +419,8 @@ Func Leveler_StepOutpost($a_i_Step)
 			If Map_IsMapUnlocked($MAP_ZEN_OP) Then Return $MAP_ZEN_OP
 			Return $MAP_SEITUNG
 		Case $LEVELER_STEP_ZEN_MISSION
-			Return $MAP_ZEN_OP
+			If Map_IsMapUnlocked($MAP_ZEN_OP) Then Return $MAP_ZEN_OP
+			Return 0
 		Case $LEVELER_STEP_TO_MARKET
 			If Map_IsMapUnlocked($MAP_MARKETPLACE) Then Return $MAP_MARKETPLACE
 			Return $MAP_ZEN_OP
@@ -480,7 +486,9 @@ Func Leveler_StepAllowsMap($a_i_Step, $a_i_Map)
 			If Map_IsMapUnlocked($MAP_ZEN_OP) Then Return $a_i_Map = $MAP_ZEN_OP
 			Return $a_i_Map = $MAP_JAYA Or $a_i_Map = $MAP_HAIJU
 		Case $LEVELER_STEP_ZEN_MISSION
-			Return $a_i_Map = $MAP_ZEN_EXP Or $a_i_Map = $MAP_ZEN_OP
+			If $a_i_Map = $MAP_ZEN_EXP Or $a_i_Map = $MAP_ZEN_OP Then Return True
+			If Not Map_IsMapUnlocked($MAP_ZEN_OP) Then Return $a_i_Map = $MAP_JAYA Or $a_i_Map = $MAP_HAIJU Or $a_i_Map = $MAP_SEITUNG
+			Return False
 		Case $LEVELER_STEP_TO_MARKET
 			If Map_IsMapUnlocked($MAP_MARKETPLACE) Then Return $a_i_Map = $MAP_MARKETPLACE
 			Return $a_i_Map = $MAP_KAINENG_DOCKS
