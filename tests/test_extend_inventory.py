@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CRAFT = (ROOT / "Leveler_Craft.au3").read_text()
 STEPS = (ROOT / "Leveler_Steps.au3").read_text()
 CONST = (ROOT / "Leveler_Const.au3").read_text()
+MAIN = (ROOT / "Factions_Character_Leveler.au3").read_text()
 
 
 def func_body(src: str, name: str) -> str:
@@ -62,7 +63,6 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("Leveler_OpenInventoryForBagEquip", equip)
         self.assertIn("Leveler_EquipBagItem", equip)
         self.assertIn("Leveler_LegalBagDest", equip)
-        self.assertIn("Leveler_FocusGwForClick", equip)
         self.assertIn("Leveler_RestoreLevelerGui", equip)
         click = func_body(CRAFT, "Leveler_ClickGwClient")
         drag = func_body(CRAFT, "Leveler_DragGwClient")
@@ -80,9 +80,9 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("@SW_HIDE", focus)
         self.assertIn("WinActivate", focus)
         self.assertIn("$BAG_INV_COMPASS", layout)
-        self.assertIn("top-backpack", func_body(CRAFT, "Leveler_InventoryLayoutName"))
-        self.assertIn("paperdoll-backpack", func_body(CRAFT, "Leveler_InventoryLayoutName"))
-        self.assertIn("bottom-backpack", func_body(CRAFT, "Leveler_InventoryLayoutName"))
+        self.assertIn("paperdoll-bottom", func_body(CRAFT, "Leveler_InventoryLayoutName"))
+        self.assertIn("paperdoll-from-top", func_body(CRAFT, "Leveler_InventoryLayoutName"))
+        self.assertNotIn("top-backpack", func_body(CRAFT, "Leveler_InventoryLayoutName"))
         self.assertIn("Leveler_LegalBagDest", send)
         self.assertNotIn("0x100001AF", send)
         self.assertNotIn("$g_d_MoveMap", send)
@@ -99,7 +99,8 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertNotIn("Item_EquipItem", send)
         self.assertNotIn("$LEVELER_UIMSG_MOVE_ITEM", CONST)
         self.assertIn("$BAG_INV_COMPASS", CONST)
-        self.assertIn("$BAG_INV_PAPER_GRID_Y", CONST)
+        self.assertIn("$BAG_INV_TAB_ABOVE_GRID", CONST)
+        self.assertIn("$GC_I_TYPE_BAG", func_body(CRAFT, "Leveler_ItemIsSmallBag"))
         self.assertIn("$MODEL_BAG", dest)
         self.assertIn("$GC_I_INVENTORY_BAG1", dest)
         self.assertIn("$GC_I_INVENTORY_BAG2", dest)
@@ -198,6 +199,12 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("Leveler_ItemPtrInBagCell", find)
         self.assertIn("$BAG_BACKPACK_SCAN_SLOTS", scan)
         self.assertIn("Scanning start bag slots", find)
+        self.assertIn("$GC_I_TYPE_BAG", find)
+        self.assertIn("Leveler_ItemIsSmallBag", find)
+        self.assertIn("Leveler_ItemIsSmallBag", count)
+        self.assertIn("$GC_I_TYPE_BAG", func_body(CRAFT, "Leveler_ItemIsSmallBag"))
+        self.assertIn("not TYPE_BAG", find)
+        self.assertIn("$GC_I_INVENTORY_ITEMTYPE", find)
         self.assertIn("$GC_I_INVENTORY_BACKPACK", find)
         self.assertNotIn("$GC_I_INVENTORY_BELT_POUCH", find)
         self.assertNotIn("$GC_I_INVENTORY_BAG1", find)
@@ -211,35 +218,54 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("$GC_I_INVENTORY_BACKPACK", body)
         self.assertIn("BagPtr", body)
 
-    def test_compact_cell20_is_left_of_compass_not_aa114ff_miss(self):
-        """stall.webp 1280x800: cell 20 and pouch tab must not sit under the compass."""
-        w = 1280
-        width = 240
-        compass = 176
-        top = 8
-        grid_x = 12
-        grid_y = 58
-        cell = 33
-        tab_y = 42
-        self.assertIn("$BAG_INV_WIDTH = 240", CONST)
-        self.assertIn("$BAG_INV_COMPASS = 176", CONST)
-        self.assertIn("$BAG_INV_CELL = 33", CONST)
+    def test_out_tees_to_leveler_log_files(self):
+        out = func_body(MAIN, "Out")
+        log = func_body(MAIN, "Leveler_FileLog")
+        self.assertIn("Leveler_FileLog", out)
+        self.assertIn(r'leveler.log', log)
+        self.assertIn(r"Z:\tmp\leveler-kestrel.log", log)
+        self.assertIn("FileFlush", log)
+
+    def test_small_bag_requires_type_bag_not_just_model(self):
+        helper = func_body(CRAFT, "Leveler_ItemIsSmallBag")
+        self.assertIn("$GC_I_TYPE_BAG", helper)
+        self.assertIn("0x20", helper)
+        self.assertIn("0x2C", helper)
+        find = func_body(CRAFT, "Leveler_FindLooseBagItem")
+        self.assertIn("not TYPE_BAG", find)
+        self.assertLess(find.find("Leveler_ItemIsSmallBag"), find.find("Return $l_i_Id"))
+
+    def test_paperdoll_cell20_is_above_skillbar_not_aa114ff_miss(self):
+        """stall.webp 1280x800 paperdoll I-window: grid hangs above the skillbar."""
+        w, h = 1280, 800
+        width = 248
+        compass = 172
+        grid_x = 14
+        cell = 36
+        skillbar = 88
+        bottom_pad = 18
+        tab_above = 36
+        self.assertIn("$BAG_INV_WIDTH = 248", CONST)
+        self.assertIn("$BAG_INV_COMPASS = 172", CONST)
+        self.assertIn("$BAG_INV_CELL = 36", CONST)
         left = w - compass - width
+        grid_top = h - skillbar - bottom_pad - cell * 4
         col = (20 - 1) % 5
         row = (20 - 1) // 5
         x = left + grid_x + col * cell + cell // 2
-        y = top + grid_y + row * cell + cell // 2
+        y = grid_top + row * cell + cell // 2
         tx = left + grid_x + 1 * cell + cell // 2
-        ty = top + tab_y
-        self.assertEqual(left, 864)
+        ty = grid_top - tab_above
+        self.assertEqual(left, 860)
         self.assertLess(x, w - compass)
-        self.assertGreater(x, left)
+        self.assertGreater(y, 500)
         self.assertNotEqual((x, y), (1238, 201))
         self.assertNotEqual((x, y), (1058, 201))
+        self.assertNotEqual((x, y), (1024, 181))
         self.assertLess(tx, x)
         self.assertLess(ty, y)
-        self.assertEqual((x, y), (1024, 181))
-        self.assertEqual((tx, ty), (925, 50))
+        self.assertEqual((x, y), (1036, 676))
+        self.assertEqual((tx, ty), (928, 514))
 
 
 if __name__ == "__main__":

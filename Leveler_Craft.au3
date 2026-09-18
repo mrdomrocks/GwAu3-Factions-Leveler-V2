@@ -1112,6 +1112,16 @@ Func Leveler_ItemPtrInBagCell($a_i_Bag, $a_i_Slot)
 	Return Memory_Read($l_p_Array + 0x4 * ($a_i_Slot - 1), "ptr")
 EndFunc
 
+; A merchant Bag / Belt Pouch is TYPE_BAG (3) AND model 16/34.
+; Model 34 alone matched Kestrel cell 20 (orange insect, not a pouch) and blocked buying.
+Func Leveler_ItemIsSmallBag($a_p_Item, $a_i_Model)
+	If $a_p_Item = 0 Then Return False
+	If $a_i_Model <> $MODEL_BAG And $a_i_Model <> $MODEL_BELT_POUCH Then Return False
+	If Memory_Read($a_p_Item + 0x2C, "dword") <> $a_i_Model Then Return False
+	If Memory_Read($a_p_Item + 0x20, "byte") <> $GC_I_TYPE_BAG Then Return False
+	Return True
+EndFunc
+
 ; Small bags to equip sit in the start bag (backpack) slots. Do not scan pouch/bag1/bag2
 ; (those are destinations) or merchant listings (BagPtr = 0).
 Func Leveler_FindLooseBagItem($a_i_Model)
@@ -1121,15 +1131,24 @@ Func Leveler_FindLooseBagItem($a_i_Model)
 		Return 0
 	EndIf
 	Local $l_i_Slots = Leveler_BagScanSlotCount($l_i_Bag)
-	Out("[Craft] Scanning start bag slots 1-" & $l_i_Slots & " for model " & $a_i_Model)
+	Out("[Craft] Scanning start bag slots 1-" & $l_i_Slots & " for TYPE_BAG model " & $a_i_Model)
 	Local $s
 	For $s = 1 To $l_i_Slots
 		Local $l_p_Item = Leveler_ItemPtrInBagCell($l_i_Bag, $s)
 		If $l_p_Item = 0 Then ContinueLoop
-		If Memory_Read($l_p_Item + 0x2C, "dword") <> $a_i_Model Then ContinueLoop
 		Local $l_i_Id = Memory_Read($l_p_Item, "dword")
+		Local $l_i_Type = Memory_Read($l_p_Item + 0x20, "byte")
+		Local $l_i_Model = Memory_Read($l_p_Item + 0x2C, "dword")
+		Local $l_i_Qty = Memory_Read($l_p_Item + 0x4C, "short")
+		Out("[Craft] Start bag cell " & $s & "/" & $l_i_Slots & " id=" & $l_i_Id & " type=" & $l_i_Type & " model=" & $l_i_Model & " qty=" & $l_i_Qty)
+		If Not Leveler_ItemIsSmallBag($l_p_Item, $a_i_Model) Then
+			If $l_i_Model = $a_i_Model Then
+				Out("[Craft] Cell " & $s & " model " & $l_i_Model & " type " & $l_i_Type & " is not TYPE_BAG; not a small bag")
+			EndIf
+			ContinueLoop
+		EndIf
 		If $l_i_Id = 0 Then ContinueLoop
-		Out("[Craft] Found small bag id " & $l_i_Id & " (model " & $a_i_Model & ") in start bag cell " & $s & "/" & $l_i_Slots)
+		Out("[Craft] Found small bag id " & $l_i_Id & " (TYPE_BAG model " & $a_i_Model & ") in start bag cell " & $s & "/" & $l_i_Slots)
 		Return $l_i_Id
 	Next
 
@@ -1140,7 +1159,11 @@ Func Leveler_FindLooseBagItem($a_i_Model)
 			If $l_av_Inv[$i][$GC_I_INVENTORY_MODELID] <> $a_i_Model Then ContinueLoop
 			If $l_av_Inv[$i][$GC_I_INVENTORY_ITEMID] = 0 Then ContinueLoop
 			If $l_av_Inv[$i][$GC_I_INVENTORY_BAG] <> $GC_I_INVENTORY_BACKPACK Then ContinueLoop
-			Out("[Craft] Found small bag id " & $l_av_Inv[$i][$GC_I_INVENTORY_ITEMID] & " (model " & $a_i_Model & ") in start bag inventory slot " & $l_av_Inv[$i][$GC_I_INVENTORY_SLOT])
+			If $l_av_Inv[$i][$GC_I_INVENTORY_ITEMTYPE] <> $GC_I_TYPE_BAG Then
+				Out("[Craft] Inventory slot " & $l_av_Inv[$i][$GC_I_INVENTORY_SLOT] & " model " & $a_i_Model & " type " & $l_av_Inv[$i][$GC_I_INVENTORY_ITEMTYPE] & " is not TYPE_BAG; skipping")
+				ContinueLoop
+			EndIf
+			Out("[Craft] Found small bag id " & $l_av_Inv[$i][$GC_I_INVENTORY_ITEMID] & " (TYPE_BAG model " & $a_i_Model & ") in start bag inventory slot " & $l_av_Inv[$i][$GC_I_INVENTORY_SLOT])
 			Return $l_av_Inv[$i][$GC_I_INVENTORY_ITEMID]
 		Next
 	EndIf
@@ -1155,8 +1178,7 @@ Func Leveler_CountLooseBags($a_i_Model)
 	Local $s
 	For $s = 1 To $l_i_Slots
 		Local $l_p_Item = Leveler_ItemPtrInBagCell($l_i_Bag, $s)
-		If $l_p_Item = 0 Then ContinueLoop
-		If Memory_Read($l_p_Item + 0x2C, "dword") = $a_i_Model Then $l_i_Count += 1
+		If Leveler_ItemIsSmallBag($l_p_Item, $a_i_Model) Then $l_i_Count += 1
 	Next
 	Return $l_i_Count
 EndFunc
@@ -1252,41 +1274,43 @@ Func Leveler_GwClientSize(ByRef $a_i_W, ByRef $a_i_H)
 	Return $a_i_W > 0 And $a_i_H > 0
 EndFunc
 
-; Attempt layouts measured from stall.webp (compact I, left of compass) and the
-; paperdoll I-window screenshot. Cell 20 is col 4 / row 3 of the 5x4 backpack grid.
-; Dest tabs: backpack=0, pouch=1, bag1=2, bag2=3 (bag index minus 1).
+; Attempt layouts measured from stall.webp / during.webp: tall paperdoll I-window
+; left of compass. Grid is the bottom 5x4; dest icons sit just above that grid.
+; Cell 20 is col 4 / row 3. Dest tabs: backpack=0, pouch=1, bag1=2, bag2=3.
 Func Leveler_InventoryLayout($a_i_Attempt, ByRef $a_i_Left, ByRef $a_i_Top, ByRef $a_i_GridTop, ByRef $a_i_TabY, ByRef $a_i_Cell)
 	Local $l_i_W, $l_i_H
 	If Not Leveler_GwClientSize($l_i_W, $l_i_H) Then Return False
 	$a_i_Cell = $BAG_INV_CELL
 	$a_i_Top = $BAG_INV_TOP
 	$a_i_Left = $l_i_W - $BAG_INV_COMPASS - $BAG_INV_WIDTH
-	$a_i_TabY = $a_i_Top + $BAG_INV_TAB_Y
-	$a_i_GridTop = $a_i_Top + $BAG_INV_GRID_Y
+	; Default: stretched I-window. Backpack grid hangs just above the skillbar.
+	$a_i_GridTop = $l_i_H - $BAG_INV_SKILLBAR - $BAG_INV_BOTTOM_PAD - $a_i_Cell * 4
+	$a_i_TabY = $a_i_GridTop - $BAG_INV_TAB_ABOVE_GRID
 	Switch $a_i_Attempt
 		Case 2
 			$a_i_Cell = 32
-			$a_i_Left -= 16
+			$a_i_Left -= 12
+			$a_i_GridTop = $l_i_H - $BAG_INV_SKILLBAR - $BAG_INV_BOTTOM_PAD - $a_i_Cell * 4
+			$a_i_TabY = $a_i_GridTop - $BAG_INV_TAB_ABOVE_GRID
 		Case 3
-			; aa114ff left-of-compass numbers that logged 1058,201 (grid was hidden then).
-			$a_i_Cell = 37
-			$a_i_Left = $l_i_W - 180 - 226
-			$a_i_Top = 8
-			$a_i_TabY = $a_i_Top + 36
-			$a_i_GridTop = $a_i_Top + 64
+			$a_i_Cell = 40
+			$a_i_GridTop = $l_i_H - $BAG_INV_SKILLBAR - $BAG_INV_BOTTOM_PAD - $a_i_Cell * 4
+			$a_i_TabY = $a_i_GridTop - $BAG_INV_TAB_ABOVE_GRID
 		Case 4, 5
+			; Fixed offsets from window top (8f137f paperdoll).
 			$a_i_TabY = $a_i_Top + $BAG_INV_PAPER_ICON_Y
 			$a_i_GridTop = $a_i_Top + $BAG_INV_PAPER_GRID_Y
 			If $a_i_Attempt = 5 Then $a_i_Cell = 40
-		Case 6, 7, 8
-			If $a_i_Attempt = 7 Then $a_i_Left = $l_i_W - $BAG_INV_WIDTH
-			If $a_i_Attempt = 8 Then $a_i_Cell = 32
-			$a_i_GridTop = $l_i_H - $BAG_INV_SKILLBAR - $a_i_Cell * 4
-			If $a_i_Attempt = 8 Then
-				$a_i_TabY = $a_i_Top + $BAG_INV_TAB_Y
-			Else
-				$a_i_TabY = $a_i_GridTop - Int($a_i_Cell / 2) - 8
-			EndIf
+		Case 6
+			$a_i_Left -= 24
+		Case 7
+			$a_i_Cell = 32
+			$a_i_GridTop = $l_i_H - 100 - $a_i_Cell * 4
+			$a_i_TabY = $a_i_GridTop - 28
+		Case 8
+			$a_i_Left = $l_i_W - $BAG_INV_WIDTH
+			$a_i_GridTop = $l_i_H - $BAG_INV_SKILLBAR - $BAG_INV_BOTTOM_PAD - $a_i_Cell * 4
+			$a_i_TabY = $a_i_GridTop - $BAG_INV_TAB_ABOVE_GRID
 	EndSwitch
 	If $a_i_Left < 0 Then $a_i_Left = 0
 	If $a_i_GridTop < 0 Then $a_i_GridTop = 0
@@ -1296,12 +1320,12 @@ EndFunc
 
 Func Leveler_InventoryLayoutName($a_i_Attempt)
 	Switch $a_i_Attempt
-		Case 1, 2, 3
-			Return "top-backpack"
+		Case 1, 2, 3, 6, 7, 8
+			Return "paperdoll-bottom"
 		Case 4, 5
-			Return "paperdoll-backpack"
+			Return "paperdoll-from-top"
 		Case Else
-			Return "bottom-backpack"
+			Return "paperdoll-bottom"
 	EndSwitch
 EndFunc
 
@@ -1480,10 +1504,6 @@ Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 		Return False
 	EndIf
 	Leveler_CloseMerchantWindow()
-	If Leveler_FocusGwForClick() = 0 Then
-		Out("[Craft] No Guild Wars window for inventory click")
-		Return False
-	EndIf
 	Leveler_OpenInventoryForBagEquip($a_i_Bag)
 	Local $i
 	Local $l_b_Ok = False
@@ -1495,7 +1515,7 @@ Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 		EndIf
 		Local $l_i_Item = Leveler_FindLooseBagItem($a_i_Model)
 		If $l_i_Item = 0 Then
-			Out("[Craft] No loose model " & $a_i_Model & " in start bag to move into bag slot " & $a_i_Bag)
+			Out("[Craft] No TYPE_BAG model " & $a_i_Model & " in start bag to move into bag slot " & $a_i_Bag)
 			ExitLoop
 		EndIf
 		Leveler_LogBagState("Before inventory click/drag " & $l_i_Item & " -> " & $a_i_Bag)
@@ -1505,9 +1525,11 @@ Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 			Out("[Craft] Bag slot filled after inventory click/drag (wanted " & $a_i_Bag & ")")
 			Leveler_LogBagState("After inventory click/drag")
 			$l_b_Ok = True
+			Leveler_RestoreLevelerGui()
 			ExitLoop
 		EndIf
 		Out("[Craft] Inventory click/drag did not fill slot " & $a_i_Bag & " yet")
+		Leveler_RestoreLevelerGui()
 		Leveler_OpenInventoryForBagEquip($a_i_Bag)
 	Next
 	If Not $l_b_Ok Then Leveler_LogBagState("Inventory click/drag retries exhausted")

@@ -366,23 +366,23 @@ Global Const $BAG_MAX_POUCH_BUYS = 1
 Global Const $BAG_MAX_BAG_BUYS = 2
 ; Backpack grid is 20 cells. Do not trust BagInfo "Slots" if it reads 2.
 Global Const $BAG_BACKPACK_SCAN_SLOTS = 20
-; Client-side inventory click layout for Wine 1280x800 (Kestrel stall.webp).
-; Floating Inventory (I) sits LEFT of the compass, not flush-right.
-; Header row is container icons LTR: backpack, belt pouch, bag1, bag2, pack.
-; Backpack cells are the 5x4 grid under those icons while BACKPACK is selected.
-; Clicking an unequipped pouch/bag tab hides the grid (aa114ff stall).
-; Live Wine: CtoS 0x7E, CtoS 0x6B, UI kMoveItem, paperdoll EquipItem, and
-; aa114ff ControlClick/Mode-2 at 1238,201 and 1058,201 all failed. Do not send packets.
-Global Const $BAG_INV_WIDTH = 240
-Global Const $BAG_INV_COMPASS = 176
-Global Const $BAG_INV_TOP = 8
-Global Const $BAG_INV_TAB_Y = 42
-Global Const $BAG_INV_GRID_X = 12
-Global Const $BAG_INV_GRID_Y = 58
-Global Const $BAG_INV_CELL = 33
+; Client-side inventory click layout for Wine 1280x800 (Kestrel stall.webp / during.webp).
+; Inventory (I) is the tall paperdoll window LEFT of the compass. Container icons
+; (backpack, pouch, bag1, bag2, trash) sit immediately ABOVE the 5x4 backpack grid
+; at the BOTTOM of that window, just above the skillbar. Compact top-of-screen
+; coords hit hero slots / paperdoll and miss the grid.
+; Live Wine: packets 0x7E/0x6B, kMoveItem, paperdoll EquipItem, ControlClick, and
+; e1fada5 Mode-1 drag of a non-bag "model 34" in cell 20 all failed. Do not send packets.
+; A Bag/Belt Pouch is TYPE_BAG (3) AND model 16/34. Model 34 alone is not a pouch.
+Global Const $BAG_INV_WIDTH = 248
+Global Const $BAG_INV_COMPASS = 172
+Global Const $BAG_INV_TOP = 6
+Global Const $BAG_INV_GRID_X = 14
 Global Const $BAG_INV_COLS = 5
-Global Const $BAG_INV_SKILLBAR = 96
-; Tall Inventory (I) with paperdoll (merchant screenshot): icons + grid in the bottom half.
+Global Const $BAG_INV_CELL = 36
+Global Const $BAG_INV_SKILLBAR = 88
+Global Const $BAG_INV_BOTTOM_PAD = 18
+Global Const $BAG_INV_TAB_ABOVE_GRID = 36
 Global Const $BAG_INV_PAPER_ICON_Y = 398
 Global Const $BAG_INV_PAPER_GRID_Y = 478
 Global Const $MONASTERY_ARMOR_GOLD = 20
@@ -407,6 +407,8 @@ Global Enum $LEVELER_Q_FORMING, $LEVELER_Q_SECONDARY, $LEVELER_Q_FORMAL, $LEVELE
 Global $g_ab_QuestDone[$LEVELER_Q_COUNT]
 
 ; Shared runtime state
+Global $g_h_LevelerLogGw = 0
+Global $g_h_LevelerLogTmp = 0
 Global $g_i_Step = $LEVELER_STEP_OVERLOOK
 Global $g_b_NeedStatusCheck = False
 Global $g_b_LevelerPaused = False
