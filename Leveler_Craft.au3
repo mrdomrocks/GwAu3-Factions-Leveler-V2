@@ -1174,43 +1174,117 @@ Func Leveler_CountLooseBags($a_i_Model)
 	Return Leveler_CountModel($a_i_Model, False)
 EndFunc
 
-; Merchant window can block equip. Step away so backpack bags can be equipped into slots.
+; Merchant window can block bag equip. Do not CancelAction unless the shop is actually open —
+; CancelAction after EquipBag would drop the bag packet.
 Func Leveler_CloseMerchantWindow()
-	Agent_CancelAction()
-	Sleep(250)
 	If Merchant_GetMerchantItemsSize() = 0 Then Return
-	Out("[Craft] Closing merchant before EquipItem")
+	Out("[Craft] Closing merchant before EquipBag")
 	Local $l_f_X = Agent_GetAgentInfo(-2, "X")
 	Local $l_f_Y = Agent_GetAgentInfo(-2, "Y")
 	Map_Move($l_f_X + 80, $l_f_Y + 80, 20)
-	Sleep(700)
+	Local $l_h_Close = TimerInit()
+	While TimerDiff($l_h_Close) < 3000
+		If Merchant_GetMerchantItemsSize() = 0 Then ExitLoop
+		Sleep(200)
+	WEnd
 	Agent_CancelAction()
+	Sleep(400)
+EndFunc
+
+Func Leveler_OpenInventoryForBagEquip()
+	Core_ControlAction($GC_I_CONTROL_INVENTORY_OPEN_INVENTORY)
+	Sleep(200)
+	Core_ControlAction($GC_I_CONTROL_INVENTORY_OPEN_BACKPACK)
 	Sleep(200)
 EndFunc
 
-; Bags are equipped, not used. UseItem is for consumables.
+; True while that item id still sits in a backpack/pouch/bag cell.
+Func Leveler_LooseItemStillInBags($a_i_Item)
+	If $a_i_Item = 0 Then Return False
+	Local $l_ai_Bags[4] = [$GC_I_INVENTORY_BACKPACK, $GC_I_INVENTORY_BELT_POUCH, $GC_I_INVENTORY_BAG1, $GC_I_INVENTORY_BAG2]
+	Local $b, $s
+	For $b = 0 To 3
+		If Item_GetBagPtr($l_ai_Bags[$b]) = 0 Then ContinueLoop
+		Local $l_i_Slots = Leveler_BagScanSlotCount($l_ai_Bags[$b])
+		For $s = 1 To $l_i_Slots
+			Local $l_p_Item = Leveler_ItemPtrInBagCell($l_ai_Bags[$b], $s)
+			If $l_p_Item = 0 Then ContinueLoop
+			If Memory_Read($l_p_Item, "dword") = $a_i_Item Then Return True
+		Next
+	Next
+	Return False
+EndFunc
+
+; Paperdoll Item_EquipItem (0x30) and Ui_EquipItem put armor/weapons on the character.
+; Small bags use HEADER_EQUIP_BAG (0x6B).
+Func Leveler_EquipBagItem($a_i_Item, $a_i_Bag = 0, $a_b_WithDest = False)
+	If $a_i_Item = 0 Then Return False
+	Local $l_i_Id = Item_ItemID($a_i_Item)
+	If $a_b_WithDest And $a_i_Bag <> 0 Then
+		Out("[Craft] EquipBag packet 0x6B item " & $l_i_Id & " dest bag " & $a_i_Bag)
+		Core_SendPacket(0xC, $GC_I_HEADER_EQUIP_BAG, $l_i_Id, $a_i_Bag)
+	Else
+		Out("[Craft] EquipBag packet 0x6B item " & $l_i_Id)
+		Core_SendPacket(0x8, $GC_I_HEADER_EQUIP_BAG, $l_i_Id)
+	EndIf
+	Return True
+EndFunc
+
+; Success if the wanted slot filled, or a previously empty compatible bag slot filled.
+Func Leveler_WaitForBagEquip($a_i_Item, $a_i_Model, $a_i_Bag, $a_s_InfoKey = "", $a_i_Timeout = 3000)
+	Local $l_b_Pouch0 = Leveler_BagSlotFilled($GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr")
+	Local $l_b_Bag10 = Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr")
+	Local $l_b_Bag20 = Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr")
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
+		If $a_i_Model = $MODEL_BAG Then
+			If Not $l_b_Bag10 And Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") Then Return True
+			If Not $l_b_Bag20 And Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") Then Return True
+		EndIf
+		If $a_i_Model = $MODEL_BELT_POUCH And Not $l_b_Pouch0 Then
+			If Leveler_BagSlotFilled($GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr") Then Return True
+		EndIf
+		If $a_i_Item <> 0 And Not Leveler_LooseItemStillInBags($a_i_Item) Then
+			Sleep(250)
+			If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
+			If $a_i_Model = $MODEL_BAG Then
+				If Not $l_b_Bag10 And Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") Then Return True
+				If Not $l_b_Bag20 And Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") Then Return True
+			EndIf
+			Return False
+		EndIf
+		Sleep(150)
+	WEnd
+	Return Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey)
+EndFunc
+
+; Equip a backpack Bag/Belt Pouch into the inventory bag slots. Not character equipment.
 Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 	If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
 	Leveler_CloseMerchantWindow()
-	Local $l_i_Agent = Agent_ConvertID(-2)
+	Leveler_OpenInventoryForBagEquip()
 	Local $i
 	For $i = 1 To 10
 		If $g_b_LevelerPaused Then Return False
 		If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
 		Local $l_i_Item = Leveler_FindLooseBagItem($a_i_Model)
 		If $l_i_Item = 0 Then
-			Out("[Craft] No loose model " & $a_i_Model & " in backpack to EquipItem")
+			Out("[Craft] No loose model " & $a_i_Model & " in backpack to EquipBag")
 			Return False
 		EndIf
-		Out("[Craft] EquipItem bag " & $l_i_Item & " (model " & $a_i_Model & ")")
-		Item_EquipItem($l_i_Item)
-		Sleep(200)
-		Ui_EquipItem($l_i_Item, $l_i_Agent)
-		If Leveler_WaitForBagSlot($a_i_Bag, $a_s_InfoKey, 2000) Then
-			Out("[Craft] Bag slot " & $a_i_Bag & " filled")
+		Leveler_LogBagState("Before EquipBag " & $l_i_Item)
+		Leveler_EquipBagItem($l_i_Item, $a_i_Bag, $i > 5)
+		Other_PingSleep(250)
+		If Leveler_WaitForBagEquip($l_i_Item, $a_i_Model, $a_i_Bag, $a_s_InfoKey, 2500) Then
+			Out("[Craft] Bag slot filled after EquipBag (wanted " & $a_i_Bag & ")")
+			Leveler_LogBagState("After EquipBag")
 			Return True
 		EndIf
+		Out("[Craft] EquipBag did not fill slot " & $a_i_Bag & " yet")
 	Next
+	Leveler_LogBagState("EquipBag retries exhausted")
 	Return Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey)
 EndFunc
 
@@ -1279,7 +1353,7 @@ Func Leveler_OpenBagMerchant()
 	Return False
 EndFunc
 
-; Per slot: scan backpack for that small bag. EquipItem it if found. Else buy exactly one and EquipItem.
+; Per slot: scan backpack for that small bag. EquipBag it if found. Else buy exactly one and EquipBag.
 Func Leveler_EnsureBagSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 	If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
 	Local $l_i_Item = Leveler_FindLooseBagItem($a_i_Model)
@@ -1314,18 +1388,18 @@ Func Leveler_ExtendInventory()
 	EndIf
 	Leveler_LogBagState("Extend Inventory start")
 
-	; Scan backpack first. Kestrel-style leftover Bags are equipped, never bought again.
+	; Scan backpack first. Kestrel-style leftover Bags are EquipBag'd, never bought again.
 	If Leveler_EquipOwnedInventoryBags() Then
 		Out("[Craft] Inventory bags equipped")
 		Return True
 	EndIf
 	If Leveler_CountLooseBags($MODEL_BAG) > 0 Or Leveler_CountLooseBags($MODEL_BELT_POUCH) > 0 Then
 		Out("[Craft] Backpack already has a small bag; not buying more")
-		Leveler_LogBagState("EquipItem did not fill slots")
+		Leveler_LogBagState("EquipBag did not fill slots")
 		Return False
 	EndIf
 
-	; No small bag in inventory. Buy exactly one for the next empty slot, then EquipItem.
+	; No small bag in inventory. Buy exactly one for the next empty slot, then EquipBag.
 	If Not Leveler_EnsureBagSlot($MODEL_BELT_POUCH, $GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr") Then
 		Out("[Craft] Inventory bags are still missing after the merchant")
 		Leveler_LogBagState("After pouch")

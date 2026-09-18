@@ -32,6 +32,7 @@ class ExtendInventoryContract(unittest.TestCase):
             "Leveler_ExtendInventory",
             "Leveler_EnsureBagSlot",
             "Leveler_EquipLooseBagIntoSlot",
+            "Leveler_EquipBagItem",
             "Leveler_BuyInventoryBag",
             "Leveler_FindLooseBagItem",
         ):
@@ -52,14 +53,34 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertLess(found_at, buy_at)
         self.assertLess(found_at, equip_at)
 
-    def test_equipitem_not_useitem_for_bags(self):
+    def test_equipbag_not_paperdoll_equipment(self):
         equip = func_body(CRAFT, "Leveler_EquipLooseBagIntoSlot")
-        self.assertIn("Leveler_CloseMerchantWindow()", equip)
-        self.assertIn("Item_EquipItem", equip)
-        self.assertIn("Ui_EquipItem", equip)
-        self.assertNotIn("Item_UseItem", equip)
+        send = func_body(CRAFT, "Leveler_EquipBagItem")
         close = func_body(CRAFT, "Leveler_CloseMerchantWindow")
+        self.assertIn("Leveler_CloseMerchantWindow()", equip)
+        self.assertIn("Leveler_OpenInventoryForBagEquip()", equip)
+        self.assertIn("Leveler_EquipBagItem", equip)
+        self.assertIn("$GC_I_HEADER_EQUIP_BAG", send)
+        self.assertIn("Core_SendPacket", send)
+        self.assertNotIn("Ui_EquipItem", equip)
+        self.assertNotIn("Ui_EquipItem", send)
+        self.assertNotIn("Item_EquipItem", equip)
+        self.assertNotIn("Item_EquipItem", send)
+        self.assertNotIn("Item_UseItem", equip)
+        self.assertNotIn("Item_UseItem", send)
         self.assertIn("Agent_CancelAction", close)
+        self.assertLess(
+            close.find("Merchant_GetMerchantItemsSize() = 0"),
+            close.find("Agent_CancelAction"),
+        )
+        open_inv = func_body(CRAFT, "Leveler_OpenInventoryForBagEquip")
+        self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_INVENTORY", open_inv)
+        self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_BACKPACK", open_inv)
+
+    def test_craft_weapon_still_uses_paperdoll_equip(self):
+        body = func_body(CRAFT, "Leveler_EquipModel")
+        self.assertIn("Item_EquipItem", body)
+        self.assertIn("Ui_EquipItem", body)
 
     def test_missing_bags_fail_the_step(self):
         body = func_body(CRAFT, "Leveler_ExtendInventory")
