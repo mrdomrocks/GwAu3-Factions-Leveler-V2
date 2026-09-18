@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Source-level checks for the Extend Inventory bag stall fix.
 
-These do not talk to Guild Wars. They lock the scan-then-use-or-buy-one
+These do not talk to Guild Wars. They lock the scan-then-equip-or-buy-one
 contract so Kestrel Shade cannot mass-buy Bags into every backpack slot.
 """
 from pathlib import Path
@@ -31,31 +31,33 @@ class ExtendInventoryContract(unittest.TestCase):
         for name in (
             "Leveler_ExtendInventory",
             "Leveler_EnsureBagSlot",
-            "Leveler_UseLooseBagIntoSlot",
+            "Leveler_EquipLooseBagIntoSlot",
             "Leveler_BuyInventoryBag",
             "Leveler_FindLooseBagItem",
         ):
             body = func_body(CRAFT, name)
             self.assertNotIn("Item_FindItemByModelID", body, name)
+            self.assertNotIn("Item_UseItem", body, name)
 
-    def test_scan_backpack_then_use_or_buy_one(self):
+    def test_scan_backpack_then_equip_or_buy_one(self):
         ensure = func_body(CRAFT, "Leveler_EnsureBagSlot")
         self.assertIn("Leveler_FindLooseBagItem", ensure)
         self.assertIn("Scan backpack", ensure)
         self.assertIn("Buying one", ensure)
         self.assertIn("Leveler_BuyInventoryBag", ensure)
-        self.assertIn("Leveler_UseLooseBagIntoSlot", ensure)
+        self.assertIn("Leveler_EquipLooseBagIntoSlot", ensure)
         found_at = ensure.find("Leveler_FindLooseBagItem")
         buy_at = ensure.find("Leveler_BuyInventoryBag")
-        use_at = ensure.find("Leveler_UseLooseBagIntoSlot")
+        equip_at = ensure.find("Leveler_EquipLooseBagIntoSlot")
         self.assertLess(found_at, buy_at)
-        self.assertLess(found_at, use_at)
+        self.assertLess(found_at, equip_at)
 
-    def test_useitem_after_closing_merchant(self):
-        use = func_body(CRAFT, "Leveler_UseLooseBagIntoSlot")
-        self.assertIn("Leveler_CloseMerchantWindow()", use)
-        self.assertIn("Item_UseItem", use)
-        self.assertNotIn("Item_EquipItem", use)
+    def test_equipitem_not_useitem_for_bags(self):
+        equip = func_body(CRAFT, "Leveler_EquipLooseBagIntoSlot")
+        self.assertIn("Leveler_CloseMerchantWindow()", equip)
+        self.assertIn("Item_EquipItem", equip)
+        self.assertIn("Ui_EquipItem", equip)
+        self.assertNotIn("Item_UseItem", equip)
         close = func_body(CRAFT, "Leveler_CloseMerchantWindow")
         self.assertIn("Agent_CancelAction", close)
 
