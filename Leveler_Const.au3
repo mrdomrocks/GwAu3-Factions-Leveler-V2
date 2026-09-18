@@ -361,6 +361,9 @@ Global Const $WEAPON_GOLD_COST = 100
 Global Const $BAG_GOLD_COST = 100
 Global Const $BAG_MERCHANT_X = -11866
 Global Const $BAG_MERCHANT_Y = 11444
+; Never buy more than one pouch and two bags for the three equipment slots.
+Global Const $BAG_MAX_POUCH_BUYS = 1
+Global Const $BAG_MAX_BAG_BUYS = 2
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000
