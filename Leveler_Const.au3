@@ -104,6 +104,8 @@ Global Const $MAP_JAYA = 196
 Global Const $MAP_HAIJU = 237
 Global Const $MAP_ZEN_OP = 213
 Global Const $MAP_ZEN_EXP = 246
+; Py4GW UIMessage.kSendEnterMission. GwAu3 CommandUIMsg calls UIMessage(msgid, struct+8, 0).
+Global Const $LEVELER_UIMSG_SEND_ENTER_MISSION = 0x30000002
 Global Const $MAP_KAINENG_DOCKS = 302
 Global Const $MAP_MARKETPLACE = 303
 Global Const $MAP_BUKDEK = 240

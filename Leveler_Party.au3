@@ -424,6 +424,11 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 
 		If Map_GetInstanceInfo("IsLoading") Or $l_i_Type = 2 Then
 			$l_b_SawLoading = True
+			; arena_id=1 hung type-2 for 180s while Gw sat on character select.
+			If TimerDiff($l_h_Timer) > 75000 Then
+				Out("[Step] Mission still loading after 75s (map " & $l_i_Map & "). Treating as a failed enter, not waiting 180s")
+				Return False
+			EndIf
 			Sleep(250)
 			ContinueLoop
 		EndIf
@@ -488,34 +493,45 @@ Func Leveler_MissionEnterStarted()
 	Return False
 EndFunc
 
-; CommandEnterMission dword is mission-specific. Do not assume arena_id=0 for every map.
-; GwAu3 Ui_EnterChallenge($foreign) writes dword 2 as Not $foreign:
-;   True  -> 0   (Cho Wine-proven; Py4GW kSendEnterMission [0])
-;   False -> 1   (GwAu3 native / Party Formation "Native Character")
-; Discarded: Map_EnterChallenge CtoS 0xA5 (Cho Code-007), pixel/{ENTER} clicks (Cho Code-007).
-; Py4GW Unlocker (SkillsUnlocker) has no mission enter. Factions leveler uses
-; Map.EnterChallenge() for both Cho and Zen, then waits for 214 / 213 (not 246).
-Func Leveler_MissionEnterArenaId($a_i_OutpostMap = 0)
-	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
-	If $a_i_OutpostMap = $MAP_ZEN_OP Then Return 1
-	Return 0
-EndFunc
-
-Func Leveler_SendEnterMission($a_i_ArenaId = 0)
-	If Leveler_MissionEnterStarted() Then Return True
-	If $a_i_ArenaId <> 0 And $a_i_ArenaId <> 1 Then
-		Out("[Step] Refusing CommandEnterMission arena_id=" & $a_i_ArenaId & "; only 0 (Cho) or 1 (Zen native)")
+; Wine live matrix at Zen 213:
+;   CommandEnterMission dword 0 (Ui_EnterChallenge True)  -> load ~42s, drop to outpost
+;   CommandEnterMission dword 1 (Ui_EnterChallenge False) -> type-2 hang 180s / char select
+; Both dwords call Assembler CommandEnterMission -> game EnterMission(value).
+; That is not Py4GW Map.EnterChallenge.
+;
+; Py4GW: UIManager.SendUIMessage(kSendEnterMission, [0])
+; GwAu3 CommandUIMsg: push 0; push struct+8; push msgid; call UIMessage
+;   (same path as Ui_MoveMap / Ui_EquipItem / Ui_Xunlai).
+; Cho 214 keeps the proven CommandEnterMission dword 0.
+Func Leveler_SendUIEnterMission($a_i_ArenaId = 0)
+	If Not IsDeclared("g_d_MoveMap") Or Not IsDeclared("g_p_MoveMap") Then
+		Out("[Step] CommandUIMsg structs are missing; cannot send kSendEnterMission")
 		Return False
 	EndIf
-	If $a_i_ArenaId = 0 Then
-		; Ui_EnterChallenge(True, False) -> DllStructSetData($g_d_EnterMission, 2, 0)
-		Out("[Step] CommandEnterMission arena_id=0 (Ui_EnterChallenge(True, False); Cho / Py4GW kSendEnterMission; not 0xA5, not pixels)")
-		Ui_EnterChallenge(True, False)
-	Else
-		; Ui_EnterChallenge(False, False) -> DllStructSetData($g_d_EnterMission, 2, 1)
-		Out("[Step] CommandEnterMission arena_id=1 (Ui_EnterChallenge(False, False); Zen native Party Formation enter; not 0xA5, not pixels)")
-		Ui_EnterChallenge(False, False)
+	Local $l_p_UIMsg = DllStructGetData($g_d_MoveMap, 1)
+	If $l_p_UIMsg = 0 Then
+		Out("[Step] CommandUIMsg pointer is 0; cannot send kSendEnterMission")
+		Return False
 	EndIf
+	; ptr CommandUIMsg, dword msgid, dword arena_id (wparam points here).
+	Local $l_d_Msg = DllStructCreate("ptr;dword;dword")
+	DllStructSetData($l_d_Msg, 1, $l_p_UIMsg)
+	DllStructSetData($l_d_Msg, 2, $LEVELER_UIMSG_SEND_ENTER_MISSION)
+	DllStructSetData($l_d_Msg, 3, $a_i_ArenaId)
+	Out("[Step] CommandUIMsg kSendEnterMission arena_id=" & $a_i_ArenaId & " (Py4GW Map.EnterChallenge; not CommandEnterMission, not 0xA5, not pixels)")
+	Core_Enqueue(DllStructGetPtr($l_d_Msg), 12)
+	Return True
+EndFunc
+
+Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
+	If Leveler_MissionEnterStarted() Then Return True
+	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
+	If $a_i_OutpostMap = $MAP_ZEN_OP Then
+		Return Leveler_SendUIEnterMission(0)
+	EndIf
+	; Cho / default: CommandEnterMission dword 0. Wine-proven on map 214.
+	Out("[Step] CommandEnterMission arena_id=0 (Ui_EnterChallenge(True, False); Cho; not 0xA5, not pixels)")
+	Ui_EnterChallenge(True, False)
 	Return True
 EndFunc
 
@@ -548,11 +564,10 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 		Return True
 	EndIf
 
-	Local $l_i_ArenaId = Leveler_MissionEnterArenaId($l_i_StartMap)
 	Out("Let's do " & $a_s_Name)
-	Out("[Step] Enter " & $a_s_Name & ": map " & $l_i_StartMap & " " & Leveler_InstanceTypeName() & ", hench " & Leveler_HenchmanCount() & ", waiting=" & Party_GetPartyContextInfo("IsWaitingForMission") & ", arena_id=" & $l_i_ArenaId)
+	Out("[Step] Enter " & $a_s_Name & ": map " & $l_i_StartMap & " " & Leveler_InstanceTypeName() & ", hench " & Leveler_HenchmanCount() & ", waiting=" & Party_GetPartyContextInfo("IsWaitingForMission"))
 	Out("Exiting Outpost")
-	If Not Leveler_SendEnterMission($l_i_ArenaId) Then Return False
+	If Not Leveler_SendEnterMission($l_i_StartMap) Then Return False
 	If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
 		Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", " & Leveler_InstanceTypeName() & ")")
 		Return False
