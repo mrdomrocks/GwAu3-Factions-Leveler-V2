@@ -366,11 +366,18 @@ Global Const $BAG_MAX_POUCH_BUYS = 1
 Global Const $BAG_MAX_BAG_BUYS = 2
 ; Backpack grid is 20 cells. Do not trust BagInfo "Slots" if it reads 2.
 Global Const $BAG_BACKPACK_SCAN_SLOTS = 20
-; Native GW UI message kMoveItem. wparam = { item_id, to_bag_index, to_slot, prompt }.
-; Bag index is $GC_I_INVENTORY_BELT_POUCH / BAG1 / BAG2 (2/3/4), not Bag.ID.
-; CtoS 0x7E (use-item) does not fill bag slots under Wine.
-; CtoS 0x6B (8-byte and 12-byte) crashed Gw. Do not send it.
-Global Const $LEVELER_UIMSG_MOVE_ITEM = 0x100001AF
+; Client-side inventory click layout. Floating inventory docks to the right of the
+; client; bag tabs sit above a 5-column backpack grid. Used only for ControlClick /
+; MouseClickDrag so Gw itself emits the equip-container packet.
+; Live Wine: CtoS 0x7E, CtoS 0x6B, UI kMoveItem 0x100001AF, and paperdoll EquipItem
+; all failed to fill bag slots (0x6B and kMoveItem crashed Gw). Do not send them.
+Global Const $BAG_INV_WIDTH = 226
+Global Const $BAG_INV_COMPASS = 180
+Global Const $BAG_INV_TAB_Y = 36
+Global Const $BAG_INV_GRID_X = 18
+Global Const $BAG_INV_GRID_Y = 64
+Global Const $BAG_INV_CELL = 37
+Global Const $BAG_INV_COLS = 5
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000

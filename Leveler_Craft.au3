@@ -1178,6 +1178,8 @@ Func Leveler_CloseMerchantWindow()
 EndFunc
 
 Func Leveler_OpenInventoryForBagEquip($a_i_Bag = 0)
+	Core_ControlAction($GC_I_CONTROL_PANEL_CLOSE_ALL_PANELS)
+	Sleep(200)
 	Core_ControlAction($GC_I_CONTROL_INVENTORY_OPEN_INVENTORY)
 	Sleep(200)
 	Core_ControlAction($GC_I_CONTROL_INVENTORY_OPEN_BACKPACK)
@@ -1195,39 +1197,146 @@ EndFunc
 
 ; True while that item id still sits in a start bag (backpack) cell.
 Func Leveler_LooseItemStillInBags($a_i_Item)
-	If $a_i_Item = 0 Then Return False
+	Return Leveler_StartBagCellOfItem($a_i_Item) <> 0
+EndFunc
+
+Func Leveler_StartBagCellOfItem($a_i_Item)
+	If $a_i_Item = 0 Then Return 0
 	Local $l_i_Bag = $GC_I_INVENTORY_BACKPACK
-	If Item_GetBagPtr($l_i_Bag) = 0 Then Return False
+	If Item_GetBagPtr($l_i_Bag) = 0 Then Return 0
 	Local $l_i_Slots = Leveler_BagScanSlotCount($l_i_Bag)
 	Local $s
 	For $s = 1 To $l_i_Slots
 		Local $l_p_Item = Leveler_ItemPtrInBagCell($l_i_Bag, $s)
 		If $l_p_Item = 0 Then ContinueLoop
-		If Memory_Read($l_p_Item, "dword") = $a_i_Item Then Return True
+		If Memory_Read($l_p_Item, "dword") = $a_i_Item Then Return $s
 	Next
-	Return False
+	Return 0
 EndFunc
 
-; Drag a backpack Bag/Belt Pouch onto Belt Pouch / Bag1 / Bag2.
-; Native GW UI message kMoveItem 0x100001AF, wparam { item_id, to_bag_index, to_slot, prompt }.
-; to_bag_index is $GC_I_INVENTORY_* (2=pouch, 3=bag1, 4=bag2). Empty slots have Bag.ID 0, so
-; Item_MoveItem (CtoS 0x72 + Bag.ID) cannot target them.
-; Live Wine: CtoS 0x7E (use-item) does not fill bag slots (Dominic, f8e5f37).
-; Live Wine: CtoS 0x6B size 8 then 12 crashed Gw. Do not send 0x6B.
-; Paperdoll equip APIs are for armor/weapons, not bag slots.
-Func Leveler_EquipBagItem($a_i_Item, $a_i_Bag = 0)
+Func Leveler_ItemModelId($a_i_Item)
+	Local $l_p_Item = Item_GetItemPtr($a_i_Item)
+	If $l_p_Item = 0 Then Return 0
+	Return Memory_Read($l_p_Item + 0x2C, "dword")
+EndFunc
+
+; Bags (model 16) only go to Bag1/Bag2. Belt Pouch (model 34) only goes to the pouch.
+; Never default a Bag onto $GC_I_INVENTORY_BELT_POUCH (index 2) — that is the UseItem reject path.
+Func Leveler_LegalBagDest($a_i_Model, $a_i_Bag = 0)
+	If $a_i_Model = $MODEL_BELT_POUCH Then
+		If $a_i_Bag = 0 Or $a_i_Bag = $GC_I_INVENTORY_BELT_POUCH Then Return $GC_I_INVENTORY_BELT_POUCH
+		Return 0
+	EndIf
+	If $a_i_Model = $MODEL_BAG Then
+		If $a_i_Bag = $GC_I_INVENTORY_BELT_POUCH Then Return 0
+		If $a_i_Bag = $GC_I_INVENTORY_BAG1 Or $a_i_Bag = $GC_I_INVENTORY_BAG2 Then Return $a_i_Bag
+		If $a_i_Bag = 0 Then
+			If Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") Then Return $GC_I_INVENTORY_BAG1
+			If Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") Then Return $GC_I_INVENTORY_BAG2
+		EndIf
+		Return 0
+	EndIf
+	Return 0
+EndFunc
+
+Func Leveler_InventoryOrigin($a_i_Attempt, ByRef $a_i_Left, ByRef $a_i_Top)
+	Local $l_h_Wnd = Scanner_GetWindowHandle()
+	If $l_h_Wnd = 0 Then $l_h_Wnd = Core_GetGuildWarsWindow()
+	If $l_h_Wnd = 0 Then Return False
+	Local $l_ai_Size = WinGetClientSize($l_h_Wnd)
+	If @error Or Not IsArray($l_ai_Size) Then Return False
+	$a_i_Top = 8
+	; Attempt 1-4: flush right. 5-8: left of the compass, matching the Kestrel screenshot.
+	If $a_i_Attempt > 4 Then
+		$a_i_Left = $l_ai_Size[0] - $BAG_INV_COMPASS - $BAG_INV_WIDTH
+	Else
+		$a_i_Left = $l_ai_Size[0] - $BAG_INV_WIDTH
+	EndIf
+	If $a_i_Left < 0 Then $a_i_Left = 0
+	Return True
+EndFunc
+
+Func Leveler_BackpackCellXY($a_i_Slot, $a_i_Attempt, ByRef $a_i_X, ByRef $a_i_Y)
+	If $a_i_Slot < 1 Then Return False
+	Local $l_i_Left, $l_i_Top
+	If Not Leveler_InventoryOrigin($a_i_Attempt, $l_i_Left, $l_i_Top) Then Return False
+	Local $l_i_Col = Mod($a_i_Slot - 1, $BAG_INV_COLS)
+	Local $l_i_Row = Int(($a_i_Slot - 1) / $BAG_INV_COLS)
+	$a_i_X = $l_i_Left + $BAG_INV_GRID_X + $l_i_Col * $BAG_INV_CELL + Int($BAG_INV_CELL / 2)
+	$a_i_Y = $l_i_Top + $BAG_INV_GRID_Y + $l_i_Row * $BAG_INV_CELL + Int($BAG_INV_CELL / 2)
+	Return True
+EndFunc
+
+Func Leveler_BagTabXY($a_i_Bag, $a_i_Attempt, ByRef $a_i_X, ByRef $a_i_Y)
+	Local $l_i_Tab = $a_i_Bag - 1
+	If $l_i_Tab < 0 Then Return False
+	Local $l_i_Left, $l_i_Top
+	If Not Leveler_InventoryOrigin($a_i_Attempt, $l_i_Left, $l_i_Top) Then Return False
+	$a_i_X = $l_i_Left + $BAG_INV_GRID_X + $l_i_Tab * $BAG_INV_CELL + Int($BAG_INV_CELL / 2)
+	$a_i_Y = $l_i_Top + $BAG_INV_TAB_Y
+	Return True
+EndFunc
+
+Func Leveler_ClickGwClient($a_i_X, $a_i_Y, $a_i_Clicks = 1)
+	Local $l_h_Wnd = Scanner_GetWindowHandle()
+	If $l_h_Wnd = 0 Then $l_h_Wnd = Core_GetGuildWarsWindow()
+	If $l_h_Wnd = 0 Then Return False
+	WinActivate($l_h_Wnd)
+	Sleep(80)
+	ControlClick($l_h_Wnd, "", "", "left", $a_i_Clicks, $a_i_X, $a_i_Y)
+	Return True
+EndFunc
+
+Func Leveler_DragGwClient($a_i_X1, $a_i_Y1, $a_i_X2, $a_i_Y2)
+	Local $l_h_Wnd = Scanner_GetWindowHandle()
+	If $l_h_Wnd = 0 Then $l_h_Wnd = Core_GetGuildWarsWindow()
+	If $l_h_Wnd = 0 Then Return False
+	WinActivate($l_h_Wnd)
+	Sleep(80)
+	Local $l_i_Old = Opt("MouseCoordMode", 2)
+	MouseClickDrag("left", $a_i_X1, $a_i_Y1, $a_i_X2, $a_i_Y2, 8)
+	Opt("MouseCoordMode", $l_i_Old)
+	Return True
+EndFunc
+
+; Equip a backpack Bag/Belt Pouch by letting the client UI do it.
+; Live Wine ruled out: CtoS ITEM_USE (no fill), EQUIP_BAG header (crash),
+; paperdoll EquipItem (no bag slots), and UI kMoveItem through the travel
+; CommandUIMsg buffer (logged, pointers stayed 0, then Gw crash).
+; kMoveItem moves an item INTO an existing bag. Empty pouch/bag1/bag2 have GetBagPtr=0,
+; so the handler null-derefs. A dedicated CommandUIMsg struct would send the same
+; message at the same dest and still crash. Do not enqueue kMoveItem.
+; Double-click / drag on the inventory UI is what a player does; Gw emits the real
+; equip-container packet and picks a compatible empty slot (pouch for model 34, bag1/bag2 for 16).
+Func Leveler_EquipBagItem($a_i_Item, $a_i_Bag = 0, $a_i_Model = 0, $a_i_Attempt = 1)
 	If $a_i_Item = 0 Then Return False
 	Local $l_i_Id = Item_ItemID($a_i_Item)
-	Local $l_i_Dest = $a_i_Bag
-	If $l_i_Dest = 0 Then $l_i_Dest = $GC_I_INVENTORY_BELT_POUCH
-	Out("[Craft] UI kMoveItem 0x100001AF item " & $l_i_Id & " -> bag index " & $l_i_Dest & " (Bag.ID=" & Item_GetBagInfo($l_i_Dest, "ID") & ")")
-	; 24-byte CommandUIMsg buffer, same layout as Ui_MoveMap: msgid + 4 dwords.
-	DllStructSetData($g_d_MoveMap, 2, $LEVELER_UIMSG_MOVE_ITEM)
-	DllStructSetData($g_d_MoveMap, 3, $l_i_Id)
-	DllStructSetData($g_d_MoveMap, 4, $l_i_Dest)
-	DllStructSetData($g_d_MoveMap, 5, 0)
-	DllStructSetData($g_d_MoveMap, 6, 0)
-	Core_Enqueue($g_p_MoveMap, 24)
+	If $a_i_Model = 0 Then $a_i_Model = Leveler_ItemModelId($l_i_Id)
+	Local $l_i_Dest = Leveler_LegalBagDest($a_i_Model, $a_i_Bag)
+	If $l_i_Dest = 0 Then
+		Out("[Craft] Refusing bag equip item " & $l_i_Id & " model " & $a_i_Model & " onto bag index " & $a_i_Bag)
+		Return False
+	EndIf
+	Local $l_i_Slot = Leveler_StartBagCellOfItem($l_i_Id)
+	If $l_i_Slot = 0 Then
+		Out("[Craft] Item " & $l_i_Id & " is not in a start bag cell")
+		Return False
+	EndIf
+	Local $l_i_X, $l_i_Y, $l_i_TX, $l_i_TY
+	If Not Leveler_BackpackCellXY($l_i_Slot, $a_i_Attempt, $l_i_X, $l_i_Y) Then
+		Out("[Craft] No Guild Wars window for inventory click")
+		Return False
+	EndIf
+	Out("[Craft] Inventory click/drag item " & $l_i_Id & " model " & $a_i_Model & " cell " & $l_i_Slot & " -> bag index " & $l_i_Dest & " at " & $l_i_X & "," & $l_i_Y)
+	Leveler_ClickGwClient($l_i_X, $l_i_Y, 2)
+	Sleep(150)
+	If Not Leveler_LooseItemStillInBags($l_i_Id) Then Return True
+	$l_i_Slot = Leveler_StartBagCellOfItem($l_i_Id)
+	If $l_i_Slot = 0 Then Return True
+	If Not Leveler_BackpackCellXY($l_i_Slot, $a_i_Attempt, $l_i_X, $l_i_Y) Then Return True
+	If Not Leveler_BagTabXY($l_i_Dest, $a_i_Attempt, $l_i_TX, $l_i_TY) Then Return True
+	Out("[Craft] Inventory drag cell " & $l_i_Slot & " " & $l_i_X & "," & $l_i_Y & " -> tab " & $l_i_Dest & " " & $l_i_TX & "," & $l_i_TY)
+	Leveler_DragGwClient($l_i_X, $l_i_Y, $l_i_TX, $l_i_TY)
 	Return True
 EndFunc
 
@@ -1261,9 +1370,13 @@ Func Leveler_WaitForBagEquip($a_i_Item, $a_i_Model, $a_i_Bag, $a_s_InfoKey = "",
 	Return Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey)
 EndFunc
 
-; Equip a start-bag Bag/Belt Pouch into Belt Pouch / Bag1 / Bag2 via UI kMoveItem.
+; Equip a start-bag Bag/Belt Pouch into Belt Pouch / Bag1 / Bag2 via inventory click/drag.
 Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 	If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
+	If Leveler_LegalBagDest($a_i_Model, $a_i_Bag) = 0 Then
+		Out("[Craft] Model " & $a_i_Model & " cannot go into bag index " & $a_i_Bag)
+		Return False
+	EndIf
 	Leveler_CloseMerchantWindow()
 	Leveler_OpenInventoryForBagEquip($a_i_Bag)
 	Local $i
@@ -1275,17 +1388,18 @@ Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 			Out("[Craft] No loose model " & $a_i_Model & " in start bag to move into bag slot " & $a_i_Bag)
 			Return False
 		EndIf
-		Leveler_LogBagState("Before kMoveItem " & $l_i_Item & " -> " & $a_i_Bag)
-		Leveler_EquipBagItem($l_i_Item, $a_i_Bag)
+		Leveler_LogBagState("Before inventory click/drag " & $l_i_Item & " -> " & $a_i_Bag)
+		Leveler_EquipBagItem($l_i_Item, $a_i_Bag, $a_i_Model, $i)
 		Other_PingSleep(250)
 		If Leveler_WaitForBagEquip($l_i_Item, $a_i_Model, $a_i_Bag, $a_s_InfoKey, 2500) Then
-			Out("[Craft] Bag slot filled after kMoveItem (wanted " & $a_i_Bag & ")")
-			Leveler_LogBagState("After kMoveItem")
+			Out("[Craft] Bag slot filled after inventory click/drag (wanted " & $a_i_Bag & ")")
+			Leveler_LogBagState("After inventory click/drag")
 			Return True
 		EndIf
-		Out("[Craft] kMoveItem did not fill slot " & $a_i_Bag & " yet")
+		Out("[Craft] Inventory click/drag did not fill slot " & $a_i_Bag & " yet")
+		Leveler_OpenInventoryForBagEquip($a_i_Bag)
 	Next
-	Leveler_LogBagState("kMoveItem retries exhausted")
+	Leveler_LogBagState("Inventory click/drag retries exhausted")
 	Return Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey)
 EndFunc
 
@@ -1396,11 +1510,11 @@ Func Leveler_ExtendInventory()
 	EndIf
 	If Leveler_CountLooseBags($MODEL_BAG) > 0 Or Leveler_CountLooseBags($MODEL_BELT_POUCH) > 0 Then
 		Out("[Craft] Start bag already has a small bag; not buying more")
-		Leveler_LogBagState("kMoveItem did not fill slots")
+		Leveler_LogBagState("Inventory click/drag did not fill slots")
 		Return False
 	EndIf
 
-	; No small bag in inventory. Buy exactly one for the next empty slot, then kMoveItem.
+	; No small bag in inventory. Buy exactly one for the next empty slot, then click/drag it.
 	If Not Leveler_EnsureBagSlot($MODEL_BELT_POUCH, $GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr") Then
 		Out("[Craft] Inventory bags are still missing after the merchant")
 		Leveler_LogBagState("After pouch")
