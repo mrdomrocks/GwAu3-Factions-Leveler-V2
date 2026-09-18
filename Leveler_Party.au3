@@ -481,6 +481,110 @@ Func Leveler_WaitMissionEnterReady()
 	Return True
 EndFunc
 
+Func Leveler_MissionEnterStarted()
+	If Map_GetInstanceInfo("IsLoading") Then Return True
+	If Map_GetInstanceInfo("Type") = 2 Then Return True
+	If Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
+	If Map_GetInstanceInfo("IsExplorable") Then Return True
+	Return False
+EndFunc
+
+Func Leveler_GwClientHwnd()
+	If IsDeclared("g_h_GWWindow") And $g_h_GWWindow <> 0 Then
+		Local $sClass = ""
+		Local $aCls = DllCall("user32.dll", "int", "GetClassNameA", "hwnd", $g_h_GWWindow, "str", "", "int", 256)
+		If IsArray($aCls) Then $sClass = $aCls[2]
+		If $sClass = $GC_S_CLASS_DX_WINDOW Then Return $g_h_GWWindow
+	EndIf
+	Local $aWins = WinList("[CLASS:" & $GC_S_CLASS_DX_WINDOW & "]")
+	If IsArray($aWins) Then
+		Local $i
+		For $i = 1 To $aWins[0][0]
+			If $aWins[$i][1] <> 0 Then Return $aWins[$i][1]
+		Next
+	EndIf
+	If IsDeclared("g_h_GWWindow") Then Return $g_h_GWWindow
+	Return 0
+EndFunc
+
+Func Leveler_OverlayHold()
+	If Not IsDeclared("g_h_MainGui") Then Return
+	If $g_h_MainGui = 0 Then Return
+	WinSetOnTop($g_h_MainGui, "", 0)
+	WinSetState($g_h_MainGui, "", @SW_HIDE)
+EndFunc
+
+Func Leveler_OverlayRestore()
+	If Not IsDeclared("g_h_MainGui") Then Return
+	If $g_h_MainGui = 0 Then Return
+	WinSetState($g_h_MainGui, "", @SW_SHOW)
+	If IsDeclared("g_h_OnTopCheckbox") And BitAND(GUICtrlRead($g_h_OnTopCheckbox), $GUI_CHECKED) Then
+		WinSetOnTop($g_h_MainGui, "", 1)
+	EndIf
+EndFunc
+
+Func Leveler_PostClientClick($a_h_Wnd, $a_i_X, $a_i_Y)
+	If $a_h_Wnd = 0 Then Return
+	Local $iLp = BitOR(BitAND($a_i_X, 0xFFFF), BitShift(BitAND($a_i_Y, 0xFFFF), -16))
+	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0200, "wparam", 0, "lparam", $iLp)
+	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0201, "wparam", 1, "lparam", $iLp)
+	Sleep(40)
+	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0202, "wparam", 0, "lparam", $iLp)
+EndFunc
+
+; Python Map.EnterChallenge is UIMessage kSendEnterMission(arena_id=0) — the
+; Enter Mission party-window button, not CtoS 0xA5. Live Wine Code-007'd both:
+;   Ui_EnterChallenge(False) -> CommandEnterMission(1)
+;   Map_EnterChallenge       -> Core_SendPacket 0xA5 arg 1 (also an enqueue)
+; Do not inject either. Click the visible button; stop input once loading starts.
+Func Leveler_EnterChallengeByMissionButton()
+	If Leveler_MissionEnterStarted() Then Return True
+	Local $hWnd = Leveler_GwClientHwnd()
+	If $hWnd = 0 Then
+		Out("[Step] No Guild Wars window for Enter Mission click")
+		Return False
+	EndIf
+
+	Out("[Step] Enter Mission UI button (no Ui_EnterChallenge, no 0xA5)")
+	Leveler_OverlayHold()
+	WinActivate($hWnd)
+	WinWaitActive($hWnd, "", 2)
+	DllCall("user32.dll", "bool", "SetForegroundWindow", "hwnd", $hWnd)
+	Sleep(400)
+	ControlSend($hWnd, "", "", "{ESC}")
+	Sleep(250)
+
+	ControlSend($hWnd, "", "", "{ENTER}")
+	Sleep(1200)
+	If Leveler_MissionEnterStarted() Then
+		Out("[Step] Mission enter started after {ENTER}")
+		Leveler_OverlayRestore()
+		Return True
+	EndIf
+
+	Local $aSz = WinGetClientSize($hWnd)
+	Local $iW = 800
+	If IsArray($aSz) And Number($aSz[0]) >= 200 Then $iW = Number($aSz[0])
+	Local $iCx = Int($iW / 2)
+	Local $aiY[5] = [22, 32, 42, 54, 68]
+	Local $i
+	For $i = 0 To 4
+		If Leveler_MissionEnterStarted() Then ExitLoop
+		Out("[Step] Enter Mission click " & $iCx & "," & $aiY[$i])
+		Leveler_PostClientClick($hWnd, $iCx, $aiY[$i])
+		ControlClick($hWnd, "", "", "left", 1, $iCx, $aiY[$i])
+		Sleep(800)
+	Next
+
+	Leveler_OverlayRestore()
+	If Leveler_MissionEnterStarted() Then
+		Out("[Step] Mission enter started after UI click")
+		Return True
+	EndIf
+	Out("[Step] Enter Mission button did not start a load (still " & Leveler_InstanceTypeName() & ")")
+	Return False
+EndFunc
+
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Local $l_i_StartMap = Map_GetMapID()
 	If Leveler_InMissionInstance($a_i_MapID) Then
@@ -489,7 +593,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	EndIf
 
 	; Engine already accepted Enter Challenge. Do not send it again.
-	If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
+	If Leveler_MissionEnterStarted() Then
 		Out("[Step] Mission is already starting; waiting for the map to load")
 		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
 		Sleep(2000)
@@ -503,7 +607,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 
 	If Not Leveler_WaitMissionEnterReady() Then Return False
 	If Leveler_InMissionInstance($a_i_MapID) Then Return True
-	If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
+	If Leveler_MissionEnterStarted() Then
 		Out("[Step] Mission is already starting; waiting for the map to load")
 		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
 		Sleep(2000)
@@ -513,15 +617,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Out("Let's do " & $a_s_Name)
 	Out("[Step] Enter " & $a_s_Name & ": map " & $l_i_StartMap & " " & Leveler_InstanceTypeName() & ", hench " & Leveler_HenchmanCount() & ", waiting=" & Party_GetPartyContextInfo("IsWaitingForMission"))
 	Out("Exiting Outpost")
-	; GwAu3 has two enter APIs. Do not use Ui_EnterChallenge here.
-	; Ui_EnterChallenge enqueues CommandEnterMission (Party Formation UI). On Wine
-	; that started Cho load then Code-007 to character select (PR #13 retest).
-	; Map_EnterChallenge is the GWA2/Python cooperative-mission enter: CtoS
-	; HEADER_PARTY_ENTER_CHALLENGE (0xA5) with arg 1 (native). Foreign enter is a
-	; different header and is not used for Factions chars on Cho / Zen Daijun.
-	; $a_WaitToLoad=False so Leveler_WaitMissionExplorable owns the wait.
-	Out("[Step] Map_EnterChallenge(False) CtoS 0xA5 native")
-	Map_EnterChallenge(False)
+	If Not Leveler_EnterChallengeByMissionButton() Then Return False
 	If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
 		Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", " & Leveler_InstanceTypeName() & ")")
 		Return False
