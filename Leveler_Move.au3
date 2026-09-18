@@ -70,7 +70,13 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_SpiritRiftWatch Then $l_s_Callback = "Leveler_InterruptSpiritRifts"
 
 	Local $l_b_Ok = False
-	If Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
+	Local $l_b_Outpost = Map_GetInstanceInfo("IsOutpost")
+	Local $l_b_Direct = $l_b_Outpost Or Not Pathfinder_IsMapAvailable($l_i_StartMap)
+	; Outposts have no pathfinder mesh. Walk with Map_Move; do not skip the walk.
+	If $l_b_Direct Then
+		If $l_b_Outpost Then
+			Out("[Move] Outpost walk to " & Round($a_f_X) & ", " & Round($a_f_Y) & " from " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & " (map " & $l_i_StartMap & ")")
+		EndIf
 		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 30000, $a_b_Combat)
 	Else
 		$l_b_Ok = Pathfinder_MoveTo($a_f_X, $a_f_Y, -1, $l_v_Obstacles, $l_i_Aggro, $LEVELER_FIGHT_RANGE_OUT, 0, $l_s_Callback)
@@ -79,21 +85,45 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
 	If Leveler_IsWiped() Then Return False
 	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+	If Not $l_b_Ok And Not $l_b_Direct Then
+		Out("[Move] Failed to reach " & Round($a_f_X) & ", " & Round($a_f_Y) & " on map " & Map_GetMapID() & " (pos " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & ", dist " & Round(Agent_GetDistanceToXY($a_f_X, $a_f_Y)) & ")")
+	EndIf
 	Return $l_b_Ok
 EndFunc
 
 Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_f_StartX = Agent_GetAgentInfo(-2, "X")
+	Local $l_f_StartY = Agent_GetAgentInfo(-2, "Y")
+	Local $l_f_LastX = $l_f_StartX
+	Local $l_f_LastY = $l_f_StartY
+	Local $l_h_Stuck = TimerInit()
+	Local $l_b_Cleared = False
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
 		If Leveler_IsWiped() Then Return False
 		If Map_GetMapID() <> $l_i_StartMap Then Return True
 		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
 		If $a_b_Combat Then Leveler_CombatTick()
+		Local $l_f_NowX = Agent_GetAgentInfo(-2, "X")
+		Local $l_f_NowY = Agent_GetAgentInfo(-2, "Y")
+		Local $l_f_Shift = Sqrt(($l_f_NowX - $l_f_LastX) ^ 2 + ($l_f_NowY - $l_f_LastY) ^ 2)
+		If $l_f_Shift > 40 Then
+			$l_f_LastX = $l_f_NowX
+			$l_f_LastY = $l_f_NowY
+			$l_h_Stuck = TimerInit()
+		ElseIf TimerDiff($l_h_Stuck) > 2500 And Not $l_b_Cleared Then
+			Out("[Move] No movement toward " & Round($a_f_X) & ", " & Round($a_f_Y) & " (still at " & Round($l_f_NowX) & ", " & Round($l_f_NowY) & "). Cancelling action.")
+			Agent_CancelAction()
+			$l_b_Cleared = True
+			$l_h_Stuck = TimerInit()
+		EndIf
 		Map_Move($a_f_X, $a_f_Y, 20)
 		Sleep(250)
 	WEnd
-	Return Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
+	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+	Out("[Move] Timed out walking to " & Round($a_f_X) & ", " & Round($a_f_Y) & " on map " & $l_i_StartMap & " (from " & Round($l_f_StartX) & ", " & Round($l_f_StartY) & " now " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & ", dist " & Round(Agent_GetDistanceToXY($a_f_X, $a_f_Y)) & ")")
+	Return False
 EndFunc
 
 Func Leveler_MoveAndDialog($a_f_X, $a_f_Y, $a_i_Dialog, $a_b_Combat = False, $a_i_NpcModel = 0)
@@ -251,7 +281,9 @@ Func Leveler_MoveAndExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False)
 		Map_Move($a_f_X, $a_f_Y, 10)
 		Sleep(1500)
 	EndIf
-	Return Map_WaitMapLoading($a_i_MapID)
+	If Map_WaitMapLoading($a_i_MapID) Then Return True
+	Out("[Move] Did not zone to map " & $a_i_MapID & " from " & $l_i_StartMap & " (now " & Map_GetMapID() & " at " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & ")")
+	Return False
 EndFunc
 
 ; Walk the Lost Treasure entrance portal back to Ran Musu. Used when a completed
@@ -280,7 +312,11 @@ Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 	If Map_GetMapID() = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
 		If Not $a_b_Rezone Then Return True
 		Out("[Move] Rezoning map " & $a_i_MapID & " to reset position")
-		If Map_RndTravel($a_i_MapID, True, True) Then Return True
+		If Map_RndTravel($a_i_MapID, True, True) Then Return Leveler_WaitUntilMapReady()
+		Out("[Move] RndTravel rezone failed; trying Map_TravelTo")
+		If Map_TravelTo($a_i_MapID) Then
+			If Leveler_WaitUntilMapReady() And Map_GetMapID() = $a_i_MapID Then Return True
+		EndIf
 		Out("[Move] Rezone failed; walking from the current position")
 		Return True
 	EndIf

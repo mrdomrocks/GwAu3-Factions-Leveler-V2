@@ -1289,24 +1289,56 @@ Func Leveler_Step_ToZenDaijun()
 	EndIf
 
 	If $l_i_Map <> $MAP_JAYA And $l_i_Map <> $MAP_HAIJU Then
-		If Not Leveler_Travel($MAP_SEITUNG) Then Return False
+		; After Craft Seitung Armor the character is at Lain (~20508, 9497) with
+		; inventory/crafter UI open. Travel() is a no-op on map 250, then the first
+		; outpost MoveTo uses straight Map_Move and times out in 30s with no log.
+		; Rezone like Unlock Skills after the bag merchant so we spawn at the portal.
+		Local $l_b_Rezone = False
+		If Map_GetMapID() = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") Then
+			If Agent_GetDistanceToXY(20508.00, 9497.00) < 1800 Then $l_b_Rezone = True
+		EndIf
+		If $l_b_Rezone Then
+			Out("[Step] At Lain's shop " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & ". Rezoning Seitung Harbor.")
+		EndIf
+		If Not Leveler_Travel($MAP_SEITUNG, $l_b_Rezone) Then Return False
 		Leveler_PrepareForBattle()
+		If Agent_GetDistanceToXY(20508.00, 9497.00) < 1800 Then
+			Out("[Step] Still at Lain. Closing town UI and walking west out of the armor courtyard.")
+			Leveler_CloseTrainerWindow()
+			If Not Leveler_MoveTo(19823.66, 9547.78, False) Then Return False
+			If Not Leveler_MoveTo(16852, 12812, False) Then Return False
+		EndIf
+		Out("[Step] Walking Seitung Harbor to the Jaya Bluffs exit")
 		If Not Leveler_MoveTo(18000, 11650, False) Then Return False
 		If Not Leveler_MoveTo(19000, 13000, False) Then Return False
-		If Not Leveler_MoveAndExit(16777, 17540, $MAP_JAYA, True) Then Return False
+		If Not Leveler_MoveAndExit(16777, 17540, $MAP_JAYA, True) Then
+			Out("[Step] Failed to exit Seitung Harbor to Jaya Bluffs (map " & Map_GetMapID() & ")")
+			Return False
+		EndIf
 	EndIf
 
 	If Map_GetMapID() = $MAP_JAYA Then
-		If Not Leveler_MoveAndExit(23616, 1587, $MAP_HAIJU, True) Then Return False
+		Out("[Step] Crossing Jaya Bluffs to Haiju Lagoon")
+		If Not Leveler_MoveAndExit(23616, 1587, $MAP_HAIJU, True) Then
+			Out("[Step] Failed to exit Jaya Bluffs to Haiju Lagoon (map " & Map_GetMapID() & ")")
+			Return False
+		EndIf
 	EndIf
 
 	If Map_GetMapID() = $MAP_HAIJU Then
+		Out("[Step] Taking the Haiju Lagoon skip dialog to Zen Daijun")
 		If Not Leveler_MoveAndDialog(16489, -22213, $DIALOG_FORMAL_SKIP, True) Then Return False
 		Sleep(7000)
-		If Not Map_WaitMapLoading($MAP_ZEN_OP) Then Return False
+		If Not Map_WaitMapLoading($MAP_ZEN_OP) Then
+			Out("[Step] Haiju Lagoon did not load Zen Daijun (map " & Map_GetMapID() & ")")
+			Return False
+		EndIf
 	EndIf
 
-	If Map_GetMapID() <> $MAP_ZEN_OP Then Return False
+	If Map_GetMapID() <> $MAP_ZEN_OP Then
+		Out("[Step] Not at Zen Daijun after the Seitung path (map " & Map_GetMapID() & ")")
+		Return False
+	EndIf
 	Out("[Step] Arrived at Zen Daijun")
 	Return True
 EndFunc
