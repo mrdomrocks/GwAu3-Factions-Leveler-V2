@@ -397,180 +397,31 @@ Func Leveler_BuyEarlyArmorMaterials()
 	Return True
 EndFunc
 
-; Hiroyuki lists a Domination staff for every profession. Assassin / Warrior / Ranger
-; should craft Sai / Cleaver / Longbow; Merchant_CraftItem of 11647 fails in a loop.
-Func Leveler_WeaponUsesStaff()
-	Switch Leveler_PrimaryProfession()
-		Case $GC_I_PROFESSION_WARRIOR, $GC_I_PROFESSION_RANGER, $GC_I_PROFESSION_ASSASSIN
-			Return False
-	EndSwitch
-	Return True
-EndFunc
-
-; Name, merchant item type, preferred model (0 = first matching type), mats [n][2].
-; Hiroyuki recipes: Sai 5 iron; Cleaver 4 iron + 1 wood; Longbow 5 wood;
-; Clairvoyant Staff 4 wood + 1 dust. All 100 gold.
-Func Leveler_GetWeaponPlan(ByRef $a_s_Name, ByRef $a_i_Type, ByRef $a_i_PreferredModel, ByRef $a_ai_Mats)
-	Local $l_i_Prof = Leveler_PrimaryProfession()
-	Local $l_ai_Mats[1][2]
-	$a_i_PreferredModel = 0
-	Switch $l_i_Prof
-		Case $GC_I_PROFESSION_ASSASSIN
-			$a_s_Name = "Sai"
-			$a_i_Type = $GC_I_TYPE_DAGGERS
-			$l_ai_Mats[0][0] = $GC_I_MODELID_IRON
-			$l_ai_Mats[0][1] = 5
-		Case $GC_I_PROFESSION_WARRIOR
-			$a_s_Name = "Cleaver"
-			$a_i_Type = $GC_I_TYPE_AXE
-			ReDim $l_ai_Mats[2][2]
-			$l_ai_Mats[0][0] = $GC_I_MODELID_IRON
-			$l_ai_Mats[0][1] = 4
-			$l_ai_Mats[1][0] = $GC_I_MODELID_WOOD
-			$l_ai_Mats[1][1] = 1
-		Case $GC_I_PROFESSION_RANGER
-			$a_s_Name = "Longbow"
-			$a_i_Type = $GC_I_TYPE_BOW
-			$l_ai_Mats[0][0] = $GC_I_MODELID_WOOD
-			$l_ai_Mats[0][1] = 5
-		Case Else
-			$a_s_Name = "Clairvoyant Staff"
-			$a_i_Type = $GC_I_TYPE_STAFF
-			$a_i_PreferredModel = $MODEL_CLAIRVOYANT_STAFF
-			ReDim $l_ai_Mats[2][2]
-			$l_ai_Mats[0][0] = $GC_I_MODELID_WOOD
-			$l_ai_Mats[0][1] = 4
-			$l_ai_Mats[1][0] = $GC_I_MODELID_DUST
-			$l_ai_Mats[1][1] = 1
-	EndSwitch
-	$a_ai_Mats = $l_ai_Mats
-EndFunc
-
-Func Leveler_RememberWeaponModel($a_i_Model)
-	If $a_i_Model = 0 Then Return
-	$g_i_CraftedWeaponModel = $a_i_Model
-EndFunc
-
-; First Hiroyuki listing of this item type. Prefers $a_i_PreferredModel when offered.
-Func Leveler_FindMerchantWeaponModel($a_i_Type, $a_i_PreferredModel = 0)
-	If $a_i_PreferredModel <> 0 And Merchant_GetMerchantItemPtr($a_i_PreferredModel) <> 0 Then Return $a_i_PreferredModel
-	Local $l_i_Size = Merchant_GetMerchantItemsSize()
-	Local $i
-	For $i = 1 To $l_i_Size
-		Local $l_p_Item = Merchant_GetMerchantItemPtr($i, 1)
-		If $l_p_Item = 0 Then ContinueLoop
-		If Item_GetItemInfoByPtr($l_p_Item, "ItemType") <> $a_i_Type Then ContinueLoop
-		Local $l_i_Model = Memory_Read($l_p_Item + 0x2C, "dword")
-		If $l_i_Model <> 0 Then Return $l_i_Model
-	Next
-	Return 0
-EndFunc
-
-Func Leveler_WaitForWeaponOffer($a_i_Type, $a_i_PreferredModel = 0, $a_i_Timeout = 8000)
-	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If $g_b_LevelerPaused Then Return 0
-		Local $l_i_Model = Leveler_FindMerchantWeaponModel($a_i_Type, $a_i_PreferredModel)
-		If $l_i_Model <> 0 Then Return $l_i_Model
-		Sleep(200)
-	WEnd
-	Out("[Craft] Crafter is not offering a profession weapon (type " & $a_i_Type & ", preferred " & $a_i_PreferredModel & ")")
-	Leveler_LogMerchantWeapons()
-	Return 0
-EndFunc
-
-Func Leveler_LogMerchantWeapons()
-	Local $l_i_Size = Number(Merchant_GetMerchantItemsSize())
-	Out("[Craft] Merchant listings: " & $l_i_Size)
-	If $l_i_Size <= 0 Then Return
-	Local $i
-	Local $l_i_Max = $l_i_Size
-	If $l_i_Max > 12 Then $l_i_Max = 12
-	For $i = 1 To $l_i_Max
-		Local $l_p_Item = Merchant_GetMerchantItemPtr($i, 1)
-		If $l_p_Item = 0 Then ContinueLoop
-		Out("[Craft]  slot " & $i & " type " & Item_GetItemInfoByPtr($l_p_Item, "ItemType") & " model " & Memory_Read($l_p_Item + 0x2C, "dword") & " prof " & Item_GetItemInfoByPtr($l_p_Item, "Profession"))
-	Next
-EndFunc
-
-Func Leveler_GetCraftedWeaponModel()
-	If $g_i_CraftedWeaponModel <> 0 Then Return $g_i_CraftedWeaponModel
-	If Leveler_WeaponUsesStaff() Then Return $MODEL_CLAIRVOYANT_STAFF
-	Local $l_s_Name, $l_i_Type, $l_i_Preferred
-	Local $l_ai_Mats
-	Leveler_GetWeaponPlan($l_s_Name, $l_i_Type, $l_i_Preferred, $l_ai_Mats)
-	Return Leveler_FindMerchantWeaponModel($l_i_Type, $l_i_Preferred)
-EndFunc
-
-Func Leveler_EquipCraftedWeapon()
-	If $g_b_WeaponCraftSkipped Then Return True
-	Local $l_i_Model = Leveler_GetCraftedWeaponModel()
-	If $l_i_Model = 0 Then Return True
-	Return Leveler_EquipModel($l_i_Model)
-EndFunc
-
-Func Leveler_WeaponStepEquipped()
-	If $g_b_WeaponCraftSkipped Then Return True
-	Local $l_i_Model = Leveler_GetCraftedWeaponModel()
-	If $l_i_Model = 0 Then Return False
-	Return Leveler_IsModelEquipped($l_i_Model)
-EndFunc
-
-; Inventory only — Merchant_CraftItem needs the mats in bags, not storage.
+; Inventory only. Storage-inclusive counts skip the bag buy and Merchant_CraftItem fails.
 Func Leveler_BuyWeaponMaterials()
-	Local $l_s_Name, $l_i_Type, $l_i_Preferred
-	Local $l_ai_Mats
-	Leveler_GetWeaponPlan($l_s_Name, $l_i_Type, $l_i_Preferred, $l_ai_Mats)
-	Out("[Craft] Buying materials for " & $l_s_Name & " (profession " & Leveler_PrimaryProfession() & ")")
-	Local $i
-	For $i = 0 To UBound($l_ai_Mats) - 1
-		If $l_ai_Mats[$i][0] = 0 Or $l_ai_Mats[$i][1] <= 0 Then ContinueLoop
-		If Not Leveler_BuyMaterialShortfallInv($l_ai_Mats[$i][0], $l_ai_Mats[$i][1]) Then Return False
-	Next
+	Out("[Craft] Buying Clairvoyant Staff materials into inventory")
+	If Not Leveler_BuyMaterialShortfallInv($GC_I_MODELID_WOOD, 4) Then Return False
+	If Not Leveler_BuyMaterialShortfallInv($GC_I_MODELID_DUST, 1) Then Return False
 	Return True
 EndFunc
 
-Func Leveler_SkipWeaponCraft($a_s_Reason)
-	Out("[Craft] " & $a_s_Reason & ". Skipping Craft Weapon so monastery armor can continue.")
-	$g_b_WeaponCraftSkipped = True
-	Return True
-EndFunc
-
+; Mesmer-secondary leveler, including Assassin. Always craft Hiroyuki's Domination staff.
 Func Leveler_CraftWeapon()
-	Local $l_s_Name, $l_i_Type, $l_i_Preferred
-	Local $l_ai_Mats
-	Leveler_GetWeaponPlan($l_s_Name, $l_i_Type, $l_i_Preferred, $l_ai_Mats)
-	If Not Leveler_WeaponUsesStaff() Then
-		Out("[Craft] Primary " & Leveler_PrimaryProfession() & " is melee/physical. Crafting " & $l_s_Name & " instead of Clairvoyant Staff.")
-	EndIf
-
-	Local $l_i_Model = Leveler_GetCraftedWeaponModel()
-	If $l_i_Model <> 0 And Leveler_OwnsModel($l_i_Model) Then
-		Leveler_RememberWeaponModel($l_i_Model)
-		If Not Leveler_EquipModel($l_i_Model) Then Return False
-		Out("[Craft] Starter weapon equipped (model " & $l_i_Model & ")")
-		Return True
-	EndIf
-
-	$l_i_Model = Leveler_WaitForWeaponOffer($l_i_Type, $l_i_Preferred)
-	If $l_i_Model = 0 Then
-		If Leveler_WeaponUsesStaff() Then Return False
-		Return Leveler_SkipWeaponCraft("Hiroyuki is not offering " & $l_s_Name)
-	EndIf
-	Leveler_RememberWeaponModel($l_i_Model)
-
-	If Leveler_OwnsModel($l_i_Model) Then
-		If Not Leveler_EquipModel($l_i_Model) Then Return False
-		Out("[Craft] Starter weapon equipped (model " & $l_i_Model & ")")
-		Return True
-	EndIf
-
-	Out("[Craft] Crafting " & $l_s_Name & " model " & $l_i_Model)
-	If Not Leveler_CraftAndEquipPiece($l_i_Model, $WEAPON_GOLD_COST, $l_ai_Mats) Then
-		Out("[Craft] Failed to craft " & $l_s_Name & " (model " & $l_i_Model & ")")
+	If Not Leveler_OwnsModel($MODEL_CLAIRVOYANT_STAFF) Then
+		Local $l_ai_Mats[2][2]
+		$l_ai_Mats[0][0] = $GC_I_MODELID_WOOD
+		$l_ai_Mats[0][1] = 4
+		$l_ai_Mats[1][0] = $GC_I_MODELID_DUST
+		$l_ai_Mats[1][1] = 1
+		If Not Leveler_WaitForCrafterOffer($MODEL_CLAIRVOYANT_STAFF) Then Return False
+		If Not Leveler_CraftAndEquipPiece($MODEL_CLAIRVOYANT_STAFF, $WEAPON_GOLD_COST, $l_ai_Mats) Then
+			Out("[Craft] Failed to craft Clairvoyant Staff")
+			Return False
+		EndIf
+	ElseIf Not Leveler_EquipModel($MODEL_CLAIRVOYANT_STAFF) Then
 		Return False
 	EndIf
-	Out("[Craft] Starter weapon equipped")
+	Out("[Craft] Starter staff equipped")
 	Return True
 EndFunc
 
@@ -1193,10 +1044,7 @@ Func Leveler_HasMaxArmor()
 EndFunc
 
 Func Leveler_HasCraftedWeapon()
-	If $g_b_WeaponCraftSkipped Then Return True
-	Local $l_i_Model = Leveler_GetCraftedWeaponModel()
-	If $l_i_Model = 0 Then Return False
-	Return Leveler_OwnsModel($l_i_Model)
+	Return Leveler_OwnsModel($MODEL_CLAIRVOYANT_STAFF)
 EndFunc
 
 Func Leveler_HasExtendedBags()

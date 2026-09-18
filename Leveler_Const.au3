@@ -353,7 +353,7 @@ Global Const $SKILL_BACKFIRE = 54
 Global Const $SKILL_SPIRIT_RIFT = 910
 
 ; Weapon / armor gold
-; Hiroyuki Domination staff. Casters keep this; Assassin/Warrior/Ranger craft melee/ranged instead.
+; Hiroyuki Domination staff. This leveler runs Mesmer secondary, including Assassin.
 Global Const $MODEL_CLAIRVOYANT_STAFF = 11647
 ; Paid from the Choose Your Secondary Profession (#317) complete reward, not storage.
 Global Const $XUNLAI_GOLD_COST = 50
@@ -407,7 +407,3 @@ Global $g_b_OliasUnlocked = False
 Global $g_b_MoxUnlocked = False
 ; Sticky after GToB trainer dialogs.
 Global $g_b_SecondaryProfsTalked = False
-; Model of the Hiroyuki weapon this character actually crafted (0 until seen).
-Global $g_i_CraftedWeaponModel = 0
-; Sticky when melee/physical primaries skip a staff that cannot be crafted.
-Global $g_b_WeaponCraftSkipped = False
