@@ -1344,9 +1344,7 @@ Func Leveler_Step_ZenDaijunMission()
 		Out("[Step] Load skill bar, then henchmen, then enter")
 		If Not Leveler_LoadZenSkillBar() Then Return False
 		If Not Leveler_PrepareMissionParty() Then Return False
-		; Py4GW: Map.EnterChallenge = SendUIMessage(kSendEnterMission, [0]), wait 213.
-		; Do not use CommandEnterMission (Wine: dword 0 drops, dword 1 hangs).
-		; Do not wait for explorable 246 (post-mission Seitung / Unwelcome Guest).
+		; Native Ui_EnterChallenge(False). Wait for 213, not post-mission 246.
 		Out("[Step] Entering Zen Daijun")
 		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_OP) Then Return False
 	EndIf

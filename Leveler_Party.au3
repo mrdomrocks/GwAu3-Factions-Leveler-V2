@@ -493,45 +493,14 @@ Func Leveler_MissionEnterStarted()
 	Return False
 EndFunc
 
-; Wine live matrix at Zen 213:
-;   CommandEnterMission dword 0 (Ui_EnterChallenge True)  -> load ~42s, drop to outpost
-;   CommandEnterMission dword 1 (Ui_EnterChallenge False) -> type-2 hang 180s / char select
-; Both dwords call Assembler CommandEnterMission -> game EnterMission(value).
-; That is not Py4GW Map.EnterChallenge.
-;
-; Py4GW: UIManager.SendUIMessage(kSendEnterMission, [0])
-; GwAu3 CommandUIMsg: push 0; push struct+8; push msgid; call UIMessage
-;   (same path as Ui_MoveMap / Ui_EquipItem / Ui_Xunlai).
-; Cho 214 keeps the proven CommandEnterMission dword 0.
-Func Leveler_SendUIEnterMission($a_i_ArenaId = 0)
-	If Not IsDeclared("g_d_MoveMap") Or Not IsDeclared("g_p_MoveMap") Then
-		Out("[Step] CommandUIMsg structs are missing; cannot send kSendEnterMission")
-		Return False
-	EndIf
-	Local $l_p_UIMsg = DllStructGetData($g_d_MoveMap, 1)
-	If $l_p_UIMsg = 0 Then
-		Out("[Step] CommandUIMsg pointer is 0; cannot send kSendEnterMission")
-		Return False
-	EndIf
-	; ptr CommandUIMsg, dword msgid, dword arena_id (wparam points here).
-	Local $l_d_Msg = DllStructCreate("ptr;dword;dword")
-	DllStructSetData($l_d_Msg, 1, $l_p_UIMsg)
-	DllStructSetData($l_d_Msg, 2, $LEVELER_UIMSG_SEND_ENTER_MISSION)
-	DllStructSetData($l_d_Msg, 3, $a_i_ArenaId)
-	Out("[Step] CommandUIMsg kSendEnterMission arena_id=" & $a_i_ArenaId & " (Py4GW Map.EnterChallenge; not CommandEnterMission, not 0xA5, not pixels)")
-	Core_Enqueue(DllStructGetPtr($l_d_Msg), 12)
-	Return True
-EndFunc
-
+; Factions characters are native. Always Ui_EnterChallenge(False, False):
+;   $a_b_Foreign = False -> dword 1 (Native Character / Party Formation)
+; Never Ui_EnterChallenge(True) (foreign / dword 0).
 Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
 	If Leveler_MissionEnterStarted() Then Return True
 	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
-	If $a_i_OutpostMap = $MAP_ZEN_OP Then
-		Return Leveler_SendUIEnterMission(0)
-	EndIf
-	; Cho / default: CommandEnterMission dword 0. Wine-proven on map 214.
-	Out("[Step] CommandEnterMission arena_id=0 (Ui_EnterChallenge(True, False); Cho; not 0xA5, not pixels)")
-	Ui_EnterChallenge(True, False)
+	Out("[Step] Ui_EnterChallenge(False, False) native character on map " & $a_i_OutpostMap & " (not foreign True, not 0xA5, not pixels)")
+	Ui_EnterChallenge(False, False)
 	Return True
 EndFunc
 
