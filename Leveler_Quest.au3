@@ -76,6 +76,11 @@ Func Leveler_QuestTalk($a_f_X, $a_f_Y, $a_i_QuestID, $a_s_Mode, $a_i_Dialog, $a_
 		Return False
 	EndIf
 
+	Local $l_s_NpcName = Agent_GetAgentInfo($l_i_Npc, "Name")
+	Local $l_i_NpcModel = Agent_GetAgentInfo($l_i_Npc, "PlayerNumber")
+	If $l_s_NpcName = "" Then $l_s_NpcName = "(unnamed)"
+	Out("[Quest] Talking to " & $l_s_NpcName & " model " & $l_i_NpcModel & " at " & Round(Agent_GetAgentInfo($l_i_Npc, "X")) & ", " & Round(Agent_GetAgentInfo($l_i_Npc, "Y")))
+
 	Agent_ChangeTarget($l_i_Npc)
 	Sleep(150)
 	Agent_GoNPC($l_i_Npc)
@@ -144,6 +149,7 @@ EndFunc
 Func Leveler_ResolveQuestXY($a_i_NpcModel, ByRef $a_f_X, ByRef $a_f_Y)
 	Local $l_i_Npc = 0
 	If $a_i_NpcModel <> 0 Then $l_i_Npc = Leveler_GetAgentByModel($a_i_NpcModel)
+	If $l_i_Npc = 0 And Leveler_CoordsNearLudo($a_f_X, $a_f_Y) Then $l_i_Npc = Leveler_GetLudo($a_f_X, $a_f_Y)
 	If $l_i_Npc = 0 And $a_f_X = 0 And $a_f_Y = 0 Then Return
 	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetNearestNPCAt($a_f_X, $a_f_Y, 400)
 	If $l_i_Npc = 0 Then Return

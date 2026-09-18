@@ -551,6 +551,73 @@ Func Leveler_TogoModel()
 	Return Agent_GetAgentInfo($l_i_Togo, "PlayerNumber")
 EndFunc
 
+; "Ludo" but not "Ludor", the festival hat maker in the same monastery.
+Func Leveler_IsLudoName($a_s_Name)
+	If $a_s_Name = "" Then Return False
+	If StringInStr($a_s_Name, "Ludor") Then Return False
+	Return StringInStr($a_s_Name, "Ludo") > 0
+EndFunc
+
+Func Leveler_CoordsNearLudo($a_f_X, $a_f_Y)
+	If Sqrt(($a_f_X - $LUDO_SHING_JEA_X) ^ 2 + ($a_f_Y - $LUDO_SHING_JEA_Y) ^ 2) < 800 Then Return True
+	If Sqrt(($a_f_X - $LUDO_SUNQUA_X) ^ 2 + ($a_f_Y - $LUDO_SUNQUA_Y) ^ 2) < 800 Then Return True
+	Return False
+EndFunc
+
+; Ludo is a gatekeeper. Do not require town-NPC allegiance (that lookup lands on Instructor Ng).
+Func Leveler_GetLudo($a_f_NearX = 0, $a_f_NearY = 0)
+	Local $l_i_Best = 0
+	Local $l_f_Best = 999999
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $l_i_Me = Agent_GetMyID()
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If $i = $l_i_Me Then ContinueLoop
+		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
+		If Not Leveler_IsLudoName(Agent_GetAgentInfo($i, "Name")) Then ContinueLoop
+		If $a_f_NearX = 0 And $a_f_NearY = 0 Then Return $i
+		Local $l_f_Named = Agent_GetDistanceToXY($a_f_NearX, $a_f_NearY, $i)
+		If $l_f_Named < $l_f_Best Then
+			$l_f_Best = $l_f_Named
+			$l_i_Best = $i
+		EndIf
+	Next
+	If $l_i_Best <> 0 Then Return $l_i_Best
+	If $a_f_NearX = 0 And $a_f_NearY = 0 Then Return 0
+
+	; Name can be empty. Take the nearest living NPC on Ludo's tile, not a town-only match.
+	$l_i_Best = 0
+	$l_f_Best = 700
+	Local $l_i_Marked = 0
+	Local $l_f_Marked = 700
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If $i = $l_i_Me Then ContinueLoop
+		If Agent_GetAgentInfo($i, "IsDead") Then ContinueLoop
+		If Not Agent_GetAgentInfo($i, "IsNPC") Then ContinueLoop
+		If Leveler_IsTogoModel(Agent_GetAgentInfo($i, "PlayerNumber")) Then ContinueLoop
+		Local $l_f_Dist = Agent_GetDistanceToXY($a_f_NearX, $a_f_NearY, $i)
+		If $l_f_Dist >= 700 Then ContinueLoop
+		If Agent_GetAgentInfo($i, "HasQuest") And $l_f_Dist < $l_f_Marked Then
+			$l_f_Marked = $l_f_Dist
+			$l_i_Marked = $i
+		EndIf
+		If $l_f_Dist < $l_f_Best Then
+			$l_f_Best = $l_f_Dist
+			$l_i_Best = $i
+		EndIf
+	Next
+	If $l_i_Marked <> 0 Then Return $l_i_Marked
+	Return $l_i_Best
+EndFunc
+
+Func Leveler_LudoModel($a_f_NearX = 0, $a_f_NearY = 0)
+	Local $l_i_Ludo = Leveler_GetLudo($a_f_NearX, $a_f_NearY)
+	If $l_i_Ludo = 0 Then Return 0
+	Return Agent_GetAgentInfo($l_i_Ludo, "PlayerNumber")
+EndFunc
+
 ; Gate guards are not always town-NPC allegiance. Match by name, then any living NPC on the tile.
 Func Leveler_GetTsukaro()
 	Local $l_i_Best = 0
@@ -669,6 +736,8 @@ EndFunc
 Func Leveler_ResolveTalkNpc($a_f_X, $a_f_Y, $a_i_NpcModel = 0)
 	Local $l_i_Npc = 0
 	If $a_i_NpcModel <> 0 Then $l_i_Npc = Leveler_GetAgentByModel($a_i_NpcModel)
+	; Forming a Party (#440) is Ludo. Town-NPC lookup here picks Instructor Ng.
+	If $l_i_Npc = 0 And Leveler_CoordsNearLudo($a_f_X, $a_f_Y) Then $l_i_Npc = Leveler_GetLudo($a_f_X, $a_f_Y)
 	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetQuestNpcAt($a_f_X, $a_f_Y, 500)
 	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetNearestNPCAt($a_f_X, $a_f_Y, 400)
 	Return $l_i_Npc

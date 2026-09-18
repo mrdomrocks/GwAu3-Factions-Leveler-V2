@@ -163,6 +163,12 @@ Global Const $DIALOG_EXIT_OVERLOOK = 0x85
 Global Const $DIALOG_GENERIC_TALK = 0x84
 Global Const $DIALOG_FORMING_ACCEPT = 0x81B801
 Global Const $DIALOG_FORMING_COMPLETE = 0x81B807
+; Ludo gives #440 in Shing Jea Monastery and hands it in just outside in Sunqua Vale.
+; Do not use Togo here — he is the #317/#318 NPC in Linnok, not the Forming a Party giver.
+Global Const $LUDO_SHING_JEA_X = -14063.00
+Global Const $LUDO_SHING_JEA_Y = 10044.00
+Global Const $LUDO_SUNQUA_X = 19673.00
+Global Const $LUDO_SUNQUA_Y = -6982.00
 Global Const $DIALOG_SECONDARY_MESMER = 0x813D08
 Global Const $DIALOG_SECONDARY_OTHER = 0x813D0E
 Global Const $DIALOG_SECONDARY_COMPLETE = 0x813D07
