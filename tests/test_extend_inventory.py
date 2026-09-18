@@ -54,42 +54,38 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertLess(found_at, buy_at)
         self.assertLess(found_at, equip_at)
 
-    def test_bag_use_not_kmoveitem_useitem_equipbag_or_drag(self):
+    def test_bag_equip_uses_gwau3_slot_id_and_equipitem(self):
         equip = func_body(CRAFT, "Leveler_EquipLooseBagIntoSlot")
         send = func_body(CRAFT, "Leveler_EquipBagItem")
         dest = func_body(CRAFT, "Leveler_LegalBagDest")
         close = func_body(CRAFT, "Leveler_CloseMerchantWindow")
-        click = func_body(CRAFT, "Leveler_ClickGwClient")
-        mouse = func_body(CRAFT, "Leveler_SendInputClick")
-        focus = func_body(CRAFT, "Leveler_FocusGwForClick")
-        layout = func_body(CRAFT, "Leveler_InventoryLayout")
+        find = func_body(CRAFT, "Leveler_FindLooseBagItem")
+        cell = func_body(CRAFT, "Leveler_ItemPtrInBagCell")
+        start = func_body(CRAFT, "Leveler_StartBagCellOfItem")
         self.assertIn("Leveler_CloseMerchantWindow()", equip)
-        self.assertIn("Leveler_OpenInventoryForBagEquip", equip)
         self.assertIn("Leveler_EquipBagItem", equip)
         self.assertIn("Leveler_LegalBagDest", equip)
-        self.assertIn("Leveler_RestoreLevelerGui", equip)
-        self.assertIn("Leveler_FocusGwForClick", equip)
-        self.assertIn("Leveler_SendInputClick", send)
-        self.assertIn("Leveler_SendInputClick", click)
-        self.assertIn("mouse_event", mouse)
-        self.assertIn("SetCursorPos", mouse)
-        self.assertIn("GetDoubleClickTime", mouse)
-        self.assertIn('"right"', send)
-        self.assertIn("Inventory context Use", send)
-        self.assertIn("Inventory double-click", send)
+        self.assertIn("Item_GetItemBySlot", find)
+        self.assertIn("Item_ItemID", find)
+        self.assertIn("Item_GetItemBySlot", cell)
+        self.assertIn("Item_ItemID", start)
+        self.assertIn("Item_GetItemBySlot", send)
+        self.assertIn("Item_ItemID", send)
+        self.assertIn("Item_EquipItem", send)
+        self.assertIn("Item_EquipItem", equip)
+        self.assertIn("Ui_EquipItem", send)
+        self.assertNotIn("Leveler_OpenInventoryForBagEquip", CRAFT)
+        self.assertNotIn("Leveler_SendInputClick", CRAFT)
+        self.assertNotIn("Leveler_ClickGwClient", CRAFT)
+        self.assertNotIn("Leveler_FocusGwForClick", CRAFT)
+        self.assertNotIn("Leveler_RestoreLevelerGui", CRAFT)
+        self.assertNotIn("Leveler_BackpackCellXY", CRAFT)
+        self.assertNotIn("mouse_event", CRAFT)
+        self.assertNotIn("SetCursorPos", CRAFT)
         self.assertNotIn("MouseClickDrag", send)
         self.assertNotIn("MouseClickDrag", equip)
         self.assertNotIn("Leveler_DragGwClient", CRAFT)
         self.assertNotIn("Leveler_BagTabXY", CRAFT)
-        self.assertNotIn("ControlClick", click)
-        self.assertNotIn("ControlClick", send)
-        self.assertIn("@SW_HIDE", focus)
-        self.assertIn("WinActivate", focus)
-        self.assertIn("$BAG_INV_COMPASS", layout)
-        self.assertIn("paperdoll-bottom", func_body(CRAFT, "Leveler_InventoryLayoutName"))
-        self.assertNotIn("paperdoll-from-top", func_body(CRAFT, "Leveler_InventoryLayoutName"))
-        self.assertNotIn("top-backpack", func_body(CRAFT, "Leveler_InventoryLayoutName"))
-        self.assertIn("Leveler_LegalBagDest", send)
         self.assertNotIn("0x100001AF", send)
         self.assertNotIn("$g_d_MoveMap", send)
         self.assertNotIn("$g_p_MoveMap", send)
@@ -99,13 +95,9 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertNotIn("$GC_I_HEADER_ITEM_USE", send)
         self.assertNotIn("$GC_I_HEADER_EQUIP_BAG", send)
         self.assertNotIn("Core_SendPacket", send)
-        self.assertNotIn("Ui_EquipItem", equip)
-        self.assertNotIn("Ui_EquipItem", send)
-        self.assertNotIn("Item_EquipItem", equip)
-        self.assertNotIn("Item_EquipItem", send)
         self.assertNotIn("$LEVELER_UIMSG_MOVE_ITEM", CONST)
-        self.assertIn("$BAG_INV_COMPASS", CONST)
-        self.assertIn("$BAG_INV_CONTEXT_USE_DY", CONST)
+        self.assertNotIn("$BAG_INV_COMPASS", CONST)
+        self.assertNotIn("$BAG_INV_CONTEXT_USE_DY", CONST)
         self.assertIn("$GC_I_TYPE_BAG", func_body(CRAFT, "Leveler_ItemIsSmallBag"))
         self.assertIn("$MODEL_BAG", dest)
         self.assertIn("$GC_I_INVENTORY_BAG1", dest)
@@ -116,12 +108,6 @@ class ExtendInventoryContract(unittest.TestCase):
             close.find("Merchant_GetMerchantItemsSize() = 0"),
             close.find("Agent_CancelAction"),
         )
-        open_inv = func_body(CRAFT, "Leveler_OpenInventoryForBagEquip")
-        self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_INVENTORY", open_inv)
-        self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_BACKPACK", open_inv)
-        self.assertIn("$GC_I_CONTROL_PANEL_CLOSE_ALL_PANELS", open_inv)
-        self.assertNotIn("$GC_I_CONTROL_INVENTORY_OPEN_BELT_POUCH", open_inv)
-        self.assertNotIn("$GC_I_CONTROL_INVENTORY_OPEN_BAG_1", open_inv)
 
     def test_bags_never_target_belt_pouch(self):
         dest = func_body(CRAFT, "Leveler_LegalBagDest")
@@ -134,7 +120,6 @@ class ExtendInventoryContract(unittest.TestCase):
         send = func_body(CRAFT, "Leveler_EquipBagItem")
         self.assertIn("Leveler_LegalBagDest", send)
         self.assertNotIn("$GC_I_INVENTORY_BELT_POUCH", send.split("Leveler_LegalBagDest")[0])
-
 
     def test_craft_weapon_still_uses_paperdoll_equip(self):
         body = func_body(CRAFT, "Leveler_EquipModel")
@@ -197,8 +182,9 @@ class ExtendInventoryContract(unittest.TestCase):
         count = func_body(CRAFT, "Leveler_CountLooseBags")
         scan = func_body(CRAFT, "Leveler_BagScanSlotCount")
         cell = func_body(CRAFT, "Leveler_ItemPtrInBagCell")
-        self.assertNotIn("Item_GetItemBySlot", find)
-        self.assertNotIn("Item_GetItemBySlot", count)
+        self.assertIn("Item_GetItemBySlot", find)
+        self.assertIn("Item_ItemID", find)
+        self.assertIn("Item_GetItemBySlot", cell)
         self.assertIn("Leveler_BagScanSlotCount", find)
         self.assertIn("Leveler_ItemPtrInBagCell", find)
         self.assertIn("$BAG_BACKPACK_SCAN_SLOTS", scan)
@@ -239,43 +225,18 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("not TYPE_BAG", find)
         self.assertLess(find.find("Leveler_ItemIsSmallBag"), find.find("Return $l_i_Id"))
 
-    def test_paperdoll_cell_centers_match_live_kestrel_log(self):
-        """Live Wine 1280x800: cell 20 hit at 1036,676; cell 1 is 892,568.
-
-        Dest 928,514 is inside the backpack grid (not a bag tab). EquipBagItem
-        must Use the live cell and must not drag onto that point.
-        """
-        w, h = 1280, 800
-        width = 248
-        compass = 172
-        grid_x = 14
-        cell = 36
-        skillbar = 88
-        bottom_pad = 18
-        self.assertIn("$BAG_INV_WIDTH = 248", CONST)
-        self.assertIn("$BAG_INV_COMPASS = 172", CONST)
-        self.assertIn("$BAG_INV_CELL = 36", CONST)
-        left = w - compass - width
-        grid_top = h - skillbar - bottom_pad - cell * 4
-        def cell_xy(slot):
-            col = (slot - 1) % 5
-            row = (slot - 1) // 5
-            x = left + grid_x + col * cell + cell // 2
-            y = grid_top + row * cell + cell // 2
-            return x, y
-        cell20 = cell_xy(20)
-        cell1 = cell_xy(1)
-        self.assertEqual(left, 860)
-        self.assertEqual(cell20, (1036, 676))
-        self.assertEqual(cell1, (892, 568))
-        self.assertNotEqual(cell20, (1238, 201))
-        self.assertNotEqual(cell20, (1058, 201))
-        self.assertEqual((left + grid_x + 1 * cell + cell // 2, grid_top - 36), (928, 514))
+    def test_equip_rereads_backpack_slot_then_equipitem(self):
+        """Bag is in backpack slot 1. Use Item_GetItemBySlot + Item_ItemID + Item_EquipItem."""
         send = func_body(CRAFT, "Leveler_EquipBagItem")
+        self.assertIn("Item_GetItemBySlot($GC_I_INVENTORY_BACKPACK, $l_i_Slot)", send)
+        self.assertIn("Item_ItemID", send)
+        self.assertIn("Item_EquipItem($l_i_Id)", send)
         self.assertNotIn("928,514", send)
         self.assertNotIn("MouseClickDrag", send)
-        self.assertIn("Inventory context Use", send)
+        self.assertNotIn("mouse_event", send)
         self.assertIn("Leveler_StartBagCellOfItem", send)
+        self.assertNotRegex(send, r"Item_UseItem\(")
+        self.assertNotIn("$GC_I_HEADER_EQUIP_BAG", send)
 
 
 if __name__ == "__main__":
