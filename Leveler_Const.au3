@@ -368,8 +368,10 @@ Global Const $BAG_MAX_BAG_BUYS = 2
 ; Slot 1 is still visible to Item_GetItemBySlot even when Slots is stale.
 Global Const $BAG_BACKPACK_SCAN_SLOTS = 20
 ; A Bag/Belt Pouch is TYPE_BAG (3) AND model 16/34. Model 34 alone is not a pouch.
-; Find the backpack item with Item_GetItemBySlot + Item_ItemID, then Item_EquipItem.
-; Do not send ITEM_USE 0x7E, EQUIP_BAG 0x6B, kMoveItem, or mouse click/drag.
+; Belt Pouch item id is a runtime id (not a GwAu3 MODELID const). Read it with
+; Item_GetItemBySlot then Item_GetItemInfoByPtr(..., "ItemID") / Item_ItemID.
+; Equipped pouch: Item_GetBagInfo($GC_I_INVENTORY_BELT_POUCH, "ContainerItem").
+; Then Item_EquipItem. Do not send ITEM_USE 0x7E, EQUIP_BAG 0x6B, kMoveItem, or mouse.
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000

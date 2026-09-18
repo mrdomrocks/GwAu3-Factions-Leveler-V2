@@ -1059,6 +1059,7 @@ EndFunc
 
 Func Leveler_LogBagState($a_s_Why)
 	Out("[Craft] " & $a_s_Why & " pouch=" & Item_GetBagPtr($GC_I_INVENTORY_BELT_POUCH) & "/" & Item_GetInventoryInfo("BeltPouchPtr") & _
+			" pouchContainerItem=" & Item_GetBagInfo($GC_I_INVENTORY_BELT_POUCH, "ContainerItem") & _
 			" bag1=" & Item_GetBagPtr($GC_I_INVENTORY_BAG1) & "/" & Item_GetInventoryInfo("Bag1Ptr") & _
 			" bag2=" & Item_GetBagPtr($GC_I_INVENTORY_BAG2) & "/" & Item_GetInventoryInfo("Bag2Ptr") & _
 			" loose bag=" & Leveler_CountLooseBags($MODEL_BAG) & " pouch=" & Leveler_CountLooseBags($MODEL_BELT_POUCH) & _
@@ -1115,19 +1116,27 @@ Func Leveler_ItemPtrInBagCell($a_i_Bag, $a_i_Slot)
 	Return Memory_Read($l_p_Array + 0x4 * ($a_i_Slot - 1), "ptr")
 EndFunc
 
+; GwAu3 runtime item id from a slot pointer (DevTools Get Item at Slot / salvage kit walk).
+Func Leveler_ItemIdFromPtr($a_p_Item)
+	If $a_p_Item = 0 Then Return 0
+	Local $l_i_Id = Item_GetItemInfoByPtr($a_p_Item, "ItemID")
+	If $l_i_Id = 0 Then $l_i_Id = Item_ItemID($a_p_Item)
+	Return $l_i_Id
+EndFunc
+
 ; A merchant Bag / Belt Pouch is TYPE_BAG (3) AND model 16/34.
 ; Model 34 alone matched Kestrel cell 20 (orange insect, not a pouch) and blocked buying.
 Func Leveler_ItemIsSmallBag($a_p_Item, $a_i_Model)
 	If $a_p_Item = 0 Then Return False
 	If $a_i_Model <> $MODEL_BAG And $a_i_Model <> $MODEL_BELT_POUCH Then Return False
-	If Memory_Read($a_p_Item + 0x2C, "dword") <> $a_i_Model Then Return False
-	If Memory_Read($a_p_Item + 0x20, "byte") <> $GC_I_TYPE_BAG Then Return False
+	If Item_GetItemInfoByPtr($a_p_Item, "ModelID") <> $a_i_Model Then Return False
+	If Item_GetItemInfoByPtr($a_p_Item, "ItemType") <> $GC_I_TYPE_BAG Then Return False
 	Return True
 EndFunc
 
 ; Small bags to equip sit in the start bag (backpack) slots. GwAu3:
-; Item_GetItemBySlot / Item_ItemID for the item id, Item_GetBagsItembyModelID as backup.
-; Do not scan pouch/bag1/bag2 (destinations) or merchant listings (BagPtr = 0).
+; Item_GetItemBySlot then Item_GetItemInfoByPtr(..., "ItemID") / Item_ItemID.
+; Item_GetBagsItembyModelID as backup. Do not scan pouch/bag1/bag2 or merchant listings.
 Func Leveler_FindLooseBagItem($a_i_Model)
 	Local $l_i_Bag = $GC_I_INVENTORY_BACKPACK
 	If Item_GetBagPtr($l_i_Bag) = 0 Then
@@ -1138,13 +1147,14 @@ Func Leveler_FindLooseBagItem($a_i_Model)
 	Out("[Craft] Scanning start bag slots 1-" & $l_i_Slots & " for TYPE_BAG model " & $a_i_Model & " via Item_GetItemBySlot")
 	Local $s
 	For $s = 1 To $l_i_Slots
-		Local $l_p_Item = Leveler_ItemPtrInBagCell($l_i_Bag, $s)
+		Local $l_p_Item = Item_GetItemBySlot($l_i_Bag, $s)
+		If $l_p_Item = 0 Then $l_p_Item = Leveler_ItemPtrInBagCell($l_i_Bag, $s)
 		If $l_p_Item = 0 Then ContinueLoop
-		Local $l_i_Id = Item_ItemID($l_p_Item)
-		Local $l_i_Type = Memory_Read($l_p_Item + 0x20, "byte")
-		Local $l_i_Model = Memory_Read($l_p_Item + 0x2C, "dword")
-		Local $l_i_Qty = Memory_Read($l_p_Item + 0x4C, "short")
-		Out("[Craft] Start bag cell " & $s & "/" & $l_i_Slots & " Item_GetItemBySlot id=" & $l_i_Id & " type=" & $l_i_Type & " model=" & $l_i_Model & " qty=" & $l_i_Qty)
+		Local $l_i_Id = Leveler_ItemIdFromPtr($l_p_Item)
+		Local $l_i_Type = Item_GetItemInfoByPtr($l_p_Item, "ItemType")
+		Local $l_i_Model = Item_GetItemInfoByPtr($l_p_Item, "ModelID")
+		Local $l_i_Qty = Item_GetItemInfoByPtr($l_p_Item, "Quantity")
+		Out("[Craft] Start bag cell " & $s & "/" & $l_i_Slots & " Item_GetItemBySlot ItemID=" & $l_i_Id & " ItemType=" & $l_i_Type & " ModelID=" & $l_i_Model & " qty=" & $l_i_Qty)
 		If Not Leveler_ItemIsSmallBag($l_p_Item, $a_i_Model) Then
 			If $l_i_Model = $a_i_Model Then
 				Out("[Craft] Cell " & $s & " model " & $l_i_Model & " type " & $l_i_Type & " is not TYPE_BAG; not a small bag")
@@ -1152,7 +1162,11 @@ Func Leveler_FindLooseBagItem($a_i_Model)
 			ContinueLoop
 		EndIf
 		If $l_i_Id = 0 Then ContinueLoop
-		Out("[Craft] Found small bag id " & $l_i_Id & " (TYPE_BAG model " & $a_i_Model & ") in start bag cell " & $s & "/" & $l_i_Slots)
+		If $a_i_Model = $MODEL_BELT_POUCH Then
+			Out("[Craft] Belt Pouch item id " & $l_i_Id & " from Item_GetItemBySlot backpack cell " & $s)
+		Else
+			Out("[Craft] Found small bag id " & $l_i_Id & " (TYPE_BAG model " & $a_i_Model & ") in start bag cell " & $s & "/" & $l_i_Slots)
+		EndIf
 		Return $l_i_Id
 	Next
 
@@ -1218,7 +1232,7 @@ Func Leveler_LooseItemStillInBags($a_i_Item)
 	Return Leveler_StartBagCellOfItem($a_i_Item) <> 0
 EndFunc
 
-; Walk backpack cells with Item_GetItemBySlot and match Item_ItemID.
+; Walk backpack cells with Item_GetItemBySlot and match Item_GetItemInfoByPtr ItemID.
 Func Leveler_StartBagCellOfItem($a_i_Item)
 	If $a_i_Item = 0 Then Return 0
 	Local $l_i_Want = Item_ItemID($a_i_Item)
@@ -1229,7 +1243,7 @@ Func Leveler_StartBagCellOfItem($a_i_Item)
 	For $s = 1 To $l_i_Slots
 		Local $l_p_Item = Leveler_ItemPtrInBagCell($l_i_Bag, $s)
 		If $l_p_Item = 0 Then ContinueLoop
-		If Item_ItemID($l_p_Item) = $l_i_Want Then Return $s
+		If Leveler_ItemIdFromPtr($l_p_Item) = $l_i_Want Then Return $s
 	Next
 	Return 0
 EndFunc
@@ -1280,9 +1294,12 @@ Func Leveler_EquipBagItem($a_i_Item, $a_i_Bag = 0, $a_i_Model = 0, $a_i_Attempt 
 	; Re-read the backpack cell through Item_GetItemBySlot (slot 1 is visible even if Slots=2).
 	Local $l_p_Slot = Item_GetItemBySlot($GC_I_INVENTORY_BACKPACK, $l_i_Slot)
 	If $l_p_Slot = 0 Then $l_p_Slot = Leveler_ItemPtrInBagCell($GC_I_INVENTORY_BACKPACK, $l_i_Slot)
-	If $l_p_Slot <> 0 Then $l_i_Id = Item_ItemID($l_p_Slot)
+	If $l_p_Slot <> 0 Then $l_i_Id = Leveler_ItemIdFromPtr($l_p_Slot)
 	If $l_i_Id = 0 Then Return False
-	Out("[Craft] Item_GetItemBySlot backpack cell " & $l_i_Slot & " ptr=" & $l_p_Slot & " Item_ItemID=" & $l_i_Id & " model " & $a_i_Model & " -> dest bag " & $l_i_Dest)
+	If $a_i_Model = $MODEL_BELT_POUCH Then
+		Out("[Craft] Belt Pouch item id " & $l_i_Id & " Item_GetItemBySlot backpack cell " & $l_i_Slot)
+	EndIf
+	Out("[Craft] Item_GetItemBySlot backpack cell " & $l_i_Slot & " ptr=" & $l_p_Slot & " ItemID=" & $l_i_Id & " model " & $a_i_Model & " -> dest bag " & $l_i_Dest)
 	Out("[Craft] Item_EquipItem " & $l_i_Id)
 	Item_EquipItem($l_i_Id)
 	Sleep(200)

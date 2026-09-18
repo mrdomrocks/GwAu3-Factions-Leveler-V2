@@ -66,11 +66,14 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("Leveler_EquipBagItem", equip)
         self.assertIn("Leveler_LegalBagDest", equip)
         self.assertIn("Item_GetItemBySlot", find)
-        self.assertIn("Item_ItemID", find)
+        self.assertIn("Leveler_ItemIdFromPtr", find)
+        self.assertIn("Belt Pouch item id", find)
         self.assertIn("Item_GetItemBySlot", cell)
         self.assertIn("Item_ItemID", start)
+        self.assertIn("Leveler_ItemIdFromPtr", start)
         self.assertIn("Item_GetItemBySlot", send)
         self.assertIn("Item_ItemID", send)
+        self.assertIn("Leveler_ItemIdFromPtr", send)
         self.assertIn("Item_EquipItem", send)
         self.assertIn("Item_EquipItem", equip)
         self.assertIn("Ui_EquipItem", send)
@@ -183,7 +186,9 @@ class ExtendInventoryContract(unittest.TestCase):
         scan = func_body(CRAFT, "Leveler_BagScanSlotCount")
         cell = func_body(CRAFT, "Leveler_ItemPtrInBagCell")
         self.assertIn("Item_GetItemBySlot", find)
-        self.assertIn("Item_ItemID", find)
+        self.assertIn("Leveler_ItemIdFromPtr", find)
+        self.assertIn("Belt Pouch item id", find)
+        self.assertIn('Item_GetItemInfoByPtr($a_p_Item, "ItemID")', func_body(CRAFT, "Leveler_ItemIdFromPtr"))
         self.assertIn("Item_GetItemBySlot", cell)
         self.assertIn("Leveler_BagScanSlotCount", find)
         self.assertIn("Leveler_ItemPtrInBagCell", find)
@@ -219,17 +224,18 @@ class ExtendInventoryContract(unittest.TestCase):
     def test_small_bag_requires_type_bag_not_just_model(self):
         helper = func_body(CRAFT, "Leveler_ItemIsSmallBag")
         self.assertIn("$GC_I_TYPE_BAG", helper)
-        self.assertIn("0x20", helper)
-        self.assertIn("0x2C", helper)
+        self.assertIn('Item_GetItemInfoByPtr($a_p_Item, "ItemType")', helper)
+        self.assertIn('Item_GetItemInfoByPtr($a_p_Item, "ModelID")', helper)
         find = func_body(CRAFT, "Leveler_FindLooseBagItem")
         self.assertIn("not TYPE_BAG", find)
         self.assertLess(find.find("Leveler_ItemIsSmallBag"), find.find("Return $l_i_Id"))
 
     def test_equip_rereads_backpack_slot_then_equipitem(self):
-        """Bag is in backpack slot 1. Use Item_GetItemBySlot + Item_ItemID + Item_EquipItem."""
+        """Bag is in backpack slot 1. Use Item_GetItemBySlot + ItemID + Item_EquipItem."""
         send = func_body(CRAFT, "Leveler_EquipBagItem")
         self.assertIn("Item_GetItemBySlot($GC_I_INVENTORY_BACKPACK, $l_i_Slot)", send)
-        self.assertIn("Item_ItemID", send)
+        self.assertIn("Leveler_ItemIdFromPtr", send)
+        self.assertIn("Belt Pouch item id", send)
         self.assertIn("Item_EquipItem($l_i_Id)", send)
         self.assertNotIn("928,514", send)
         self.assertNotIn("MouseClickDrag", send)
@@ -237,6 +243,21 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("Leveler_StartBagCellOfItem", send)
         self.assertNotRegex(send, r"Item_UseItem\(")
         self.assertNotIn("$GC_I_HEADER_EQUIP_BAG", send)
+
+    def test_belt_pouch_item_id_uses_gwau3_slot_and_itemid(self):
+        """GwAu3: Item_GetItemBySlot then Item_GetItemInfoByPtr(..., 'ItemID') / Item_ItemID."""
+        fromptr = func_body(CRAFT, "Leveler_ItemIdFromPtr")
+        self.assertIn('Item_GetItemInfoByPtr($a_p_Item, "ItemID")', fromptr)
+        self.assertIn("Item_ItemID", fromptr)
+        find = func_body(CRAFT, "Leveler_FindLooseBagItem")
+        self.assertIn("Item_GetItemBySlot($l_i_Bag, $s)", find)
+        self.assertIn("Belt Pouch item id", find)
+        log = func_body(CRAFT, "Leveler_LogBagState")
+        self.assertIn('Item_GetBagInfo($GC_I_INVENTORY_BELT_POUCH, "ContainerItem")', log)
+        self.assertIn("Item_GetItemInfoByPtr", CONST)
+        self.assertIn("ContainerItem", CONST)
+        send = func_body(CRAFT, "Leveler_EquipBagItem")
+        self.assertIn("Item_EquipItem($l_i_Id)", send)
 
 
 if __name__ == "__main__":
