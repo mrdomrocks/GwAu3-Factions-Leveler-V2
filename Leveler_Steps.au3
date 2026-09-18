@@ -299,7 +299,7 @@ Func Leveler_Step_UnlockXunlai()
 	If Not Leveler_MoveTo(-5465, 9727, False) Then Return False
 	If Not Leveler_MoveTo(-4791, 10140, False) Then Return False
 	If Not Leveler_MoveTo(-3945, 10328, False) Then Return False
-	If Not Leveler_MoveAndDialog(-3825.09, 10386.81, $DIALOG_GENERIC_TALK, False, $MODEL_XUNLAI) Then Return False
+	If Not Leveler_MoveAndDialog($XUNLAI_X, $XUNLAI_Y, $DIALOG_GENERIC_TALK, False, $MODEL_XUNLAI) Then Return False
 	Local $l_i_Xunlai = Leveler_GetAgentByModel($MODEL_XUNLAI)
 	If $l_i_Xunlai <> 0 Then Agent_GoNPC($l_i_Xunlai)
 	Sleep(600)
@@ -329,8 +329,7 @@ Func Leveler_Step_CraftWeapon()
 	EndIf
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_SetPacifist()
-	Item_WithdrawGold(5000)
-	Sleep(400)
+	If Not Leveler_PrepareCraftWeaponFunds() Then Return False
 	If Not Leveler_MoveTo(-10896.94, 10807.54, False) Then Return False
 	If Not Leveler_MoveTo(-10942.73, 10783.19, False) Then Return False
 	If Not Leveler_InteractNpcAt(-10614.00, 10996.00, False) Then Return False

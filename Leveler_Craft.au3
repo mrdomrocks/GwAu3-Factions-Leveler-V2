@@ -23,6 +23,186 @@ Func Leveler_CountModel($a_i_Model, $a_b_IncludeStorage = True)
 	Return $l_i_Count
 EndFunc
 
+Func Leveler_CountStorageModel($a_i_Model)
+	Local $l_i_Bags = Leveler_CountModel($a_i_Model, False)
+	Local $l_i_All = Leveler_CountModel($a_i_Model, True)
+	If $l_i_All < $l_i_Bags Then Return 0
+	Return $l_i_All - $l_i_Bags
+EndFunc
+
+Func Leveler_LogGold($a_s_When)
+	Out("[Craft] Gold " & $a_s_When & ": character " & Item_GetInventoryInfo("GoldCharacter") & ", storage " & Item_GetInventoryInfo("GoldStorage"))
+EndFunc
+
+Func Leveler_TraderQuoteCost()
+	If $g_f_TraderCostValue = 0 Then Return 0
+	Return Memory_Read($g_f_TraderCostValue, "dword")
+EndFunc
+
+; Bags 1-4 only. Storage pointers are 0 until the Xunlai window has been opened.
+Func Leveler_FindEmptyInventorySlot(ByRef $a_i_Bag, ByRef $a_i_Slot)
+	Local $l_ai_Bags[4] = [$GC_I_INVENTORY_BACKPACK, $GC_I_INVENTORY_BELT_POUCH, $GC_I_INVENTORY_BAG1, $GC_I_INVENTORY_BAG2]
+	Local $i, $s
+	For $i = 0 To 3
+		If Item_GetBagPtr($l_ai_Bags[$i]) = 0 Then ContinueLoop
+		Local $l_i_Slots = Item_GetBagInfo($l_ai_Bags[$i], "Slots")
+		For $s = 1 To $l_i_Slots
+			If Item_GetItemBySlot($l_ai_Bags[$i], $s) = 0 Then
+				$a_i_Bag = $l_ai_Bags[$i]
+				$a_i_Slot = $s
+				Return True
+			EndIf
+		Next
+	Next
+	Return False
+EndFunc
+
+; GoNPC the monastery chest so GoldStorage and material-storage bags populate.
+Func Leveler_OpenXunlaiStorage()
+	If Not Leveler_XunlaiUnlocked() Then
+		Out("[Craft] Xunlai is not unlocked; cannot open storage")
+		Return False
+	EndIf
+	If Map_GetMapID() <> $MAP_SHING_JEA Then
+		If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
+	EndIf
+	Out("[Craft] Opening Xunlai storage")
+	If Not Leveler_MoveAndDialog($XUNLAI_X, $XUNLAI_Y, $DIALOG_GENERIC_TALK, False, $MODEL_XUNLAI) Then Return False
+	Local $l_i_Xunlai = Leveler_GetAgentByModel($MODEL_XUNLAI)
+	If $l_i_Xunlai <> 0 Then
+		Agent_GoNPC($l_i_Xunlai)
+		Sleep(800)
+	EndIf
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 5000
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_HasStorageAccess() Then ExitLoop
+		If Item_GetBagPtr($GC_I_INVENTORY_MATERIAL_STORAGE) <> 0 Then ExitLoop
+		Sleep(200)
+	WEnd
+	Leveler_LogGold("after opening Xunlai")
+	Out("[Craft] Storage1 ptr " & Item_GetBagPtr($GC_I_INVENTORY_STORAGE1) & ", material storage ptr " & Item_GetBagPtr($GC_I_INVENTORY_MATERIAL_STORAGE))
+	Return True
+EndFunc
+
+; Pull gold onto the character. Item_WithdrawGold is a no-op when GoldStorage reads 0.
+Func Leveler_EnsureCharacterGold($a_i_Need)
+	Local $l_i_Char = Item_GetInventoryInfo("GoldCharacter")
+	Local $l_i_Store = Item_GetInventoryInfo("GoldStorage")
+	Leveler_LogGold("before withdraw")
+	If $l_i_Char >= $a_i_Need Then Return True
+	If $l_i_Store <= 0 Then
+		Out("[Craft] Storage gold is " & $l_i_Store & "; cannot withdraw")
+		Return False
+	EndIf
+	Local $l_i_Want = $a_i_Need - $l_i_Char
+	Out("[Craft] Withdrawing up to " & $l_i_Want & " gold from Xunlai (storage " & $l_i_Store & ")")
+	Item_WithdrawGold($l_i_Want)
+	Local $l_h_Timer = TimerInit()
+	Local $l_i_StartGold = $l_i_Char
+	While TimerDiff($l_h_Timer) < 4000
+		If $g_b_LevelerPaused Then Return False
+		Sleep(250)
+		$l_i_Char = Item_GetInventoryInfo("GoldCharacter")
+		If $l_i_Char >= $a_i_Need Then ExitLoop
+		If $l_i_Char > $l_i_StartGold Then ExitLoop
+	WEnd
+	$l_i_Char = Item_GetInventoryInfo("GoldCharacter")
+	$l_i_Store = Item_GetInventoryInfo("GoldStorage")
+	If $l_i_Char < $a_i_Need And $l_i_Store > 0 Then
+		Out("[Craft] Gold did not reach " & $a_i_Need & "; withdrawing again")
+		Item_WithdrawGold($a_i_Need - $l_i_Char)
+		Sleep(800)
+		$l_i_Char = Item_GetInventoryInfo("GoldCharacter")
+	EndIf
+	Leveler_LogGold("after withdraw")
+	Return $l_i_Char >= $a_i_Need
+EndFunc
+
+; Move needed qty from Xunlai / material storage into bags. Craft still counts bags only.
+Func Leveler_WithdrawStorageModel($a_i_Model, $a_i_Need)
+	Local $l_i_Have = Leveler_CountModel($a_i_Model, False)
+	If $l_i_Have >= $a_i_Need Then Return True
+	Local $l_i_Stored = Leveler_CountStorageModel($a_i_Model)
+	If $l_i_Stored <= 0 Then
+		Out("[Craft] Storage has 0x model " & $a_i_Model & " (bags " & $l_i_Have & "/" & $a_i_Need & ")")
+		Return False
+	EndIf
+	Out("[Craft] Withdrawing model " & $a_i_Model & " from storage (bags " & $l_i_Have & ", storage " & $l_i_Stored & ", need " & $a_i_Need & ")")
+	Local $l_i_Guard = 0
+	While $l_i_Have < $a_i_Need And $l_i_Guard < 12
+		$l_i_Guard += 1
+		If $g_b_LevelerPaused Then Return False
+		Local $l_av_Store = Item_GetStorageArray(True)
+		If Not IsArray($l_av_Store) Then ExitLoop
+		Local $l_i_Item = 0
+		Local $l_i_Qty = 0
+		Local $i
+		For $i = 0 To UBound($l_av_Store) - 1
+			If $l_av_Store[$i][$GC_I_INVENTORY_MODELID] <> $a_i_Model Then ContinueLoop
+			If $l_av_Store[$i][$GC_I_INVENTORY_QUANTITY] <= 0 Then ContinueLoop
+			$l_i_Item = $l_av_Store[$i][$GC_I_INVENTORY_ITEMID]
+			$l_i_Qty = $l_av_Store[$i][$GC_I_INVENTORY_QUANTITY]
+			ExitLoop
+		Next
+		If $l_i_Item = 0 Then ExitLoop
+		Local $l_i_Take = $a_i_Need - $l_i_Have
+		If $l_i_Take > $l_i_Qty Then $l_i_Take = $l_i_Qty
+		Local $l_i_Bag, $l_i_Slot
+		If Not Leveler_FindEmptyInventorySlot($l_i_Bag, $l_i_Slot) Then
+			Out("[Craft] No empty bag slot to withdraw model " & $a_i_Model)
+			Return False
+		EndIf
+		Out("[Craft] Moving " & $l_i_Take & "x model " & $a_i_Model & " from storage item " & $l_i_Item & " to bag " & $l_i_Bag & " slot " & $l_i_Slot)
+		Item_MoveItem_($l_i_Item, $l_i_Bag, $l_i_Slot, $l_i_Take)
+		Local $l_i_Before = $l_i_Have
+		Local $l_h_Timer = TimerInit()
+		While TimerDiff($l_h_Timer) < 4000
+			Sleep(250)
+			$l_i_Have = Leveler_CountModel($a_i_Model, False)
+			If $l_i_Have > $l_i_Before Then ExitLoop
+		WEnd
+		If $l_i_Have <= $l_i_Before Then
+			Out("[Craft] Storage withdraw did not increase bag count for model " & $a_i_Model)
+			Return False
+		EndIf
+		Out("[Craft] Bags now have " & $l_i_Have & "/" & $a_i_Need & " of model " & $a_i_Model)
+	WEnd
+	Return $l_i_Have >= $a_i_Need
+EndFunc
+
+; Open Xunlai, pull staff/armor mats into bags, then fund character gold for remaining trader buys.
+Func Leveler_PrepareCraftWeaponFunds()
+	Leveler_LogGold("before Craft Weapon")
+	If Not Leveler_OpenXunlaiStorage() Then
+		Out("[Craft] Could not open Xunlai; trying storage withdraw anyway")
+	EndIf
+	Leveler_WithdrawStorageModel($GC_I_MODELID_WOOD, 4)
+	Leveler_WithdrawStorageModel($GC_I_MODELID_DUST, 1)
+	Local $l_ai_Models, $l_ai_Counts
+	Leveler_GetArmorBuyList($l_ai_Models, $l_ai_Counts)
+	Local $i
+	For $i = 0 To UBound($l_ai_Models) - 1
+		Leveler_WithdrawStorageModel($l_ai_Models[$i], $l_ai_Counts[$i])
+	Next
+	Leveler_EnsureCharacterGold($WEAPON_WITHDRAW_GOLD)
+	Local $l_i_Wood = Leveler_CountModel($GC_I_MODELID_WOOD, False)
+	Local $l_i_Dust = Leveler_CountModel($GC_I_MODELID_DUST, False)
+	Local $l_i_Gold = Item_GetInventoryInfo("GoldCharacter")
+	Out("[Craft] After Xunlai: bags wood " & $l_i_Wood & ", dust " & $l_i_Dust & ", gold " & $l_i_Gold & " / storage " & Item_GetInventoryInfo("GoldStorage"))
+	If $l_i_Dust < 1 And $l_i_Gold < $WEAPON_GOLD_COST Then
+		Out("[Craft] Dust is still not in bags and character gold is " & $l_i_Gold & ". Cannot buy or craft yet.")
+		Sleep(4000)
+		Return False
+	EndIf
+	If $l_i_Wood >= 4 And $l_i_Dust >= 1 And $l_i_Gold < $WEAPON_GOLD_COST Then
+		Out("[Craft] Staff mats are in bags but gold is " & $l_i_Gold & " (need " & $WEAPON_GOLD_COST & " to craft)")
+		Sleep(4000)
+		Return False
+	EndIf
+	Return True
+EndFunc
+
 Func Leveler_OwnsModel($a_i_Model)
 	If $a_i_Model = 0 Then Return False
 	If Leveler_IsModelEquipped($a_i_Model) Then Return True
@@ -158,8 +338,7 @@ Func Leveler_CraftAndEquipPiece($a_i_ItemID, $a_i_Gold, $a_ai_Mats)
 	Local $l_i_Gold = Item_GetInventoryInfo("GoldCharacter")
 	If $l_i_Gold < $a_i_Gold Then
 		Out("[Craft] Need " & $a_i_Gold & " gold, have " & $l_i_Gold & ". Withdrawing.")
-		Item_WithdrawGold($a_i_Gold)
-		Sleep(400)
+		Leveler_EnsureCharacterGold($a_i_Gold)
 		$l_i_Gold = Item_GetInventoryInfo("GoldCharacter")
 		If $l_i_Gold < $a_i_Gold Then
 			Out("[Craft] Still short of gold for piece " & $a_i_ItemID)
@@ -397,7 +576,7 @@ Func Leveler_BuyEarlyArmorMaterials()
 	Return True
 EndFunc
 
-; Inventory only. Storage-inclusive counts skip the bag buy and Merchant_CraftItem fails.
+; Inventory only for Merchant_CraftItem. Storage mats are moved into bags first; leftover lots are bought.
 Func Leveler_BuyWeaponMaterials()
 	Out("[Craft] Buying Clairvoyant Staff materials into inventory")
 	If Not Leveler_BuyMaterialShortfallInv($GC_I_MODELID_WOOD, 4) Then Return False
@@ -774,15 +953,35 @@ Func Leveler_BuyMaterialShortfallInv($a_i_Model, $a_i_Need)
 		Out("[Craft] Inventory already has " & $l_i_Have & "x model " & $a_i_Model)
 		Return True
 	EndIf
-	Out("[Craft] Need " & $a_i_Need & "x model " & $a_i_Model & " (have " & $l_i_Have & ", gold " & Item_GetInventoryInfo("GoldCharacter") & ")")
+	If Leveler_WithdrawStorageModel($a_i_Model, $a_i_Need) Then
+		$l_i_Have = Leveler_CountModel($a_i_Model, False)
+		If $l_i_Have >= $a_i_Need Then
+			Out("[Craft] Inventory has " & $l_i_Have & "x model " & $a_i_Model & " after storage withdraw")
+			Return True
+		EndIf
+	EndIf
+	$l_i_Have = Leveler_CountModel($a_i_Model, False)
+	Out("[Craft] Need " & $a_i_Need & "x model " & $a_i_Model & " (have " & $l_i_Have & ", gold " & Item_GetInventoryInfo("GoldCharacter") & ", storage gold " & Item_GetInventoryInfo("GoldStorage") & ")")
 	If Not Leveler_WaitForMaterialOffer($a_i_Model) Then Return False
 	While $l_i_Have < $a_i_Need
 		If $g_b_LevelerPaused Then Return False
 		Local $l_i_Before = $l_i_Have
 		; Common-material traders sell in quoted lots. A normal Merchant_BuyItem packet does not buy them.
 		If Not Merchant_BuyItem($a_i_Model, 1, True) Then
-			Out("[Craft] Trader quote/buy failed for model " & $a_i_Model)
-			Return False
+			Local $l_i_Quote = Leveler_TraderQuoteCost()
+			Local $l_i_Gold = Item_GetInventoryInfo("GoldCharacter")
+			Local $l_i_Store = Item_GetInventoryInfo("GoldStorage")
+			Out("[Craft] Trader quote/buy failed for model " & $a_i_Model & " (quote " & $l_i_Quote & ", gold " & $l_i_Gold & ", storage " & $l_i_Store & ")")
+			If $l_i_Store > 0 Then
+				Local $l_i_NeedGold = $l_i_Quote
+				If $l_i_NeedGold <= $l_i_Gold Then $l_i_NeedGold = $WEAPON_WITHDRAW_GOLD
+				Leveler_EnsureCharacterGold($l_i_NeedGold)
+			EndIf
+			If Not Merchant_BuyItem($a_i_Model, 1, True) Then
+				Out("[Craft] Trader buy still failed for model " & $a_i_Model & " (gold " & Item_GetInventoryInfo("GoldCharacter") & ", storage " & Item_GetInventoryInfo("GoldStorage") & ")")
+				Sleep(4000)
+				Return False
+			EndIf
 		EndIf
 		Local $l_h_Timer = TimerInit()
 		While TimerDiff($l_h_Timer) < 4000
