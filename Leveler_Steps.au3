@@ -642,7 +642,7 @@ Func Leveler_Step_ChosMission()
 		EndIf
 		Out("[Step] Load skill bar, then henchmen, then enter")
 		If Not Leveler_EquipTrainerSkills(False) Then Return False
-		If Not Leveler_EnsureFormingPartyHenchmen() Then Return False
+		If Not Leveler_PrepareMissionParty() Then Return False
 		If Not Leveler_EnterMission("Minister Cho's Estate", $MAP_CHO_OUTPOST) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
