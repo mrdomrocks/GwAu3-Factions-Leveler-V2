@@ -635,7 +635,7 @@ Func Leveler_EquipSkillBar()
 		If Not Leveler_TrainerSkillsOnBar() Then Leveler_EquipTrainerSkills()
 		Return True
 	EndIf
-	If World_IsSkillLearnt($SKILL_BACKFIRE) Then Return Leveler_LoadZenSkillBar()
+	If Leveler_UsesZenSkillBar() Then Return Leveler_LoadZenSkillBar()
 	If Leveler_ZhaoDiSkillsUnlocked() Then Return Leveler_EquipTrainerSkills()
 	Leveler_LoadProfessionSkillBar($LEVELER_BAR_STARTER)
 	Return True
