@@ -73,13 +73,19 @@ Func Leveler_IsProfessionUnlocked($a_i_Prof)
 EndFunc
 
 ; GToB trainers unlock every secondary, including Paragon and Dervish.
+; Do not sticky-True until every profession bit is actually selectable.
 Func Leveler_RemainingSecondariesUnlocked()
-	If $g_b_SecondaryProfsTalked Then Return True
 	Local $l_i_Flags = Leveler_UnlockedProfessionFlags()
-	If $l_i_Flags = 0 Then Return False
+	If $l_i_Flags = 0 Then
+		$g_b_SecondaryProfsTalked = False
+		Return False
+	EndIf
 	Local $i
 	For $i = $GC_I_PROFESSION_WARRIOR To $GC_I_PROFESSION_DERVISH
-		If Not Leveler_ProfessionBitOn($l_i_Flags, $i) Then Return False
+		If Not Leveler_ProfessionBitOn($l_i_Flags, $i) Then
+			$g_b_SecondaryProfsTalked = False
+			Return False
+		EndIf
 	Next
 	$g_b_SecondaryProfsTalked = True
 	Return True

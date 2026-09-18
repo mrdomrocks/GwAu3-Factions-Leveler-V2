@@ -825,6 +825,10 @@ Func Leveler_DestroyMonasteryArmor()
 	For $i = 0 To UBound($l_ai_Pieces) - 1
 		Leveler_DestroyModel($l_ai_Pieces[$i][0])
 	Next
+	If Leveler_HasMonasteryArmor() Then
+		Out("[Craft] Monastery armor is still in the bags after destroy")
+		Return False
+	EndIf
 	Out("[Craft] Destroyed monastery armor")
 	Return True
 EndFunc
@@ -1061,6 +1065,10 @@ Func Leveler_DestroyStarterArmorAndJunk()
 	For $i = 0 To UBound($l_ai_Junk) - 1
 		Leveler_DestroyModel($l_ai_Junk[$i])
 	Next
+	If Leveler_HasStarterArmor() Then
+		Out("[Craft] Starter armor is still in the bags after destroy")
+		Return False
+	EndIf
 	Out("[Craft] Destroyed starter armor and junk")
 	Return True
 EndFunc
@@ -1092,6 +1100,10 @@ Func Leveler_ExtendInventory()
 		Local $l_i_Pouch = Item_FindItemByModelID($MODEL_BELT_POUCH)
 		If $l_i_Pouch <> 0 Then Item_EquipItem($l_i_Pouch)
 		Sleep(250)
+	EndIf
+	If Not Leveler_HasExtendedBags() Then
+		Out("[Craft] Inventory bags are still missing after the merchant")
+		Return False
 	EndIf
 	Out("[Craft] Inventory bags equipped")
 	Return True
