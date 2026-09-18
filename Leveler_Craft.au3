@@ -212,7 +212,7 @@ Func Leveler_BuyMaterialShortfall($a_i_Model, $a_i_Need)
 	Return True
 EndFunc
 
-; Python _EARLY_ARMOR_DATA["buy"] is 6 cloth/hide, but monastery pieces cost 8
+; Py4GW _EARLY_ARMOR_DATA["buy"] is 6 cloth/hide, but monastery pieces cost 8
 ; (Ritualist boots cost 3 cloth, so 10). Sum the piece list so craft cannot run short.
 Func Leveler_GetArmorBuyList(ByRef $a_ai_Models, ByRef $a_ai_Counts)
 	Local $l_ai_M[4]
