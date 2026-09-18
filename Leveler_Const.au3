@@ -301,6 +301,7 @@ Global Const $MODEL_XUNLAI = 283
 ; Raitahn Nem. Same model in Ran Musu Gardens and Cho explorable.
 Global Const $MODEL_LOST_TREASURE_GUARD = 3093
 Global Const $MODEL_RAITAHN_NEM = 3093
+Global Const $MODEL_SOAR_HONORCLAW = 3374
 Global Const $MODEL_SISTER_TAI = 3367
 Global Const $MODEL_BROTHER_TOSAI = 3171
 Global Const $MODEL_BURDEN_NPC = 3307

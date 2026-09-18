@@ -164,7 +164,7 @@ Func Leveler_ExecuteStep($a_i_Step)
 				Return False
 			EndIf
 		EndIf
-		If $a_i_Step = $LEVELER_STEP_ATTR_1 And Not Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then
+		If $a_i_Step = $LEVELER_STEP_ATTR_1 And Leveler_WarningTheTenguFinished() Then
 			Out("[Step] Warning the Tengu already completed. Moving to The Threat Grows.")
 			$g_i_Step = $LEVELER_STEP_TENGU + 1
 		Else
@@ -738,6 +738,11 @@ Func Leveler_PickupLostTreasure()
 
 	If Not Leveler_HasQuest($QUEST_LOST_TREASURE) Then
 		Leveler_LogQuestState($QUEST_LOST_TREASURE, "Lost Treasure")
+		If $l_i_Npc <> 0 Then
+			Out("[Step] Raitahn Nem did not offer Lost Treasure. Treating #346 as already handed in.")
+			Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
+			Return True
+		EndIf
 		Out("[Step] Lost Treasure was not offered yet. Will retry pickup.")
 		Return False
 	EndIf
@@ -754,7 +759,7 @@ Func Leveler_ShowLostTreasureStepOnGui()
 	$g_s_CurrentHeader = "Quest: Lost Treasure"
 	$g_i_Step = $LEVELER_STEP_ATTR_1
 	$g_ab_StepDone[$LEVELER_STEP_ATTR_1] = False
-	If Not Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then $g_ab_StepDone[$LEVELER_STEP_TENGU] = True
+	If Leveler_WarningTheTenguFinished() Then $g_ab_StepDone[$LEVELER_STEP_TENGU] = True
 	Leveler_RefreshStepList($LEVELER_STEP_ATTR_1)
 EndFunc
 
@@ -807,6 +812,12 @@ Func Leveler_ForceCompleteDialog($a_i_QuestID, $a_f_X, $a_f_Y, $a_i_Dialog, $a_i
 			Sleep(100)
 		WEnd
 		Sleep(800)
+		; Standard 0x008QQQ07 reward packets need the green quest line (0x84) first.
+		; Lost Treasure uses 0x17 here — do not send 0x84 for that complete.
+		If Leveler_IsStandardQuestDialog($a_i_Dialog, $a_i_QuestID, 7) Then
+			Ui_Dialog($DIALOG_GENERIC_TALK)
+			Sleep(400)
+		EndIf
 		If $a_i_Dialog <> 0 Then Ui_Dialog($a_i_Dialog)
 		Sleep(400)
 		Ui_RewardQuest($a_i_QuestID)
@@ -912,38 +923,146 @@ Func Leveler_CompleteLostTreasureAtNem()
 	Return Leveler_HandInLostTreasureAtNem()
 EndFunc
 
-; Talk at Soar and send the Warning the Tengu reward dialog.
+; Click Soar's green "Warning the Tengu" line (0x84), then the step or reward packet.
+Func Leveler_TalkSoarHonorclaw($a_i_Dialog)
+	Agent_CancelAction()
+	Sleep(250)
+	Local $l_i_Npc = Leveler_GetAgentByName("Soar")
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetAgentByModel($MODEL_SOAR_HONORCLAW)
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetNearestNPCAt($TENGU_SOAR_X, $TENGU_SOAR_Y, 500)
+	If $l_i_Npc = 0 Then
+		Out("[Quest] Soar Honorclaw not found")
+		Return False
+	EndIf
+	If Not Leveler_TalkAndDialog($l_i_Npc, $DIALOG_GENERIC_TALK) Then Return False
+	Sleep(400)
+	If $a_i_Dialog = $DIALOG_TENGU_COMPLETE Then
+		Ui_RewardQuest($QUEST_WARNING_TENGU)
+		Sleep(300)
+		Ui_Dialog($DIALOG_TENGU_COMPLETE)
+	Else
+		Ui_UpdateQuest($QUEST_WARNING_TENGU)
+		Sleep(300)
+		Ui_Dialog($DIALOG_TENGU_STEP)
+		If $a_i_Dialog <> 0 And $a_i_Dialog <> $DIALOG_TENGU_STEP Then Ui_Dialog($a_i_Dialog)
+	EndIf
+	Sleep(700)
+	Return True
+EndFunc
+
+; First objective is "Speak to Soar Honorclaw". Reward 0x815307 is ignored until this update.
+Func Leveler_SpeakToSoarForTengu()
+	If Not Leveler_HasQuest($QUEST_WARNING_TENGU) Then Return True
+	If Leveler_QuestReadyForReward($QUEST_WARNING_TENGU) Then Return True
+	If Not Leveler_WalkPoint($TENGU_SOAR_X, $TENGU_SOAR_Y, True, "Soar Honorclaw") Then Return False
+	If Not Leveler_WaitOutOfCombat() Then Return False
+	Out("[Path] Speak to Soar Honorclaw (0x84 then update 0x815304). Do not send reward 0x815307 yet.")
+	Ui_ActiveQuest($QUEST_WARNING_TENGU)
+	Quest_RequestInfos($QUEST_WARNING_TENGU)
+	Leveler_LogQuestState($QUEST_WARNING_TENGU, "Warning the Tengu")
+	Local $l_i_Attempt
+	For $l_i_Attempt = 1 To 3
+		If Leveler_QuestReadyForReward($QUEST_WARNING_TENGU) Then ExitLoop
+		If Not Leveler_TalkSoarHonorclaw($DIALOG_TENGU_STEP) Then Return False
+		Quest_RequestInfos($QUEST_WARNING_TENGU)
+		Sleep(800)
+	Next
+	Leveler_LogQuestState($QUEST_WARNING_TENGU, "Warning the Tengu")
+	Return True
+EndFunc
+
+Func Leveler_KillTenguAfflicted()
+	If Not Leveler_HasQuest($QUEST_WARNING_TENGU) Then Return True
+	If Leveler_QuestReadyForReward($QUEST_WARNING_TENGU) Then Return True
+	Out("[Path] Kill the Afflicted for Warning the Tengu")
+	If Not Leveler_WalkPoint($TENGU_AFFLICTED_X, $TENGU_AFFLICTED_Y, True, "Afflicted") Then Return False
+	If Not Leveler_WaitOutOfCombat() Then Return False
+	Quest_RequestInfos($QUEST_WARNING_TENGU)
+	Sleep(400)
+	Leveler_LogQuestState($QUEST_WARNING_TENGU, "Warning the Tengu")
+	Return True
+EndFunc
+
+; Speak (0x815304), Afflicted if needed, then reward 0x815307 and take #340.
 Func Leveler_HandInTenguAtSoar()
 	Out("[Path] Hand in Warning the Tengu at Soar Honorclaw")
 	Leveler_ShowTenguStepOnGui()
 	If Not Leveler_WalkPoint($TENGU_SOAR_X, $TENGU_SOAR_Y, True, "Soar Honorclaw") Then Return False
 	If Not Leveler_WaitOutOfCombat() Then Return False
-	If Not Leveler_ForceCompleteDialog($QUEST_WARNING_TENGU, $TENGU_SOAR_X, $TENGU_SOAR_Y, $DIALOG_TENGU_COMPLETE, 0, "Soar") Then Return False
+	If Leveler_HasQuest($QUEST_WARNING_TENGU) And Not Leveler_QuestReadyForReward($QUEST_WARNING_TENGU) Then
+		Out("[Path] #339 is not reward-ready. Speak-to update and Afflicted kill are still open.")
+		If Not Leveler_SpeakToSoarForTengu() Then Return False
+	EndIf
+	If Leveler_HasQuest($QUEST_WARNING_TENGU) And Not Leveler_QuestReadyForReward($QUEST_WARNING_TENGU) Then
+		If Not Leveler_KillTenguAfflicted() Then Return False
+		If Not Leveler_WalkPoint($TENGU_SOAR_X, $TENGU_SOAR_Y, True, "Soar Honorclaw") Then Return False
+		If Not Leveler_WaitOutOfCombat() Then Return False
+	EndIf
+	Leveler_LogQuestState($QUEST_WARNING_TENGU, "Warning the Tengu")
+	If Leveler_HasQuest($QUEST_WARNING_TENGU) Then
+		Out("[Path] Complete Warning the Tengu (0x84 then reward 0x815307)")
+		Leveler_TalkSoarHonorclaw($DIALOG_TENGU_COMPLETE)
+		Sleep(600)
+	EndIf
+	If Leveler_HasQuest($QUEST_WARNING_TENGU) Then
+		If Not Leveler_ForceCompleteDialog($QUEST_WARNING_TENGU, $TENGU_SOAR_X, $TENGU_SOAR_Y, $DIALOG_TENGU_COMPLETE, $MODEL_SOAR_HONORCLAW, "Soar") Then Return False
+	Else
+		Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
+	EndIf
 	$g_b_LostTreasureToTenguOnce = True
+	If Not Leveler_AcceptThreatGrowsAtSoar() Then
+		Out("[Path] Warning the Tengu is handed in. The Threat Grows accept will retry at Soar.")
+	EndIf
 	Return True
 EndFunc
 
-; If already at Soar, stay and hand in. Otherwise run Ran Musu -> Kinya -> Soar.
+; Soar offers The Threat Grows only after #339 leaves the log.
+Func Leveler_AcceptThreatGrowsAtSoar()
+	If Leveler_HasQuest($QUEST_THREAT_GROWS) Or Leveler_HasQuest($QUEST_JOURNEY_MASTER) Then Return True
+	If Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then Return False
+	Out("[Path] Accept The Threat Grows (#340) at Soar Honorclaw")
+	If Not Leveler_WaitOutOfCombat() Then Return False
+	Local $l_i_Npc = Leveler_GetAgentByName("Soar")
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetAgentByModel($MODEL_SOAR_HONORCLAW)
+	If $l_i_Npc <> 0 Then
+		Agent_CancelAction()
+		Sleep(200)
+		Leveler_TalkAndDialog($l_i_Npc, $DIALOG_GENERIC_TALK)
+		Sleep(300)
+		Ui_AcceptQuest($QUEST_THREAT_GROWS)
+		Sleep(300)
+		Ui_Dialog($DIALOG_THREAT_ACCEPT)
+		Sleep(800)
+		If Leveler_HasQuest($QUEST_THREAT_GROWS) Then Return True
+	EndIf
+	If Not Leveler_QuestLoop($QUEST_THREAT_GROWS, $TENGU_SOAR_X, $TENGU_SOAR_Y, $DIALOG_THREAT_ACCEPT, "accept") Then Return False
+	Return True
+EndFunc
+
+; If already at Soar with #339, stay and hand in. Otherwise run Ran Musu -> Kinya -> Soar.
 Func Leveler_RunRanMusuToTenguHandIn()
 	Leveler_ShowTenguStepOnGui()
 	If Not Leveler_WaitUntilMapReady() Then Return False
 
 	If Map_GetMapID() = $MAP_KINYA And Agent_GetDistanceToXY($TENGU_SOAR_X, $TENGU_SOAR_Y) < 2500 Then
-		Out("[Path] Already at Soar Honorclaw. Completing Warning the Tengu dialog.")
-		If Not Leveler_HandInTenguAtSoar() Then Return False
-		If Leveler_HasQuest($QUEST_LOST_TREASURE) Or Leveler_QuestReadyForReward($QUEST_LOST_TREASURE) Then
-			If Not Leveler_CompleteLostTreasureAtNem() Then Return False
+		If Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then
+			Out("[Path] Already at Soar Honorclaw. Resuming Warning the Tengu (speak / Afflicted / reward).")
+			If Not Leveler_HandInTenguAtSoar() Then Return False
+			If Leveler_HasQuest($QUEST_LOST_TREASURE) Or Leveler_QuestReadyForReward($QUEST_LOST_TREASURE) Then
+				If Not Leveler_CompleteLostTreasureAtNem() Then Return False
+			EndIf
+			Return True
 		EndIf
-		Return True
+		If Leveler_HasQuest($QUEST_THREAT_GROWS) Or Leveler_HasQuest($QUEST_JOURNEY_MASTER) Then Return True
+		Out("[Path] At Soar Honorclaw but Warning the Tengu is not in the log. Returning to Ran Musu to accept it from Ang.")
 	EndIf
 
 	If Leveler_ShouldResumeExplorable($QUEST_WARNING_TENGU) Then
 		Out("[Path] Warning the Tengu is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")
 		If Map_GetMapID() = $MAP_KINYA Then
 			If Not Leveler_PrepareCombatAI() Then Return False
-			If Not Leveler_WalkPoint($TENGU_SOAR_X, $TENGU_SOAR_Y, True, "Soar Honorclaw") Then Return False
-			If Not Leveler_WalkPoint($TENGU_AFFLICTED_X, $TENGU_AFFLICTED_Y, True, "Afflicted") Then Return False
-			If Not Leveler_WaitOutOfCombat() Then Return False
+			If Not Leveler_SpeakToSoarForTengu() Then Return False
+			If Not Leveler_KillTenguAfflicted() Then Return False
 			If Not Leveler_HandInTenguAtSoar() Then Return False
 			Return True
 		EndIf
@@ -968,8 +1087,10 @@ Func Leveler_RunRanMusuToTenguHandIn()
 	Leveler_SetPacifist()
 	If Not Leveler_WalkPoint($TENGU_ANG_X, $TENGU_ANG_Y, False, "Ang in Ran Musu") Then Return False
 	If Not Leveler_HasQuest($QUEST_WARNING_TENGU) Then
-		Out("[Path] Accept Warning the Tengu at Ang if it is offered")
-		Leveler_QuestLoop($QUEST_WARNING_TENGU, $TENGU_ANG_X, $TENGU_ANG_Y, $DIALOG_TENGU_ACCEPT, "accept")
+		Out("[Path] Accept Warning the Tengu at Ang")
+		If Not Leveler_QuestLoop($QUEST_WARNING_TENGU, $TENGU_ANG_X, $TENGU_ANG_Y, $DIALOG_TENGU_ACCEPT, "accept") Then
+			Out("[Path] Ang did not put Warning the Tengu in the log")
+		EndIf
 	EndIf
 	Leveler_PrepareForBattle()
 	Out("[Path] Leave Ran Musu for Kinya Province")
@@ -981,11 +1102,19 @@ Func Leveler_RunRanMusuToTenguHandIn()
 	If Not Leveler_PrepareCombatAI() Then Return False
 
 	If Not Leveler_WalkPoint($TENGU_KINYA_START_X, $TENGU_KINYA_START_Y, True, "Kinya start") Then Return False
-	If Not Leveler_WalkPoint($TENGU_SOAR_X, $TENGU_SOAR_Y, True, "Soar Honorclaw") Then Return False
-	If Not Leveler_WalkPoint($TENGU_AFFLICTED_X, $TENGU_AFFLICTED_Y, True, "Afflicted") Then Return False
-	If Not Leveler_WaitOutOfCombat() Then Return False
-	If Not Leveler_HandInTenguAtSoar() Then Return False
-	Return True
+	If Leveler_HasQuest($QUEST_WARNING_TENGU) Then
+		If Not Leveler_SpeakToSoarForTengu() Then Return False
+		If Not Leveler_KillTenguAfflicted() Then Return False
+		If Not Leveler_HandInTenguAtSoar() Then Return False
+		Return True
+	EndIf
+	If Leveler_AcceptThreatGrowsAtSoar() Then
+		Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
+		Out("[Path] Soar offered The Threat Grows. Warning the Tengu is already finished.")
+		Return True
+	EndIf
+	Out("[Path] Soar did not offer #339 or #340. Retrying Warning the Tengu from Ang.")
+	Return False
 EndFunc
 
 Func Leveler_Step_LostTreasure()
@@ -1000,19 +1129,29 @@ Func Leveler_Step_LostTreasure()
 	If Not Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then
 		If Not Leveler_PickupLostTreasure() Then Return False
 	EndIf
-	If Not Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then Return False
+	If Not Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then
+		If Leveler_LostTreasureAlreadyDone() Then
+			Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
+			Out("[Step] Lost Treasure already completed. Moving to Warning the Tengu.")
+			Return True
+		EndIf
+		Return False
+	EndIf
 	Return Leveler_CompleteLostTreasureAtNem()
 EndFunc
 
 Func Leveler_Step_WarningTheTengu()
 	$g_s_CurrentHeader = "Quest: Warning the Tengu"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Not Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then
+	If Leveler_WarningTheTenguFinished() Then
 		Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
 		Leveler_LogQuestState($QUEST_WARNING_TENGU, "Warning the Tengu")
 		Out("[Step] Warning the Tengu already completed. Skipping to The Threat Grows.")
 		Return True
 	EndIf
+	Leveler_ClearQuestDone($QUEST_WARNING_TENGU)
+	$g_ab_StepDone[$LEVELER_STEP_TENGU] = False
+	Leveler_LogQuestState($QUEST_WARNING_TENGU, "Warning the Tengu")
 	Return Leveler_RunRanMusuToTenguHandIn()
 EndFunc
 
@@ -1035,12 +1174,20 @@ Func Leveler_Step_TheThreatGrows()
 	EndIf
 
 	If Not $l_b_Resume And Not Leveler_HasQuest($QUEST_THREAT_GROWS) And Not Leveler_HasQuest($QUEST_JOURNEY_MASTER) Then
-		If Map_GetMapID() <> $MAP_KINYA Then
-			If Not Leveler_Travel($MAP_RAN_MUSU) Then Return False
-			Leveler_PrepareForBattle()
-			If Not Leveler_MoveAndExit(14730, 15176, $MAP_KINYA, True) Then Return False
+		If Not Leveler_WarningTheTenguFinished() Then
+			Out("[Step] Soar does not offer The Threat Grows until Warning the Tengu (#339) is handed in.")
+			Leveler_ClearQuestDone($QUEST_WARNING_TENGU)
+			$g_ab_StepDone[$LEVELER_STEP_TENGU] = False
+			If Not Leveler_RunRanMusuToTenguHandIn() Then Return False
 		EndIf
-		If Not Leveler_QuestLoop($QUEST_THREAT_GROWS, -1023, 4844, $DIALOG_THREAT_ACCEPT, "accept") Then Return False
+		If Not Leveler_HasQuest($QUEST_THREAT_GROWS) And Not Leveler_HasQuest($QUEST_JOURNEY_MASTER) Then
+			If Map_GetMapID() <> $MAP_KINYA Then
+				If Not Leveler_Travel($MAP_RAN_MUSU) Then Return False
+				Leveler_PrepareForBattle()
+				If Not Leveler_MoveAndExit(14730, 15176, $MAP_KINYA, True) Then Return False
+			EndIf
+			If Not Leveler_AcceptThreatGrowsAtSoar() Then Return False
+		EndIf
 	EndIf
 
 	Local $l_i_Map = Map_GetMapID()
