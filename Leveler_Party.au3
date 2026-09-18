@@ -422,8 +422,12 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 
 	Out("Let's do " & $a_s_Name)
 	Out("Exiting Outpost")
-	; Arborstone enter. False = EnterMission(1) and instant-DCs on this client.
-	Ui_EnterChallenge(True)
+	; Ui_EnterChallenge($a_b_Foreign, $a_b_WaitMapIsLoaded):
+	; False = native character, True = foreign character.
+	; Factions chars on Canthan missions (Cho, Zen Daijun) must use native enter.
+	; Foreign enter (True) disconnects. WaitMapIsLoaded=False so Map_WaitMapLoading owns the wait.
+	Sleep(800)
+	Ui_EnterChallenge(False, False)
 	If Not Map_WaitMapLoading($l_i_StartMap, 1) Then
 		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
 			Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
