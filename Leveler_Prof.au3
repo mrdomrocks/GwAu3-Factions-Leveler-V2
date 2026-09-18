@@ -7,8 +7,9 @@
 Global Const $LEVELER_BAR_STARTER = 0
 Global Const $LEVELER_BAR_INTERRUPT = 1
 Global Const $LEVELER_BAR_INSPIRE = 2
-; A/Me bar used from Zen Daijun. Set slot-by-slot; do not Skill_LoadSkillBar.
+; A/Me bar used from Zen Daijun until Kaineng. Apply the template; do not check slots.
 Global Const $LEVELER_BAR_ZEN = 3
+Global Const $LEVELER_TEMPLATE_ZEN = "OwVAIcdP8BogGwBFhAA"
 
 Func Leveler_ProfessionSkillBar($a_i_Kind, $a_i_Prof = 0)
 	If $a_i_Prof = 0 Then $a_i_Prof = Leveler_PrimaryProfession()
@@ -78,8 +79,21 @@ Func Leveler_ProfessionSkillBar($a_i_Kind, $a_i_Prof = 0)
 					Return "OwVCErwSOw1ZQPoBoQRIA"
 			EndSwitch
 			Return "OQUCErwSOw1ZQPoBoQRIA"
+		Case $LEVELER_BAR_ZEN
+			Return $LEVELER_TEMPLATE_ZEN
 	EndSwitch
 	Return ""
+EndFunc
+
+; Zen Daijun through the walk to Kaineng. Michiko changes the bar after this.
+Func Leveler_UsesZenSkillBar()
+	If Leveler_InterruptSkillsUnlocked() Then Return False
+	If $g_i_Step >= $LEVELER_STEP_ZEN_MISSION And $g_i_Step < $LEVELER_STEP_SKILLS2 Then Return True
+	Local $l_i_Map = Map_GetMapID()
+	If $l_i_Map = $MAP_ZEN_OP Or $l_i_Map = $MAP_ZEN_EXP Then Return True
+	If $l_i_Map = $MAP_MARKETPLACE Or $l_i_Map = $MAP_KAINENG_DOCKS Then Return True
+	If $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN Then Return True
+	Return False
 EndFunc
 
 Func Leveler_CurrentSkillBarKind()
@@ -88,7 +102,7 @@ Func Leveler_CurrentSkillBarKind()
 		If $l_i_Level >= 20 And Leveler_Skills2Unlocked() Then Return $LEVELER_BAR_INSPIRE
 		Return $LEVELER_BAR_INTERRUPT
 	EndIf
-	If World_IsSkillLearnt($SKILL_BACKFIRE) Then Return $LEVELER_BAR_ZEN
+	If Leveler_UsesZenSkillBar() Then Return $LEVELER_BAR_ZEN
 	Return $LEVELER_BAR_STARTER
 EndFunc
 
@@ -120,32 +134,10 @@ Func Leveler_LoadProfessionSkillBar($a_i_Kind = -1)
 EndFunc
 
 Func Leveler_LoadZenSkillBar()
-	If Not Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Party] Skill template can only be loaded in an outpost")
-		Return False
-	EndIf
 	$g_b_UAIReady = False
-	; OwVCEnYyHw1cQPoBoQRIAA skills. Do not use Skill_LoadSkillBar (0x005D);
-	; that packet next to Enter Mission disconnects.
-	Local $l_ai_Skills[8] = [31, 860, 28, 61, 26, 40, 69, 2]
-	Local $i
-	Local $l_b_Same = True
-	For $i = 0 To 7
-		If Skill_GetSkillbarInfo($i + 1, "SkillID") <> $l_ai_Skills[$i] Then
-			$l_b_Same = False
-			ExitLoop
-		EndIf
-	Next
-	If $l_b_Same Then
-		Out("[Party] Zen Daijun skill bar already set")
-		Return True
-	EndIf
-	Out("[Party] Setting Zen Daijun skill bar by slot")
-	For $i = 0 To 7
-		If $l_ai_Skills[$i] = 0 Then ContinueLoop
-		If Not Leveler_SkillIsLearnt($l_ai_Skills[$i]) Then ContinueLoop
-		Leveler_PutSkillOnBar($i + 1, $l_ai_Skills[$i])
-	Next
-	Sleep(1000)
+	If Not Map_GetInstanceInfo("IsOutpost") Then Return True
+	Out("[Party] Loading skill template " & $LEVELER_TEMPLATE_ZEN)
+	Attribute_LoadSkillTemplate($LEVELER_TEMPLATE_ZEN)
+	Sleep(800)
 	Return True
 EndFunc
