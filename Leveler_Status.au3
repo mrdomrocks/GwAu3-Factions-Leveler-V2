@@ -215,9 +215,7 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 		Leveler_MarkQuestDone($QUEST_FORMING_A_PARTY)
 	EndIf
 	If Not Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then
-		If Leveler_QuestProgress($QUEST_WARNING_TENGU) Or Leveler_QuestFinished($QUEST_WARNING_TENGU) Or Leveler_QuestProgress($QUEST_THREAT_GROWS) Or Leveler_QuestProgress($QUEST_JOURNEY_MASTER) Or Leveler_QuestProgress($QUEST_ROAD_LESS) Then
-			Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
-		EndIf
+		If Leveler_LostTreasureAlreadyDone() Then Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
 	EndIf
 	If Not Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then
 		If Leveler_WarningTheTenguFinished() Then Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
@@ -252,6 +250,11 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 EndFunc
 
 Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
+	If $a_i_QuestID = $QUEST_LOST_TREASURE And Leveler_LostTreasureAlreadyDone() Then
+		Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
+		Out("[Step] " & $a_s_Name & " already completed")
+		Return True
+	EndIf
 	If $a_i_QuestID = $QUEST_SEARCH_CURE And Leveler_SearchCureDone() Then
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 		Out("[Step] " & $a_s_Name & " already completed")
@@ -444,12 +447,34 @@ Func Leveler_RoadLessTraveledDone()
 	Return False
 EndFunc
 
+; Raitahn Nem offers Lost Treasure once. After Cho, a missing quest marker
+; with #346 out of the log means it was already handed in, not "not started".
+Func Leveler_RaitahnNemDoesNotOfferLostTreasure()
+	If Map_GetMapID() <> $MAP_RAN_MUSU Then Return False
+	If Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then Return False
+	Local $l_i_Npc = Leveler_GetAgentByModel($MODEL_RAITAHN_NEM)
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetAgentByName("Nem")
+	If $l_i_Npc = 0 Then Return False
+	Return Not Agent_GetAgentInfo($l_i_Npc, "HasQuest")
+EndFunc
+
+; #346 IsCompleted is often empty after the quest leaves the log. Do not treat
+; "not in log after Cho" as done (that is the first pickup). Use later quests,
+; currently standing in Kinya, or Nem no longer offering after Cho.
 Func Leveler_LostTreasureAlreadyDone()
 	If Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then Return False
 	If Quest_GetQuestInfo($QUEST_LOST_TREASURE, "IsCompleted") Then Return True
 	If Leveler_IsQuestDone($QUEST_LOST_TREASURE) Then Return True
-	If Leveler_QuestFinished($QUEST_THREAT_GROWS) Or Leveler_HasQuest($QUEST_THREAT_GROWS) Then Return True
-	If Leveler_HasQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasQuest($QUEST_ROAD_LESS) Then Return True
+	If Leveler_HasQuest($QUEST_WARNING_TENGU) Or Leveler_HasIncompleteQuest($QUEST_WARNING_TENGU) Then Return True
+	If Leveler_HasPostTenguQuest() Then Return True
+	If Leveler_WarningTheTenguFinished() Then Return True
+	Local $l_i_Map = Map_GetMapID()
+	If Map_IsMapUnlocked($MAP_SEITUNG) Then Return True
+	If $l_i_Map = $MAP_TSUMEI Or $l_i_Map = $MAP_PANJIANG Or $l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_SAOSHANG Then Return True
+	; Standing in Kinya means the character already left Ran Musu after Cho.
+	; Do not use Map_IsMapUnlocked(Kinya): that can be true before #346 is taken.
+	If $l_i_Map = $MAP_KINYA Then Return True
+	If Leveler_RaitahnNemDoesNotOfferLostTreasure() Then Return True
 	Return False
 EndFunc
 
@@ -543,7 +568,7 @@ Func Leveler_StatusCheck()
 	If $g_b_ExplorableResume And Not Leveler_IsOutpost() And Map_GetInstanceInfo("IsExplorable") Then
 		Out("[Status] Restart recovery: not in an outpost (map " & $l_i_Map & "). Will resume only if this map belongs to the current quest.")
 	EndIf
-	Out("[Status] Lost Treasure step done=" & $g_ab_StepDone[$LEVELER_STEP_ATTR_1] & "  Tengu step done=" & $g_ab_StepDone[$LEVELER_STEP_TENGU])
+	Out("[Status] Lost Treasure step done=" & $g_ab_StepDone[$LEVELER_STEP_ATTR_1] & "  in-log=" & Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) & "  IsCompleted=" & Quest_GetQuestInfo($QUEST_LOST_TREASURE, "IsCompleted") & "  KinyaUnlocked=" & Map_IsMapUnlocked($MAP_KINYA) & "  Tengu step done=" & $g_ab_StepDone[$LEVELER_STEP_TENGU])
 	If Leveler_QuestNeedsHandIn($QUEST_THREAT_GROWS) Then
 		$g_ab_StepDone[$LEVELER_STEP_THREAT] = False
 	ElseIf Leveler_HasQuest($QUEST_JOURNEY_MASTER) Or Leveler_QuestNeedsHandIn($QUEST_JOURNEY_MASTER) Or Leveler_QuestNeedsHandIn($QUEST_ROAD_LESS) Or $l_b_Seitung Then

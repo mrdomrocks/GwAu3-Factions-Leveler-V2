@@ -738,6 +738,11 @@ Func Leveler_PickupLostTreasure()
 
 	If Not Leveler_HasQuest($QUEST_LOST_TREASURE) Then
 		Leveler_LogQuestState($QUEST_LOST_TREASURE, "Lost Treasure")
+		If $l_i_Npc <> 0 Then
+			Out("[Step] Raitahn Nem did not offer Lost Treasure. Treating #346 as already handed in.")
+			Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
+			Return True
+		EndIf
 		Out("[Step] Lost Treasure was not offered yet. Will retry pickup.")
 		Return False
 	EndIf
@@ -1028,7 +1033,14 @@ Func Leveler_Step_LostTreasure()
 	If Not Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then
 		If Not Leveler_PickupLostTreasure() Then Return False
 	EndIf
-	If Not Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then Return False
+	If Not Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then
+		If Leveler_LostTreasureAlreadyDone() Then
+			Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
+			Out("[Step] Lost Treasure already completed. Moving to Warning the Tengu.")
+			Return True
+		EndIf
+		Return False
+	EndIf
 	Return Leveler_CompleteLostTreasureAtNem()
 EndFunc
 
