@@ -513,12 +513,15 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Out("Let's do " & $a_s_Name)
 	Out("[Step] Enter " & $a_s_Name & ": map " & $l_i_StartMap & " " & Leveler_InstanceTypeName() & ", hench " & Leveler_HenchmanCount() & ", waiting=" & Party_GetPartyContextInfo("IsWaitingForMission"))
 	Out("Exiting Outpost")
-	; Ui_EnterChallenge($a_b_Foreign, $a_b_WaitMapIsLoaded):
-	; False = native character, True = foreign character.
-	; Factions chars on Canthan missions (Cho, Zen Daijun) must use native enter.
-	; Foreign enter (True) disconnects. WaitMapIsLoaded=False so this wait owns the load
-	; and Map_WaitMapLoading cannot spam cinematic-skip during IsLoading.
-	Ui_EnterChallenge(False, False)
+	; GwAu3 has two enter APIs. Do not use Ui_EnterChallenge here.
+	; Ui_EnterChallenge enqueues CommandEnterMission (Party Formation UI). On Wine
+	; that started Cho load then Code-007 to character select (PR #13 retest).
+	; Map_EnterChallenge is the GWA2/Python cooperative-mission enter: CtoS
+	; HEADER_PARTY_ENTER_CHALLENGE (0xA5) with arg 1 (native). Foreign enter is a
+	; different header and is not used for Factions chars on Cho / Zen Daijun.
+	; $a_WaitToLoad=False so Leveler_WaitMissionExplorable owns the wait.
+	Out("[Step] Map_EnterChallenge(False) CtoS 0xA5 native")
+	Map_EnterChallenge(False)
 	If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
 		Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", " & Leveler_InstanceTypeName() & ")")
 		Return False
