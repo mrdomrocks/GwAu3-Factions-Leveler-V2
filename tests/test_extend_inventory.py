@@ -53,15 +53,21 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertLess(found_at, buy_at)
         self.assertLess(found_at, equip_at)
 
-    def test_bag_useitem_not_equipbag_0x6b(self):
+    def test_bag_uimove_not_useitem_or_equipbag_0x6b(self):
         equip = func_body(CRAFT, "Leveler_EquipLooseBagIntoSlot")
         send = func_body(CRAFT, "Leveler_EquipBagItem")
         close = func_body(CRAFT, "Leveler_CloseMerchantWindow")
         self.assertIn("Leveler_CloseMerchantWindow()", equip)
-        self.assertIn("Leveler_OpenInventoryForBagEquip()", equip)
+        self.assertIn("Leveler_OpenInventoryForBagEquip", equip)
         self.assertIn("Leveler_EquipBagItem", equip)
-        self.assertIn("Item_UseItem", send)
-        self.assertIn("HEADER_ITEM_USE", send)
+        self.assertIn("$LEVELER_UIMSG_MOVE_ITEM", send)
+        self.assertIn("0x100001AF", send)
+        self.assertIn("Core_Enqueue", send)
+        self.assertIn("$g_d_MoveMap", send)
+        self.assertIn("$g_p_MoveMap", send)
+        self.assertNotRegex(send, r"Item_UseItem\(")
+        self.assertNotRegex(equip, r"Item_UseItem\(")
+        self.assertNotIn("$GC_I_HEADER_ITEM_USE", send)
         self.assertNotIn("$GC_I_HEADER_EQUIP_BAG", send)
         self.assertNotIn("Core_SendPacket", send)
         self.assertNotIn("Ui_EquipItem", equip)
@@ -76,6 +82,10 @@ class ExtendInventoryContract(unittest.TestCase):
         open_inv = func_body(CRAFT, "Leveler_OpenInventoryForBagEquip")
         self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_INVENTORY", open_inv)
         self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_BACKPACK", open_inv)
+        self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_BELT_POUCH", open_inv)
+        self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_BAG_1", open_inv)
+        self.assertIn("$LEVELER_UIMSG_MOVE_ITEM = 0x100001AF", CONST)
+
 
     def test_craft_weapon_still_uses_paperdoll_equip(self):
         body = func_body(CRAFT, "Leveler_EquipModel")

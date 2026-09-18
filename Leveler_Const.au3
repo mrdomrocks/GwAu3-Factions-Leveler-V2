@@ -366,6 +366,11 @@ Global Const $BAG_MAX_POUCH_BUYS = 1
 Global Const $BAG_MAX_BAG_BUYS = 2
 ; Backpack grid is 20 cells. Do not trust BagInfo "Slots" if it reads 2.
 Global Const $BAG_BACKPACK_SCAN_SLOTS = 20
+; Native GW UI message kMoveItem. wparam = { item_id, to_bag_index, to_slot, prompt }.
+; Bag index is $GC_I_INVENTORY_BELT_POUCH / BAG1 / BAG2 (2/3/4), not Bag.ID.
+; CtoS 0x7E (use-item) does not fill bag slots under Wine.
+; CtoS 0x6B (8-byte and 12-byte) crashed Gw. Do not send it.
+Global Const $LEVELER_UIMSG_MOVE_ITEM = 0x100001AF
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000
