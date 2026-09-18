@@ -493,7 +493,7 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_XUNLAI] = Leveler_XunlaiUnlocked()
 	; After Road / Seitung, do not send this character back to the monastery weapon/armor crafts.
 	Local $l_b_PastMonArmor = Leveler_PastMonasteryArmor()
-	$g_ab_StepDone[$LEVELER_STEP_WEAPON] = (Leveler_HasCraftedWeapon() And Leveler_IsModelEquipped($MODEL_CLAIRVOYANT_STAFF)) Or $l_b_PastMonArmor
+	$g_ab_StepDone[$LEVELER_STEP_WEAPON] = (Leveler_HasCraftedWeapon() And (Leveler_WeaponStepEquipped() Or $g_b_WeaponCraftSkipped)) Or $l_b_PastMonArmor
 	$g_ab_StepDone[$LEVELER_STEP_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMonasteryPieces()) Or $l_b_PastMonArmor
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY] = (Not Leveler_HasStarterArmor() And (Leveler_HasMonasteryArmor() Or $l_b_SeitungArmor)) Or $l_b_PastMonArmor
 	$g_ab_StepDone[$LEVELER_STEP_BAGS] = Leveler_HasExtendedBags()

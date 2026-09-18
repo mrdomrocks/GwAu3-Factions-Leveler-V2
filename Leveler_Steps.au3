@@ -324,8 +324,8 @@ Func Leveler_Step_CraftWeapon()
 	$g_s_CurrentHeader = "Craft Weapon"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_HasCraftedWeapon() Then
-		Out("[Step] Staff already crafted. Equipping it.")
-		Return Leveler_EquipModel($MODEL_CLAIRVOYANT_STAFF)
+		Out("[Step] Starter weapon already crafted. Equipping it.")
+		Return Leveler_EquipCraftedWeapon()
 	EndIf
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_SetPacifist()
