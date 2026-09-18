@@ -52,7 +52,7 @@ Func Leveler_ProfessionSkillBar($a_i_Kind, $a_i_Prof = 0)
 				Case $GC_I_PROFESSION_RITUALIST
 					Return "OAWBIskDcdG0DaAKUECA"
 				Case $GC_I_PROFESSION_ASSASSIN
-					; Python copies the Ritualist mid code (OAWB...). That fails
+					; Py4GW copies the Ritualist mid code (OAWB...). That fails
 					; primary-profession validation. OwVB is the Assassin mid form
 					; of the same Domination-12 bar (matches OwVC at level 20).
 					Return "OwVBIskDcdG0DaAKUECA"
