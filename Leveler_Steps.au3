@@ -2521,7 +2521,7 @@ Func Leveler_Step_UnlockOlias()
 		If Leveler_ConfirmOliasInHeroList() Then Return True
 	EndIf
 
-	; Python Unlock_Olias: after Fen, wait for Lion's Arch then Map.Travel(449) and complete 0x830E07.
+	; Py4GW Unlock_Olias: after Fen, wait for Lion's Arch then Map.Travel(449) and complete 0x830E07.
 	If Leveler_OliasReadyToTurnIn() Or Map_GetMapID() = $MAP_KAMADAN Then
 		Return Leveler_OliasReturnToKamadan()
 	EndIf

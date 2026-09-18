@@ -1,6 +1,7 @@
 #include-once
 
-; Profession tables from the Py4GW Factions Character Leveler.
+; Profession tables from the Py4GW Python Factions Character Leveler
+; (converted to GwAu3 AU3 by mrdomrocks).
 ; Mid and level-20 bars assume Mesmer secondary (Domination / Inspiration).
 ; Equipment piece IDs live in Leveler_Craft.au3 and already match that file.
 

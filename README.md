@@ -1,6 +1,8 @@
 # Gwau3 Factions Leveler V2
 
-Port of the Py4GW Factions Character Leveler into GwAu3 AutoIt3. Covers Shing Jea through the post-20 unlocks (Kilroy, Lion's Arch, Kamadan, Olias, GToB, and the Assassin/Mesmer Vaettir NPC).
+Conversion of the **Py4GW** Python Factions Character Leveler to **GwAu3 AutoIt3 (AU3)** by **mrdomrocks**.
+
+Covers Shing Jea through the post-20 unlocks (Kilroy, Lion's Arch, Kamadan, Olias, GToB, and the Assassin/Mesmer Vaettir NPC).
 
 ## Install
 
