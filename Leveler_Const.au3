@@ -366,18 +366,25 @@ Global Const $BAG_MAX_POUCH_BUYS = 1
 Global Const $BAG_MAX_BAG_BUYS = 2
 ; Backpack grid is 20 cells. Do not trust BagInfo "Slots" if it reads 2.
 Global Const $BAG_BACKPACK_SCAN_SLOTS = 20
-; Client-side inventory click layout. Floating inventory docks to the right of the
-; client; bag tabs sit above a 5-column backpack grid. Used only for ControlClick /
-; MouseClickDrag so Gw itself emits the equip-container packet.
-; Live Wine: CtoS 0x7E, CtoS 0x6B, UI kMoveItem 0x100001AF, and paperdoll EquipItem
-; all failed to fill bag slots (0x6B and kMoveItem crashed Gw). Do not send them.
-Global Const $BAG_INV_WIDTH = 226
-Global Const $BAG_INV_COMPASS = 180
-Global Const $BAG_INV_TAB_Y = 36
-Global Const $BAG_INV_GRID_X = 18
-Global Const $BAG_INV_GRID_Y = 64
-Global Const $BAG_INV_CELL = 37
+; Client-side inventory click layout for Wine 1280x800 (Kestrel stall.webp).
+; Floating Inventory (I) sits LEFT of the compass, not flush-right.
+; Header row is container icons LTR: backpack, belt pouch, bag1, bag2, pack.
+; Backpack cells are the 5x4 grid under those icons while BACKPACK is selected.
+; Clicking an unequipped pouch/bag tab hides the grid (aa114ff stall).
+; Live Wine: CtoS 0x7E, CtoS 0x6B, UI kMoveItem, paperdoll EquipItem, and
+; aa114ff ControlClick/Mode-2 at 1238,201 and 1058,201 all failed. Do not send packets.
+Global Const $BAG_INV_WIDTH = 240
+Global Const $BAG_INV_COMPASS = 176
+Global Const $BAG_INV_TOP = 8
+Global Const $BAG_INV_TAB_Y = 42
+Global Const $BAG_INV_GRID_X = 12
+Global Const $BAG_INV_GRID_Y = 58
+Global Const $BAG_INV_CELL = 33
 Global Const $BAG_INV_COLS = 5
+Global Const $BAG_INV_SKILLBAR = 96
+; Tall Inventory (I) with paperdoll (merchant screenshot): icons + grid in the bottom half.
+Global Const $BAG_INV_PAPER_ICON_Y = 398
+Global Const $BAG_INV_PAPER_GRID_Y = 478
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000

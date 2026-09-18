@@ -62,12 +62,27 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("Leveler_OpenInventoryForBagEquip", equip)
         self.assertIn("Leveler_EquipBagItem", equip)
         self.assertIn("Leveler_LegalBagDest", equip)
+        self.assertIn("Leveler_FocusGwForClick", equip)
+        self.assertIn("Leveler_RestoreLevelerGui", equip)
         click = func_body(CRAFT, "Leveler_ClickGwClient")
         drag = func_body(CRAFT, "Leveler_DragGwClient")
+        focus = func_body(CRAFT, "Leveler_FocusGwForClick")
+        layout = func_body(CRAFT, "Leveler_InventoryLayout")
         self.assertIn("Leveler_ClickGwClient", send)
         self.assertIn("Leveler_DragGwClient", send)
-        self.assertIn("ControlClick", click)
+        self.assertIn("Leveler_ClientToScreen", click)
+        self.assertIn("Leveler_ClientToScreen", drag)
+        self.assertIn('Opt("MouseCoordMode", 1)', click)
+        self.assertIn('Opt("MouseCoordMode", 1)', drag)
         self.assertIn("MouseClickDrag", drag)
+        self.assertNotIn("ControlClick", click)
+        self.assertNotIn("ControlClick", drag)
+        self.assertIn("@SW_HIDE", focus)
+        self.assertIn("WinActivate", focus)
+        self.assertIn("$BAG_INV_COMPASS", layout)
+        self.assertIn("top-backpack", func_body(CRAFT, "Leveler_InventoryLayoutName"))
+        self.assertIn("paperdoll-backpack", func_body(CRAFT, "Leveler_InventoryLayoutName"))
+        self.assertIn("bottom-backpack", func_body(CRAFT, "Leveler_InventoryLayoutName"))
         self.assertIn("Leveler_LegalBagDest", send)
         self.assertNotIn("0x100001AF", send)
         self.assertNotIn("$g_d_MoveMap", send)
@@ -83,6 +98,8 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertNotIn("Item_EquipItem", equip)
         self.assertNotIn("Item_EquipItem", send)
         self.assertNotIn("$LEVELER_UIMSG_MOVE_ITEM", CONST)
+        self.assertIn("$BAG_INV_COMPASS", CONST)
+        self.assertIn("$BAG_INV_PAPER_GRID_Y", CONST)
         self.assertIn("$MODEL_BAG", dest)
         self.assertIn("$GC_I_INVENTORY_BAG1", dest)
         self.assertIn("$GC_I_INVENTORY_BAG2", dest)
@@ -95,9 +112,11 @@ class ExtendInventoryContract(unittest.TestCase):
         open_inv = func_body(CRAFT, "Leveler_OpenInventoryForBagEquip")
         self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_INVENTORY", open_inv)
         self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_BACKPACK", open_inv)
-        self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_BELT_POUCH", open_inv)
-        self.assertIn("$GC_I_CONTROL_INVENTORY_OPEN_BAG_1", open_inv)
         self.assertIn("$GC_I_CONTROL_PANEL_CLOSE_ALL_PANELS", open_inv)
+        self.assertNotIn("$GC_I_CONTROL_INVENTORY_OPEN_BELT_POUCH", open_inv)
+        self.assertNotIn("$GC_I_CONTROL_INVENTORY_OPEN_BAG_1", open_inv)
+        self.assertIn("$GC_I_INVENTORY_BACKPACK", send)
+        self.assertIn("Inventory double-click", send)
 
     def test_bags_never_target_belt_pouch(self):
         dest = func_body(CRAFT, "Leveler_LegalBagDest")
@@ -191,6 +210,36 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("Item_GetInventoryArray", body)
         self.assertIn("$GC_I_INVENTORY_BACKPACK", body)
         self.assertIn("BagPtr", body)
+
+    def test_compact_cell20_is_left_of_compass_not_aa114ff_miss(self):
+        """stall.webp 1280x800: cell 20 and pouch tab must not sit under the compass."""
+        w = 1280
+        width = 240
+        compass = 176
+        top = 8
+        grid_x = 12
+        grid_y = 58
+        cell = 33
+        tab_y = 42
+        self.assertIn("$BAG_INV_WIDTH = 240", CONST)
+        self.assertIn("$BAG_INV_COMPASS = 176", CONST)
+        self.assertIn("$BAG_INV_CELL = 33", CONST)
+        left = w - compass - width
+        col = (20 - 1) % 5
+        row = (20 - 1) // 5
+        x = left + grid_x + col * cell + cell // 2
+        y = top + grid_y + row * cell + cell // 2
+        tx = left + grid_x + 1 * cell + cell // 2
+        ty = top + tab_y
+        self.assertEqual(left, 864)
+        self.assertLess(x, w - compass)
+        self.assertGreater(x, left)
+        self.assertNotEqual((x, y), (1238, 201))
+        self.assertNotEqual((x, y), (1058, 201))
+        self.assertLess(tx, x)
+        self.assertLess(ty, y)
+        self.assertEqual((x, y), (1024, 181))
+        self.assertEqual((tx, ty), (925, 50))
 
 
 if __name__ == "__main__":
