@@ -38,7 +38,7 @@ class ExtendInventoryContract(unittest.TestCase):
         ):
             body = func_body(CRAFT, name)
             self.assertNotIn("Item_FindItemByModelID", body, name)
-            self.assertNotIn("Item_UseItem", body, name)
+            self.assertNotIn("$GC_I_HEADER_EQUIP_BAG", body, name)
 
     def test_scan_backpack_then_equip_or_buy_one(self):
         ensure = func_body(CRAFT, "Leveler_EnsureBagSlot")
@@ -53,21 +53,21 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertLess(found_at, buy_at)
         self.assertLess(found_at, equip_at)
 
-    def test_equipbag_not_paperdoll_equipment(self):
+    def test_bag_useitem_not_equipbag_0x6b(self):
         equip = func_body(CRAFT, "Leveler_EquipLooseBagIntoSlot")
         send = func_body(CRAFT, "Leveler_EquipBagItem")
         close = func_body(CRAFT, "Leveler_CloseMerchantWindow")
         self.assertIn("Leveler_CloseMerchantWindow()", equip)
         self.assertIn("Leveler_OpenInventoryForBagEquip()", equip)
         self.assertIn("Leveler_EquipBagItem", equip)
-        self.assertIn("$GC_I_HEADER_EQUIP_BAG", send)
-        self.assertIn("Core_SendPacket", send)
+        self.assertIn("Item_UseItem", send)
+        self.assertIn("HEADER_ITEM_USE", send)
+        self.assertNotIn("$GC_I_HEADER_EQUIP_BAG", send)
+        self.assertNotIn("Core_SendPacket", send)
         self.assertNotIn("Ui_EquipItem", equip)
         self.assertNotIn("Ui_EquipItem", send)
         self.assertNotIn("Item_EquipItem", equip)
         self.assertNotIn("Item_EquipItem", send)
-        self.assertNotIn("Item_UseItem", equip)
-        self.assertNotIn("Item_UseItem", send)
         self.assertIn("Agent_CancelAction", close)
         self.assertLess(
             close.find("Merchant_GetMerchantItemsSize() = 0"),
