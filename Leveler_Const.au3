@@ -364,6 +364,8 @@ Global Const $BAG_MERCHANT_Y = 11444
 ; Never buy more than one pouch and two bags for the three equipment slots.
 Global Const $BAG_MAX_POUCH_BUYS = 1
 Global Const $BAG_MAX_BAG_BUYS = 2
+; Backpack grid is 20 cells. Do not trust BagInfo "Slots" if it reads 2.
+Global Const $BAG_BACKPACK_SCAN_SLOTS = 20
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000

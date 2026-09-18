@@ -110,9 +110,23 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("$BAG_GOLD_COST", buy)
         self.assertIn("$BAG_GOLD_COST = 100", CONST)
 
+    def test_find_loose_bags_walks_every_backpack_slot(self):
+        find = func_body(CRAFT, "Leveler_FindLooseBagItem")
+        count = func_body(CRAFT, "Leveler_CountLooseBags")
+        scan = func_body(CRAFT, "Leveler_BagScanSlotCount")
+        cell = func_body(CRAFT, "Leveler_ItemPtrInBagCell")
+        self.assertNotIn("Item_GetItemBySlot", find)
+        self.assertNotIn("Item_GetItemBySlot", count)
+        self.assertIn("Leveler_BagScanSlotCount", find)
+        self.assertIn("Leveler_ItemPtrInBagCell", find)
+        self.assertIn("$BAG_BACKPACK_SCAN_SLOTS", scan)
+        self.assertIn("Scanning all backpack slots", find)
+        self.assertIn("$BAG_BACKPACK_SCAN_SLOTS = 20", CONST)
+        self.assertIn("ItemArray", cell)
+        self.assertIn("BagPtr", find)
+
     def test_find_loose_bags_skips_merchant_listings(self):
         body = func_body(CRAFT, "Leveler_FindLooseBagItem")
-        self.assertIn("Item_GetItemBySlot", body)
         self.assertIn("Item_GetInventoryArray", body)
         self.assertIn("BagPtr", body)
 
