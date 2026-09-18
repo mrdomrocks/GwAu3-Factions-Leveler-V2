@@ -406,3 +406,5 @@ Global $g_b_OliasUnlocked = False
 Global $g_b_MoxUnlocked = False
 ; Sticky after GToB trainer dialogs.
 Global $g_b_SecondaryProfsTalked = False
+; Sticky after this character paid for / opened Xunlai storage. Prevents re-paying 50g.
+Global $g_b_XunlaiUnlocked = False

@@ -507,14 +507,50 @@ Func Leveler_HasStorageAccess()
 	Return False
 EndFunc
 
-; Chest already opened, or this character already used storage for later monastery crafts.
+; Mark Xunlai done for this run so Unlock Xunlai never re-pays the 50g fee.
+Func Leveler_MarkXunlaiUnlocked()
+	$g_b_XunlaiUnlocked = True
+EndFunc
+
+; Chest already opened, paid this run, or this character already used storage for later crafts.
 Func Leveler_XunlaiUnlocked()
-	If Leveler_HasStorageAccess() Then Return True
-	If Leveler_HasCraftedWeapon() Then Return True
-	If Leveler_HasMonasteryArmor() Then Return True
-	If Leveler_HasSeitungArmor() Then Return True
-	If Leveler_HasPostXunlaiProgress() Then Return True
+	If $g_b_XunlaiUnlocked Then Return True
+	If Leveler_HasStorageAccess() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	; Mid-run characters already past the chest: do not walk back and pay again.
+	If Leveler_HasCraftedWeapon() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	If Leveler_HasMonasteryArmor() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	If Leveler_HasSeitungArmor() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	If Leveler_HasPostXunlaiProgress() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
 	Return False
+EndFunc
+
+; Wait for storage pointers after the unlock dialogs. Wine can lag a second or two.
+Func Leveler_WaitStorageAccess($a_i_Timeout = 5000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_HasStorageAccess() Then
+			Leveler_MarkXunlaiUnlocked()
+			Return True
+		EndIf
+		Sleep(250)
+	WEnd
+	Return Leveler_HasStorageAccess()
 EndFunc
 
 ; Zhao Di in Shing Jea. Energy Burn is optional if a skill point was already spent.

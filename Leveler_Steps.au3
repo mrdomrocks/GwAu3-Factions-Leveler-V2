@@ -228,6 +228,7 @@ EndFunc
 Func Leveler_Step_UnlockXunlai()
 	$g_s_CurrentHeader = "Unlock Xunlai Storage"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	; Sticky / storage / later crafts: never send the paid unlock dialogs twice.
 	If Leveler_XunlaiUnlocked() Then
 		Out("[Step] Xunlai storage already unlocked")
 		Return True
@@ -252,25 +253,37 @@ Func Leveler_Step_UnlockXunlai()
 	If Not Leveler_MoveTo(-5465, 9727, False) Then Return False
 	If Not Leveler_MoveTo(-4791, 10140, False) Then Return False
 	If Not Leveler_MoveTo(-3945, 10328, False) Then Return False
+	; Talk first. If storage is already open on this character, mark done without paying.
 	If Not Leveler_MoveAndDialog(-3825.09, 10386.81, $DIALOG_GENERIC_TALK, False, $MODEL_XUNLAI) Then Return False
+	If Leveler_WaitStorageAccess(2000) Then
+		Out("[Step] Xunlai storage already open after talk. Not paying again.")
+		Return True
+	EndIf
+	If Leveler_XunlaiUnlocked() Then
+		Out("[Step] Xunlai storage already unlocked")
+		Return True
+	EndIf
 	Local $l_i_Xunlai = Leveler_GetAgentByModel($MODEL_XUNLAI)
 	If $l_i_Xunlai <> 0 Then Agent_GoNPC($l_i_Xunlai)
 	Sleep(600)
+	Local $l_i_GoldBeforePay = Leveler_CharacterGold()
 	Ui_Dialog($DIALOG_XUNLAI_1)
 	Sleep(800)
 	Ui_Dialog($DIALOG_XUNLAI_2)
 	Sleep(800)
-	If Leveler_XunlaiUnlocked() Then
+	If Leveler_WaitStorageAccess(5000) Then
 		Out("[Step] Xunlai storage unlocked")
 		Return True
 	EndIf
-	Local $l_i_GoldAfter = Item_GetInventoryInfo("GoldCharacter")
-	If $l_i_GoldAfter > $l_i_Gold - $XUNLAI_GOLD_COST + 5 Then
-		Out("[Step] Xunlai unlock did not take " & $XUNLAI_GOLD_COST & " gold (now " & $l_i_GoldAfter & "). Not advancing.")
-		Return False
+	Local $l_i_GoldAfter = Leveler_CharacterGold()
+	; Fee taken but storage ptr still lagging: sticky so ExecuteStep / Refresh do not re-pay.
+	If $l_i_GoldAfter <= $l_i_GoldBeforePay - $XUNLAI_GOLD_COST + 5 Then
+		Leveler_MarkXunlaiUnlocked()
+		Out("[Step] Xunlai took " & ($l_i_GoldBeforePay - $l_i_GoldAfter) & " gold. Marking unlocked without re-attempting.")
+		Return True
 	EndIf
-	Out("[Step] Xunlai storage unlocked")
-	Return True
+	Out("[Step] Xunlai unlock did not take " & $XUNLAI_GOLD_COST & " gold (now " & $l_i_GoldAfter & "). Not advancing.")
+	Return False
 EndFunc
 
 Func Leveler_Step_CraftWeapon()
