@@ -50,6 +50,9 @@ Func Leveler_QuestFinished($a_i_QuestID)
 	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
 	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
 	If $a_i_QuestID = $QUEST_ROAD_LESS Then Return Leveler_RoadLessTraveledDone()
+	; Wine IsCompleted is unreliable for one-and-done Kaineng quests never taken.
+	If $a_i_QuestID = $QUEST_SEARCH_CURE Then Return Leveler_SearchCureDone()
+	If $a_i_QuestID = $QUEST_MASTERS_BURDEN Then Return Leveler_MastersBurdenDone()
 	If Leveler_QuestNeedsHandIn($a_i_QuestID) Then Return False
 	If Quest_GetQuestInfo($a_i_QuestID, "IsCompleted") Then Return True
 	If Leveler_IsQuestDone($a_i_QuestID) Then Return True
@@ -224,13 +227,11 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 	If Leveler_QuestProgress($QUEST_ROAD_LESS) Then
 		Leveler_MarkQuestDone($QUEST_JOURNEY_MASTER)
 	EndIf
-	If Leveler_QuestProgress($QUEST_BROTHER_TOSAI) Or Leveler_HasQuest($QUEST_MASTERS_BURDEN) Or Leveler_QuestFinished($QUEST_MASTERS_BURDEN) Then
+	; Only mark Cure/Burden from later live quests or a sticky done-flag set after a real hand-in.
+	If Leveler_HasIncompleteQuest($QUEST_BROTHER_TOSAI) Or Leveler_QuestInLog($QUEST_BROTHER_TOSAI) Or Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Or Leveler_QuestInLog($QUEST_MASTERS_BURDEN) Then
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 	EndIf
-	If Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
-		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
-	EndIf
-	If Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
+	If Leveler_PostBurdenProgress() Then
 		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
 		Leveler_MarkQuestDone($QUEST_BROTHER_TOSAI)
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
@@ -270,24 +271,150 @@ Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
 	Return True
 EndFunc
 
-; Search for a Cure (#336) is one-and-done. Once it has left the log it cannot be taken again.
+; Character is past A Master's Burden. Only character-local evidence — account
+; Map_IsMapUnlocked(EotN) and stale Quest IsCompleted flags falsely skip Cure/Burden.
+Func Leveler_PostBurdenProgress()
+	If Leveler_HasIncompleteQuest($QUEST_EARTH_MOVE) Or Leveler_QuestInLog($QUEST_EARTH_MOVE) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_AGAINST_DESTROYERS) Or Leveler_QuestInLog($QUEST_AGAINST_DESTROYERS) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_MISSING_VANGUARD) Or Leveler_QuestInLog($QUEST_MISSING_VANGUARD) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_NORTHERN_ALLIES) Or Leveler_QuestInLog($QUEST_NORTHERN_ALLIES) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_KNOWLEDGEABLE_ASURA) Or Leveler_QuestInLog($QUEST_KNOWLEDGEABLE_ASURA) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_UNWELCOME) Or Leveler_QuestInLog($QUEST_UNWELCOME) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_NORNBEAR) Or Leveler_QuestInLog($QUEST_NORNBEAR) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_PUNCH_CLOWN) Or Leveler_QuestInLog($QUEST_PUNCH_CLOWN) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_CHAOS_KRYTA) Or Leveler_QuestInLog($QUEST_CHAOS_KRYTA) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_SUNSPEARS_CANTHA) Or Leveler_QuestInLog($QUEST_SUNSPEARS_CANTHA) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_OLIAS) Or Leveler_QuestInLog($QUEST_OLIAS) Then Return True
+	If Leveler_ReachedGunnarsHold() Then Return True
+	If Leveler_HasKeiranBow() Then Return True
+	Local $l_i_Map = Map_GetMapID()
+	Switch $l_i_Map
+		Case $MAP_TUNNELS, $MAP_BOREAL, $MAP_ICE_CLIFF, $MAP_EOTN, $MAP_HOM, $MAP_AB
+			Return True
+		Case $MAP_NORRHART, $MAP_GUNNAR, $MAP_KILROY
+			Return True
+	EndSwitch
+	Return False
+EndFunc
+
+; Search for a Cure (#336). Sticky done-flag or later live quests only.
+; Do not trust Quest IsCompleted — Wine reports it for quests never taken.
 Func Leveler_SearchCureDone()
 	If Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then Return False
-	Return True
+	If Leveler_IsQuestDone($QUEST_SEARCH_CURE) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_BROTHER_TOSAI) Or Leveler_QuestInLog($QUEST_BROTHER_TOSAI) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Or Leveler_QuestInLog($QUEST_MASTERS_BURDEN) Then Return True
+	If Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Then Return True
+	If Leveler_PostBurdenProgress() Then Return True
+	Return False
 EndFunc
 
-; A Master's Burden (#349) is one-and-done. Out of the log means it was already handed in.
+; A Master's Burden (#349). Sticky done-flag or post-Burden character progress only.
 Func Leveler_MastersBurdenDone()
 	If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then Return False
-	Return True
+	If Leveler_IsQuestDone($QUEST_MASTERS_BURDEN) Then Return True
+	If Leveler_PostBurdenProgress() Then Return True
+	Return False
 EndFunc
 
-; Punch the Clown (#858) is finished once it has left the log and this character has reached Gunnar's Hold.
+; True when this step's intended outcome is met. ExecuteStep must not advance without this.
+Func Leveler_StepOutcomeMet($a_i_Step)
+	Local $l_i_Map = Map_GetMapID()
+	Switch $a_i_Step
+		Case $LEVELER_STEP_OVERLOOK
+			Return ($l_i_Map = $MAP_SHING_JEA) Or (Map_IsMapUnlocked($MAP_SHING_JEA) And Not Leveler_OnOverlook())
+		Case $LEVELER_STEP_PARTY
+			Return Not Leveler_QuestNeedsHandIn($QUEST_FORMING_A_PARTY) And (Leveler_IsQuestDone($QUEST_FORMING_A_PARTY) Or Leveler_QuestFinished($QUEST_FORMING_A_PARTY) Or Leveler_HasSecondaryProfession() Or Leveler_HasQuest($QUEST_SECONDARY) Or Leveler_HasQuest($QUEST_FORMAL_INTRO))
+		Case $LEVELER_STEP_SECONDARY
+			Return Leveler_SecondaryStepReadyToLeave()
+		Case $LEVELER_STEP_XUNLAI
+			Return Leveler_XunlaiUnlocked()
+		Case $LEVELER_STEP_WEAPON
+			Return (Leveler_HasCraftedWeapon() And Leveler_IsModelEquipped($MODEL_CLAIRVOYANT_STAFF)) Or Leveler_PastMonasteryArmor()
+		Case $LEVELER_STEP_ARMOR
+			Return Leveler_ArmorSetEquipped(Leveler_GetMonasteryPieces()) Or Leveler_PastMonasteryArmor()
+		Case $LEVELER_STEP_DESTROY
+			Return (Not Leveler_HasStarterArmor()) Or Leveler_PastMonasteryArmor()
+		Case $LEVELER_STEP_BAGS
+			Return Leveler_HasExtendedBags()
+		Case $LEVELER_STEP_SKILLS
+			Return Leveler_ZhaoDiSkillsUnlocked() Or Leveler_QuestProgress($QUEST_LOST_TREASURE) Or Leveler_HasLaterQuest()
+		Case $LEVELER_STEP_TO_CHO
+			Return Leveler_FormalIntroductionTurnedIn() Or Map_IsMapUnlocked($MAP_RAN_MUSU) Or $l_i_Map = $MAP_RAN_MUSU Or $l_i_Map = $MAP_CHO_OUTPOST Or $l_i_Map = $MAP_CHO_EXPLORABLE
+		Case $LEVELER_STEP_CHO_MISSION
+			Return Map_IsMapUnlocked($MAP_RAN_MUSU) Or $l_i_Map = $MAP_RAN_MUSU Or Map_IsMapUnlocked($MAP_SEITUNG) Or $l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_TSUMEI Or $l_i_Map = $MAP_PANJIANG
+		Case $LEVELER_STEP_ATTR_1
+			Return Leveler_LostTreasureAlreadyDone()
+		Case $LEVELER_STEP_TENGU
+			If Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then Return False
+			Return Leveler_IsQuestDone($QUEST_WARNING_TENGU) Or Leveler_QuestFinished($QUEST_WARNING_TENGU) Or Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Or Map_IsMapUnlocked($MAP_SEITUNG) Or $l_i_Map = $MAP_SEITUNG
+		Case $LEVELER_STEP_THREAT
+			If Leveler_QuestNeedsHandIn($QUEST_THREAT_GROWS) Then Return False
+			Return Leveler_IsQuestDone($QUEST_THREAT_GROWS) Or Leveler_QuestFinished($QUEST_THREAT_GROWS) Or Leveler_HasQuest($QUEST_JOURNEY_MASTER) Or Leveler_QuestNeedsHandIn($QUEST_JOURNEY_MASTER) Or Leveler_QuestNeedsHandIn($QUEST_ROAD_LESS) Or Map_IsMapUnlocked($MAP_SEITUNG)
+		Case $LEVELER_STEP_ROAD
+			Return Leveler_RoadLessTraveledDone()
+		Case $LEVELER_STEP_SEITUNG
+			Return Leveler_ArmorSetEquipped(Leveler_GetSeitungPieces()) Or Leveler_HasMaxArmor() Or Map_IsMapUnlocked($MAP_KAINENG) Or $l_i_Map = $MAP_KAINENG Or Map_IsMapUnlocked($MAP_EOTN) Or Leveler_ReachedGunnarsHold()
+		Case $LEVELER_STEP_DESTROY_MON
+			Return (Not Leveler_HasMonasteryArmor()) Or Leveler_HasMaxArmor() Or Map_IsMapUnlocked($MAP_KAINENG) Or Map_IsMapUnlocked($MAP_MARKETPLACE) Or Map_IsMapUnlocked($MAP_EOTN)
+		Case $LEVELER_STEP_TO_ZEN
+			Return Map_IsMapUnlocked($MAP_ZEN_OP) Or $l_i_Map = $MAP_ZEN_OP Or $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU Or Map_IsMapUnlocked($MAP_MARKETPLACE) Or Map_IsMapUnlocked($MAP_KAINENG)
+		Case $LEVELER_STEP_ZEN_MISSION
+			Return Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or Map_IsMapUnlocked($MAP_KAINENG) Or $l_i_Map = $MAP_KAINENG Or ($l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Map_IsMapUnlocked($MAP_ZEN_OP))
+		Case $LEVELER_STEP_TO_MARKET
+			Return (Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or Map_IsMapUnlocked($MAP_KAINENG) Or $l_i_Map = $MAP_KAINENG Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) And $l_i_Map <> $MAP_KAINENG_DOCKS
+		Case $LEVELER_STEP_TO_KC
+			Return Map_IsMapUnlocked($MAP_KAINENG) Or $l_i_Map = $MAP_KAINENG
+		Case $LEVELER_STEP_SKILLS2
+			Return Leveler_Skills2Unlocked()
+		Case $LEVELER_STEP_MAX_ARMOR
+			Return Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())
+		Case $LEVELER_STEP_DESTROY_SEITUNG
+			Return Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) And Not Leveler_HasSeitungArmor()
+		Case $LEVELER_STEP_CURE
+			Return Leveler_SearchCureDone()
+		Case $LEVELER_STEP_BURDEN
+			Return Leveler_MastersBurdenDone()
+		Case $LEVELER_STEP_UNLOCK_MOX
+			Return Leveler_HasMoxUnlocked()
+		Case $LEVELER_STEP_TO_BOREAL
+			Return Leveler_HasMoxUnlocked() And ((Map_IsMapUnlocked($MAP_BOREAL) Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_ICE_CLIFF Or Map_IsMapUnlocked($MAP_EOTN) Or $l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM) And $l_i_Map <> $MAP_TUNNELS)
+		Case $LEVELER_STEP_TO_EOTN
+			Return (Map_IsMapUnlocked($MAP_EOTN) Or $l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM Or $l_i_Map = $MAP_AB) And $l_i_Map <> $MAP_ICE_CLIFF
+		Case $LEVELER_STEP_EOTN_POOL
+			Return Leveler_EotnPoolReady()
+		Case $LEVELER_STEP_ATTR_2
+			Return Leveler_UnwelcomeGuestDone()
+		Case $LEVELER_STEP_TO_GUNNAR
+			Return Leveler_ReachedGunnarsHold()
+		Case $LEVELER_STEP_KILROY
+			Return Leveler_PunchClownDone()
+		Case $LEVELER_STEP_FARM_20
+			Return Leveler_PlayerLevel() >= 20
+		Case $LEVELER_STEP_TO_LA
+			Return (Map_IsMapUnlocked($MAP_LIONS_ARCH) Or $l_i_Map = $MAP_LIONS_ARCH Or $l_i_Map = $MAP_LIONS_GATE) And $l_i_Map <> $MAP_BEJUNKAN And Not Leveler_QuestNeedsHandIn($QUEST_CHAOS_KRYTA)
+		Case $LEVELER_STEP_TO_KAMADAN
+			Return (Map_IsMapUnlocked($MAP_KAMADAN) Or $l_i_Map = $MAP_KAMADAN Or $l_i_Map = $MAP_SUN_DOCKS Or $l_i_Map = $MAP_CONSULATE Or $l_i_Map = $MAP_DOCKS) And Not Leveler_QuestNeedsHandIn($QUEST_SUNSPEARS_CANTHA)
+		Case $LEVELER_STEP_TO_DOCKS
+			Return Map_IsMapUnlocked($MAP_DOCKS) Or $l_i_Map = $MAP_DOCKS
+		Case $LEVELER_STEP_UNLOCK_OLIAS
+			Return Leveler_HasOliasUnlocked()
+		Case $LEVELER_STEP_UNLOCK_PROFS
+			Return Leveler_RemainingSecondariesUnlocked()
+		Case $LEVELER_STEP_DONE
+			Return True
+	EndSwitch
+	Return False
+EndFunc
+
+; Punch the Clown (#858) unlocks the farm. Not-in-log alone is not enough at Gunnar's Hold.
 Func Leveler_PunchClownDone()
 	If Leveler_HasIncompleteQuest($QUEST_PUNCH_CLOWN) Then Return False
-	If Leveler_ReachedGunnarsHold() Then Return True
 	If Leveler_IsQuestDone($QUEST_PUNCH_CLOWN) Then Return True
-	If Leveler_QuestFinished($QUEST_PUNCH_CLOWN) Then Return True
+	If Quest_GetQuestInfo($QUEST_PUNCH_CLOWN, "IsCompleted") Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_PUNCH_EXTRAVAGANZA) Or Leveler_HasQuest($QUEST_PUNCH_EXTRAVAGANZA) Then Return True
+	If Leveler_PlayerLevel() >= 20 And Leveler_ReachedGunnarsHold() Then Return True
+	If Leveler_ReachedGunnarsHold() And (Map_IsMapUnlocked($MAP_LIONS_ARCH) Or Map_IsMapUnlocked($MAP_KAMADAN) Or Map_IsMapUnlocked($MAP_DOCKS)) Then Return True
 	Return False
 EndFunc
 
@@ -374,16 +501,68 @@ EndFunc
 Func Leveler_HasStorageAccess()
 	If Item_GetBagPtr($GC_I_INVENTORY_STORAGE1) <> 0 Then Return True
 	If Item_GetInventoryInfo("Storage1Ptr") <> 0 Then Return True
+	If Item_GetInventoryInfo("Storage2Ptr") <> 0 Then Return True
+	If Item_GetInventoryInfo("MaterialStoragePtr") <> 0 Then Return True
 	Return False
 EndFunc
 
-; Chest already opened, or this character already used storage for later monastery crafts.
+; Mark Xunlai done for this run so Unlock Xunlai never re-pays the 50g fee.
+Func Leveler_MarkXunlaiUnlocked()
+	$g_b_XunlaiUnlocked = True
+EndFunc
+
+; Chest already opened, paid this run, or this character already used storage for later crafts.
 Func Leveler_XunlaiUnlocked()
-	If Leveler_HasStorageAccess() Then Return True
-	If Leveler_HasCraftedWeapon() Then Return True
-	If Leveler_HasMonasteryArmor() Then Return True
-	If Leveler_HasSeitungArmor() Then Return True
-	If Leveler_HasPostXunlaiProgress() Then Return True
+	If $g_b_XunlaiUnlocked Then Return True
+	If Leveler_HasStorageAccess() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	; Mid-run characters already past the chest: do not walk back and pay again.
+	If Leveler_HasCraftedWeapon() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	If Leveler_HasMonasteryArmor() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	If Leveler_HasSeitungArmor() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	If Leveler_HasPostXunlaiProgress() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	Return False
+EndFunc
+
+; Wait for storage pointers / array after the unlock dialogs. Wine can lag several seconds.
+Func Leveler_WaitStorageAccess($a_i_Timeout = 8000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_HasStorageAccess() Then
+			Leveler_MarkXunlaiUnlocked()
+			Return True
+		EndIf
+		Sleep(250)
+	WEnd
+	If Leveler_HasStorageAccess() Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
+	Return False
+EndFunc
+
+; Gold dropped by the Xunlai fee (with lag). Marks sticky so StatusCheck reports unlocked.
+Func Leveler_XunlaiFeeTaken($a_i_GoldBefore)
+	Local $l_i_GoldNow = Leveler_CharacterGold()
+	If $l_i_GoldNow <= $a_i_GoldBefore - $XUNLAI_GOLD_COST + 5 Then
+		Leveler_MarkXunlaiUnlocked()
+		Return True
+	EndIf
 	Return False
 EndFunc
 
@@ -491,6 +670,7 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_SECONDARY] = Leveler_SecondaryStepReadyToLeave()
 	Out("[Status] Profession " & Leveler_PrimaryProfession() & "/" & Leveler_SecondaryProfession() & "  Gold " & Leveler_CharacterGold() & "  Secondary step done=" & $g_ab_StepDone[$LEVELER_STEP_SECONDARY])
 	$g_ab_StepDone[$LEVELER_STEP_XUNLAI] = Leveler_XunlaiUnlocked()
+	Out("[Status] Xunlai unlocked=" & $g_ab_StepDone[$LEVELER_STEP_XUNLAI] & " sticky=" & $g_b_XunlaiUnlocked & " storage=" & Leveler_HasStorageAccess() & " gold=" & Leveler_CharacterGold())
 	; After Road / Seitung, do not send this character back to the monastery weapon/armor crafts.
 	Local $l_b_PastMonArmor = Leveler_PastMonasteryArmor()
 	$g_ab_StepDone[$LEVELER_STEP_WEAPON] = (Leveler_HasCraftedWeapon() And Leveler_IsModelEquipped($MODEL_CLAIRVOYANT_STAFF)) Or $l_b_PastMonArmor
@@ -556,6 +736,7 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] And Not $l_b_SeitungArmor
 	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_SearchCureDone()
 	$g_ab_StepDone[$LEVELER_STEP_BURDEN] = Leveler_MastersBurdenDone()
+	Out("[Status] Cure done=" & $g_ab_StepDone[$LEVELER_STEP_CURE] & " (in log=" & Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) & ")  Burden done=" & $g_ab_StepDone[$LEVELER_STEP_BURDEN] & " (in log=" & Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) & ")")
 	; Mox: in the party, AddHero works, or this character already reached EotN.
 	$g_ab_StepDone[$LEVELER_STEP_UNLOCK_MOX] = Leveler_HasMoxUnlocked()
 	$g_ab_StepDone[$LEVELER_STEP_TO_BOREAL] = Leveler_HasMoxUnlocked() And (Map_IsMapUnlocked($MAP_BOREAL) Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_ICE_CLIFF Or $l_b_Eotn) And $l_i_Map <> $MAP_TUNNELS

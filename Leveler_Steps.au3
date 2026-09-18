@@ -107,64 +107,17 @@ Func Leveler_ExecuteStep($a_i_Step)
 	EndIf
 
 	If $l_b_Ok Then
-		If $a_i_Step = $LEVELER_STEP_SECONDARY And Not Leveler_SecondaryStepReadyToLeave() Then
-			Leveler_LogQuestState($QUEST_SECONDARY, "Choose Secondary")
-			Out("[Step] #317 reward or Formal Introduction still missing. Staying on '" & $g_as_StepNames[$a_i_Step] & "'.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_SKILLS2 And Not Leveler_Skills2Unlocked() Then
-			Out("[Step] Cry of Frustration or Power Drain still missing. Staying on Michiko.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_MAX_ARMOR And Not Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) Then
-			Out("[Step] Max armor is not equipped. Staying on the crafter.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_DESTROY_SEITUNG And Not Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) Then
-			Out("[Step] Max armor is not equipped after destroying Seitung. Staying on this step.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_UNLOCK_MOX And Not Leveler_HasMoxUnlocked() Then
-			Out("[Step] Mox is not on the hero list. Staying on Unlock Mox.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_UNLOCK_OLIAS And Not Leveler_HasOliasUnlocked() Then
-			Out("[Step] Olias is not on the hero list. Staying on Unlock Olias.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_UNLOCK_PROFS And Not Leveler_RemainingSecondariesUnlocked() Then
-			Out("[Step] Not every profession (including Paragon and Dervish) is selectable yet. Staying on this step.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_TO_BOREAL And Not Leveler_HasMoxUnlocked() Then
-			Out("[Step] Mox is not unlocked. Not leaving Kaineng for Boreal.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_EOTN_POOL And Not Leveler_EotnPoolReady() Then
-			Out("[Step] HoM heroes or Tracking the Nornbear still open. Staying on this step.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_ATTR_2 And Not Leveler_UnwelcomeGuestDone() Then
-			Out("[Step] An Unwelcome Guest is not finished. Staying on this step.")
-			Return False
-		EndIf
-		If $a_i_Step = $LEVELER_STEP_TO_GUNNAR Then
-			If Not Leveler_ReachedGunnarsHold() Then
-				Out("[Step] Need Gunnar's Hold. Staying on this step.")
-				Return False
-			EndIf
-		EndIf
-		Local $l_i_QuestID = Leveler_StepQuestID($a_i_Step)
-		If $l_i_QuestID <> 0 And Leveler_QuestNeedsHandIn($l_i_QuestID) Then
-			If $a_i_Step = $LEVELER_STEP_UNLOCK_OLIAS And Leveler_HasOliasUnlocked() Then
-				; Hero unlock is enough even if the quest is still in the log.
-			ElseIf Not (Leveler_ReachedGunnarsHold() And ($a_i_Step = $LEVELER_STEP_EOTN_POOL Or $a_i_Step = $LEVELER_STEP_ATTR_2 Or $a_i_Step = $LEVELER_STEP_TO_GUNNAR)) Then
+		If Not Leveler_StepOutcomeMet($a_i_Step) Then
+			Local $l_i_QuestID = Leveler_StepQuestID($a_i_Step)
+			If $l_i_QuestID <> 0 And Leveler_QuestNeedsHandIn($l_i_QuestID) Then
 				Leveler_LogQuestState($l_i_QuestID, $g_as_StepNames[$a_i_Step])
 				Out("[Step] Quest #" & $l_i_QuestID & " still needs its complete dialog. Staying on '" & $g_as_StepNames[$a_i_Step] & "'.")
-				Return False
+			Else
+				Out("[Step] '" & $g_as_StepNames[$a_i_Step] & "' did not meet its completion check. Staying on this step.")
 			EndIf
+			Return False
 		EndIf
-		If $a_i_Step = $LEVELER_STEP_ATTR_1 And Not Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then
+		If $a_i_Step = $LEVELER_STEP_ATTR_1 And Not Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) And (Leveler_IsQuestDone($QUEST_WARNING_TENGU) Or Leveler_QuestFinished($QUEST_WARNING_TENGU) Or Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER)) Then
 			Out("[Step] Warning the Tengu already completed. Moving to The Threat Grows.")
 			$g_i_Step = $LEVELER_STEP_TENGU + 1
 		Else
@@ -275,8 +228,9 @@ EndFunc
 Func Leveler_Step_UnlockXunlai()
 	$g_s_CurrentHeader = "Unlock Xunlai Storage"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	; Sticky / storage / later crafts: never send the paid unlock dialogs twice.
 	If Leveler_XunlaiUnlocked() Then
-		Out("[Step] Xunlai storage already unlocked")
+		Out("[Step] Xunlai storage already unlocked (sticky=" & $g_b_XunlaiUnlocked & " storage=" & Leveler_HasStorageAccess() & ")")
 		Return True
 	EndIf
 	Local $l_i_Gold = Leveler_CharacterGold()
@@ -299,25 +253,46 @@ Func Leveler_Step_UnlockXunlai()
 	If Not Leveler_MoveTo(-5465, 9727, False) Then Return False
 	If Not Leveler_MoveTo(-4791, 10140, False) Then Return False
 	If Not Leveler_MoveTo(-3945, 10328, False) Then Return False
+	; Talk first. If storage is already open on this character, mark done without paying.
 	If Not Leveler_MoveAndDialog(-3825.09, 10386.81, $DIALOG_GENERIC_TALK, False, $MODEL_XUNLAI) Then Return False
+	If Leveler_WaitStorageAccess(2500) Then
+		Out("[Step] Xunlai storage already open after talk. Not paying again.")
+		Return True
+	EndIf
+	If Leveler_XunlaiUnlocked() Then
+		Out("[Step] Xunlai storage already unlocked")
+		Return True
+	EndIf
 	Local $l_i_Xunlai = Leveler_GetAgentByModel($MODEL_XUNLAI)
 	If $l_i_Xunlai <> 0 Then Agent_GoNPC($l_i_Xunlai)
 	Sleep(600)
+	Local $l_i_GoldBeforePay = Leveler_CharacterGold()
+	Out("[Step] Paying " & $XUNLAI_GOLD_COST & " gold for Xunlai (gold " & $l_i_GoldBeforePay & ")")
 	Ui_Dialog($DIALOG_XUNLAI_1)
-	Sleep(800)
+	Sleep(1000)
 	Ui_Dialog($DIALOG_XUNLAI_2)
-	Sleep(800)
-	If Leveler_XunlaiUnlocked() Then
+	Sleep(1000)
+	; Poll storage and gold together. Wine updates either slowly.
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 8000
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_HasStorageAccess() Then
+			Leveler_MarkXunlaiUnlocked()
+			Out("[Step] Xunlai storage unlocked (storage ptr live)")
+			Return True
+		EndIf
+		If Leveler_XunlaiFeeTaken($l_i_GoldBeforePay) Then
+			Out("[Step] Xunlai took the fee (gold now " & Leveler_CharacterGold() & "). Marking unlocked.")
+			Return True
+		EndIf
+		Sleep(250)
+	WEnd
+	If Leveler_HasStorageAccess() Or Leveler_XunlaiFeeTaken($l_i_GoldBeforePay) Then
 		Out("[Step] Xunlai storage unlocked")
 		Return True
 	EndIf
-	Local $l_i_GoldAfter = Item_GetInventoryInfo("GoldCharacter")
-	If $l_i_GoldAfter > $l_i_Gold - $XUNLAI_GOLD_COST + 5 Then
-		Out("[Step] Xunlai unlock did not take " & $XUNLAI_GOLD_COST & " gold (now " & $l_i_GoldAfter & "). Not advancing.")
-		Return False
-	EndIf
-	Out("[Step] Xunlai storage unlocked")
-	Return True
+	Out("[Step] Xunlai unlock did not take " & $XUNLAI_GOLD_COST & " gold (now " & Leveler_CharacterGold() & ", storage=" & Leveler_HasStorageAccess() & "). Not advancing.")
+	Return False
 EndFunc
 
 Func Leveler_Step_CraftWeapon()
@@ -1582,11 +1557,19 @@ Func Leveler_Step_SearchForACure()
 	$g_s_CurrentHeader = "Quest: The Search For A Cure"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	Leveler_LogQuestState($QUEST_SEARCH_CURE, "The Search For A Cure")
-	; One-and-done. Not in the log means it was already handed in. Do not re-accept or replay Wajjun.
-	If Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
+	; One-and-done. Only skip when positive evidence says it was already handed in.
+	If Leveler_SearchCureDone() Then
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
-		Out("[Step] The Search For A Cure is not in the log. Skipping; it cannot be taken again.")
+		Out("[Step] The Search For A Cure already completed")
 		Return True
+	EndIf
+	If Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
+		Out("[Step] The Search For A Cure is not in the log. Accepting it in Kaineng Center.")
+		If Not Leveler_Travel($MAP_KAINENG) Then Return False
+		If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_ACCEPT, "accept") Then
+			Out("[Step] Could not accept The Search For A Cure")
+			Return False
+		EndIf
 	EndIf
 
 	If Leveler_ShouldResumeExplorable($QUEST_SEARCH_CURE) Then
@@ -1600,6 +1583,7 @@ Func Leveler_Step_SearchForACure()
 			Out("[Step] The Search For A Cure is still in the log after the complete dialog")
 			Return False
 		EndIf
+		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 		Out("[Step] The Search For A Cure complete")
 		Return True
 	EndIf
@@ -1625,6 +1609,7 @@ Func Leveler_Step_SearchForACure()
 
 	If Not Leveler_Travel($MAP_KAINENG) Then Return False
 	If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_COMPLETE, "complete") Then
+		; Live hand-in: quest leaving the log during this step is enough.
 		If Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
 			Out("[Step] The Search For A Cure is no longer in the log. Treating the hand-in as done.")
 			Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
@@ -1636,6 +1621,7 @@ Func Leveler_Step_SearchForACure()
 		Out("[Step] The Search For A Cure is still in the log")
 		Return False
 	EndIf
+	Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 	Out("[Step] The Search For A Cure complete")
 	Return True
 EndFunc
@@ -1644,17 +1630,25 @@ Func Leveler_Step_AMastersBurden()
 	$g_s_CurrentHeader = "Quest: A Master's Burden"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	Leveler_LogQuestState($QUEST_MASTERS_BURDEN, "A Master's Burden")
-	; One-and-done. Not in the log means it was already handed in. Do not replay Wajjun / Docks.
-	If Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
+	; One-and-done. Only skip when positive evidence says it was already handed in.
+	If Leveler_MastersBurdenDone() Then
 		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
 		Leveler_MarkQuestDone($QUEST_BROTHER_TOSAI)
-		Out("[Step] A Master's Burden is not in the log. Skipping; it cannot be taken again.")
+		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
+		Out("[Step] A Master's Burden already completed")
 		Return True
 	EndIf
 	If Leveler_ShouldResumeExplorable($QUEST_MASTERS_BURDEN) Then
 		Out("[Step] A Master's Burden is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")
 	Else
 		If Not Leveler_Travel($MAP_KAINENG) Then Return False
+	EndIf
+	If Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) And Not Leveler_QuestReadyForReward($QUEST_MASTERS_BURDEN) Then
+		Out("[Step] A Master's Burden is not in the log. Accepting it.")
+		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 1784.00, 991.00, $DIALOG_BURDEN_ACCEPT, "accept") Then
+			Out("[Step] Could not accept A Master's Burden")
+			Return False
+		EndIf
 	EndIf
 	If Leveler_QuestReadyForReward($QUEST_MASTERS_BURDEN) Then
 		If Map_GetMapID() <> $MAP_KAINENG_DOCKS Then
@@ -1668,6 +1662,7 @@ Func Leveler_Step_AMastersBurden()
 			Out("[Step] A Master's Burden is still in the log after the complete dialog")
 			Return False
 		EndIf
+		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
 		Out("[Step] A Master's Burden complete")
 		Return True
 	EndIf
@@ -1715,6 +1710,7 @@ Func Leveler_Step_AMastersBurden()
 		Out("[Step] A Master's Burden is still in the log")
 		Return False
 	EndIf
+	Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
 	Out("[Step] A Master's Burden complete")
 	Return True
 EndFunc
@@ -2534,7 +2530,7 @@ Func Leveler_Step_UnlockOlias()
 		If Leveler_ConfirmOliasInHeroList() Then Return True
 	EndIf
 
-	; Python Unlock_Olias: after Fen, wait for Lion's Arch then Map.Travel(449) and complete 0x830E07.
+	; Py4GW Unlock_Olias: after Fen, wait for Lion's Arch then Map.Travel(449) and complete 0x830E07.
 	If Leveler_OliasReadyToTurnIn() Or Map_GetMapID() = $MAP_KAMADAN Then
 		Return Leveler_OliasReturnToKamadan()
 	EndIf
@@ -2653,11 +2649,10 @@ Func Leveler_Step_UnlockSecondaryProfs()
 	If Not Leveler_MoveTo(-3151.22, -7255.13, False) Then Return False
 	Leveler_UnlockTrainerDialogs()
 	Sleep(1500)
-	If Leveler_RemainingSecondariesUnlocked() Then
-		Out("[Step] All professions including Paragon and Dervish are available to select")
-	Else
-		$g_b_SecondaryProfsTalked = True
-		Out("[Step] Secondary profession trainers talked")
+	If Not Leveler_RemainingSecondariesUnlocked() Then
+		Out("[Step] Not every profession (including Paragon and Dervish) is selectable yet")
+		Return False
 	EndIf
+	Out("[Step] All professions including Paragon and Dervish are available to select")
 	Return True
 EndFunc

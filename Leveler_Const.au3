@@ -158,7 +158,7 @@ Global Const $QUEST_CHAOS_KRYTA = 479
 Global Const $QUEST_SUNSPEARS_CANTHA = 724
 Global Const $QUEST_OLIAS = 782
 
-; Dialogs (GW Reforged values from the Python bot)
+; Dialogs (GW Reforged values from the Py4GW Python Factions leveler)
 Global Const $DIALOG_EXIT_OVERLOOK = 0x85
 Global Const $DIALOG_GENERIC_TALK = 0x84
 Global Const $DIALOG_FORMING_ACCEPT = 0x81B801
@@ -190,7 +190,7 @@ Global Const $DIALOG_LOST_TREASURE_COMPLETE = 0x17
 Global Const $DIALOG_TENGU_ACCEPT = 0x815301
 Global Const $DIALOG_TENGU_STEP = 0x815304
 Global Const $DIALOG_TENGU_COMPLETE = 0x815307
-; Python Attribute_Points_Quest_1 / Warning the Tengu waypoints
+; Py4GW Attribute_Points_Quest_1 / Warning the Tengu waypoints
 Global Const $LOST_TOWN_APPROACH_X = 16184.75
 Global Const $LOST_TOWN_APPROACH_Y = 19001.78
 Global Const $LOST_TOWN_PATH1_X = 13713.27
@@ -406,3 +406,5 @@ Global $g_b_OliasUnlocked = False
 Global $g_b_MoxUnlocked = False
 ; Sticky after GToB trainer dialogs.
 Global $g_b_SecondaryProfsTalked = False
+; Sticky after this character paid for / opened Xunlai storage. Prevents re-paying 50g.
+Global $g_b_XunlaiUnlocked = False

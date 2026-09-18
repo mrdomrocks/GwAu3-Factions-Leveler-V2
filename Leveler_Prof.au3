@@ -1,6 +1,7 @@
 #include-once
 
-; Profession tables from the Py4GW Factions Character Leveler.
+; Profession tables from the Py4GW Python Factions Character Leveler
+; (converted to GwAu3 AU3 by mrdomrocks).
 ; Mid and level-20 bars assume Mesmer secondary (Domination / Inspiration).
 ; Equipment piece IDs live in Leveler_Craft.au3 and already match that file.
 
@@ -51,7 +52,7 @@ Func Leveler_ProfessionSkillBar($a_i_Kind, $a_i_Prof = 0)
 				Case $GC_I_PROFESSION_RITUALIST
 					Return "OAWBIskDcdG0DaAKUECA"
 				Case $GC_I_PROFESSION_ASSASSIN
-					; Python copies the Ritualist mid code (OAWB...). That fails
+					; Py4GW copies the Ritualist mid code (OAWB...). That fails
 					; primary-profession validation. OwVB is the Assassin mid form
 					; of the same Domination-12 bar (matches OwVC at level 20).
 					Return "OwVBIskDcdG0DaAKUECA"
