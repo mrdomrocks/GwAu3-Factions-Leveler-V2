@@ -1274,44 +1274,18 @@ Func Leveler_GwClientSize(ByRef $a_i_W, ByRef $a_i_H)
 	Return $a_i_W > 0 And $a_i_H > 0
 EndFunc
 
-; Attempt layouts measured from stall.webp / during.webp: tall paperdoll I-window
-; left of compass. Grid is the bottom 5x4; dest icons sit just above that grid.
-; Cell 20 is col 4 / row 3. Dest tabs: backpack=0, pouch=1, bag1=2, bag2=3.
+; Live-confirmed 1280x800 paperdoll I-window grid (leveler-kestrel.log).
+; Cell 20 = 1036,676 hit the Belt Pouch. Cell 1 = 892,568 after it moved.
+; Attempt only jitters inside that same cell. No dest-tab math — 928,514 is cell 1.
 Func Leveler_InventoryLayout($a_i_Attempt, ByRef $a_i_Left, ByRef $a_i_Top, ByRef $a_i_GridTop, ByRef $a_i_TabY, ByRef $a_i_Cell)
+	#forceref $a_i_Attempt
 	Local $l_i_W, $l_i_H
 	If Not Leveler_GwClientSize($l_i_W, $l_i_H) Then Return False
 	$a_i_Cell = $BAG_INV_CELL
 	$a_i_Top = $BAG_INV_TOP
 	$a_i_Left = $l_i_W - $BAG_INV_COMPASS - $BAG_INV_WIDTH
-	; Default: stretched I-window. Backpack grid hangs just above the skillbar.
 	$a_i_GridTop = $l_i_H - $BAG_INV_SKILLBAR - $BAG_INV_BOTTOM_PAD - $a_i_Cell * 4
 	$a_i_TabY = $a_i_GridTop - $BAG_INV_TAB_ABOVE_GRID
-	Switch $a_i_Attempt
-		Case 2
-			$a_i_Cell = 32
-			$a_i_Left -= 12
-			$a_i_GridTop = $l_i_H - $BAG_INV_SKILLBAR - $BAG_INV_BOTTOM_PAD - $a_i_Cell * 4
-			$a_i_TabY = $a_i_GridTop - $BAG_INV_TAB_ABOVE_GRID
-		Case 3
-			$a_i_Cell = 40
-			$a_i_GridTop = $l_i_H - $BAG_INV_SKILLBAR - $BAG_INV_BOTTOM_PAD - $a_i_Cell * 4
-			$a_i_TabY = $a_i_GridTop - $BAG_INV_TAB_ABOVE_GRID
-		Case 4, 5
-			; Fixed offsets from window top (8f137f paperdoll).
-			$a_i_TabY = $a_i_Top + $BAG_INV_PAPER_ICON_Y
-			$a_i_GridTop = $a_i_Top + $BAG_INV_PAPER_GRID_Y
-			If $a_i_Attempt = 5 Then $a_i_Cell = 40
-		Case 6
-			$a_i_Left -= 24
-		Case 7
-			$a_i_Cell = 32
-			$a_i_GridTop = $l_i_H - 100 - $a_i_Cell * 4
-			$a_i_TabY = $a_i_GridTop - 28
-		Case 8
-			$a_i_Left = $l_i_W - $BAG_INV_WIDTH
-			$a_i_GridTop = $l_i_H - $BAG_INV_SKILLBAR - $BAG_INV_BOTTOM_PAD - $a_i_Cell * 4
-			$a_i_TabY = $a_i_GridTop - $BAG_INV_TAB_ABOVE_GRID
-	EndSwitch
 	If $a_i_Left < 0 Then $a_i_Left = 0
 	If $a_i_GridTop < 0 Then $a_i_GridTop = 0
 	If $a_i_TabY < 0 Then $a_i_TabY = 0
@@ -1319,13 +1293,25 @@ Func Leveler_InventoryLayout($a_i_Attempt, ByRef $a_i_Left, ByRef $a_i_Top, ByRe
 EndFunc
 
 Func Leveler_InventoryLayoutName($a_i_Attempt)
+	#forceref $a_i_Attempt
+	Return "paperdoll-bottom"
+EndFunc
+
+Func Leveler_CellJitter($a_i_Attempt, ByRef $a_i_DX, ByRef $a_i_DY)
+	$a_i_DX = 0
+	$a_i_DY = 0
 	Switch $a_i_Attempt
-		Case 1, 2, 3, 6, 7, 8
-			Return "paperdoll-bottom"
-		Case 4, 5
-			Return "paperdoll-from-top"
-		Case Else
-			Return "paperdoll-bottom"
+		Case 2
+			$a_i_DX = 6
+		Case 3
+			$a_i_DX = -6
+		Case 4
+			$a_i_DY = 6
+		Case 5
+			$a_i_DY = -6
+		Case 6
+			$a_i_DX = 6
+			$a_i_DY = 6
 	EndSwitch
 EndFunc
 
@@ -1335,18 +1321,10 @@ Func Leveler_BackpackCellXY($a_i_Slot, $a_i_Attempt, ByRef $a_i_X, ByRef $a_i_Y)
 	If Not Leveler_InventoryLayout($a_i_Attempt, $l_i_Left, $l_i_Top, $l_i_GridTop, $l_i_TabY, $l_i_Cell) Then Return False
 	Local $l_i_Col = Mod($a_i_Slot - 1, $BAG_INV_COLS)
 	Local $l_i_Row = Int(($a_i_Slot - 1) / $BAG_INV_COLS)
-	$a_i_X = $l_i_Left + $BAG_INV_GRID_X + $l_i_Col * $l_i_Cell + Int($l_i_Cell / 2)
-	$a_i_Y = $l_i_GridTop + $l_i_Row * $l_i_Cell + Int($l_i_Cell / 2)
-	Return True
-EndFunc
-
-Func Leveler_BagTabXY($a_i_Bag, $a_i_Attempt, ByRef $a_i_X, ByRef $a_i_Y)
-	Local $l_i_Tab = $a_i_Bag - 1
-	If $l_i_Tab < 0 Then Return False
-	Local $l_i_Left, $l_i_Top, $l_i_GridTop, $l_i_TabY, $l_i_Cell
-	If Not Leveler_InventoryLayout($a_i_Attempt, $l_i_Left, $l_i_Top, $l_i_GridTop, $l_i_TabY, $l_i_Cell) Then Return False
-	$a_i_X = $l_i_Left + $BAG_INV_GRID_X + $l_i_Tab * $l_i_Cell + Int($l_i_Cell / 2)
-	$a_i_Y = $l_i_TabY
+	Local $l_i_DX, $l_i_DY
+	Leveler_CellJitter($a_i_Attempt, $l_i_DX, $l_i_DY)
+	$a_i_X = $l_i_Left + $BAG_INV_GRID_X + $l_i_Col * $l_i_Cell + Int($l_i_Cell / 2) + $l_i_DX
+	$a_i_Y = $l_i_GridTop + $l_i_Row * $l_i_Cell + Int($l_i_Cell / 2) + $l_i_DY
 	Return True
 EndFunc
 
@@ -1386,44 +1364,55 @@ Func Leveler_RestoreLevelerGui()
 	EndIf
 EndFunc
 
-; Screen-space click. ControlClick on Wine DirectX does not hit GW UI.
-; Do not restore the AutoIt overlay here — cell 20 sits under it.
-Func Leveler_ClickGwClient($a_i_X, $a_i_Y, $a_i_Clicks = 1)
+; Wine DirectX ignores ControlClick. AutoIt MouseClick with speed 8 is not a
+; real double-click. mouse_event + SetCursorPos is the client Use path.
+; Do not restore the AutoIt overlay here — it covers backpack cell 1.
+Func Leveler_ClickGwClient($a_i_X, $a_i_Y, $a_i_Clicks = 1, $a_s_Button = "left")
 	Local $l_h_Wnd = Leveler_FocusGwForClick()
 	If $l_h_Wnd = 0 Then Return False
 	Local $l_i_SX, $l_i_SY
 	Leveler_ClientToScreen($l_h_Wnd, $a_i_X, $a_i_Y, $l_i_SX, $l_i_SY)
-	Local $l_i_Old = Opt("MouseCoordMode", 1)
-	If $a_i_Clicks >= 2 Then
-		MouseClick("left", $l_i_SX, $l_i_SY, 1, 8)
-		Sleep(90)
-		MouseClick("left", $l_i_SX, $l_i_SY, 1, 8)
-	Else
-		MouseClick("left", $l_i_SX, $l_i_SY, 1, 8)
+	Return Leveler_SendInputClick($l_i_SX, $l_i_SY, $a_s_Button, $a_i_Clicks)
+EndFunc
+
+Func Leveler_SendInputClick($a_i_SX, $a_i_SY, $a_s_Button = "left", $a_i_Clicks = 1)
+	Local Const $MOUSEEVENTF_LEFTDOWN = 0x0002
+	Local Const $MOUSEEVENTF_LEFTUP = 0x0004
+	Local Const $MOUSEEVENTF_RIGHTDOWN = 0x0008
+	Local Const $MOUSEEVENTF_RIGHTUP = 0x0010
+	Local $l_i_Down = $MOUSEEVENTF_LEFTDOWN
+	Local $l_i_Up = $MOUSEEVENTF_LEFTUP
+	If $a_s_Button = "right" Then
+		$l_i_Down = $MOUSEEVENTF_RIGHTDOWN
+		$l_i_Up = $MOUSEEVENTF_RIGHTUP
 	EndIf
-	Opt("MouseCoordMode", $l_i_Old)
+	DllCall("user32.dll", "bool", "SetCursorPos", "int", $a_i_SX, "int", $a_i_SY)
+	Sleep(40)
+	Local $l_i_Gap = 80
+	If $a_i_Clicks >= 2 Then
+		Local $l_av_Dbl = DllCall("user32.dll", "uint", "GetDoubleClickTime")
+		If IsArray($l_av_Dbl) And $l_av_Dbl[0] > 80 Then
+			$l_i_Gap = Int($l_av_Dbl[0] / 3)
+			If $l_i_Gap < 60 Then $l_i_Gap = 60
+			If $l_i_Gap > 160 Then $l_i_Gap = 160
+		EndIf
+	EndIf
+	Local $i
+	For $i = 1 To $a_i_Clicks
+		DllCall("user32.dll", "none", "mouse_event", "dword", $l_i_Down, "dword", 0, "dword", 0, "dword", 0, "ulong_ptr", 0)
+		Sleep(25)
+		DllCall("user32.dll", "none", "mouse_event", "dword", $l_i_Up, "dword", 0, "dword", 0, "dword", 0, "ulong_ptr", 0)
+		If $i < $a_i_Clicks Then Sleep($l_i_Gap)
+	Next
 	Return True
 EndFunc
 
-Func Leveler_DragGwClient($a_i_X1, $a_i_Y1, $a_i_X2, $a_i_Y2)
-	Local $l_h_Wnd = Leveler_FocusGwForClick()
-	If $l_h_Wnd = 0 Then Return False
-	Local $l_i_SX1, $l_i_SY1, $l_i_SX2, $l_i_SY2
-	Leveler_ClientToScreen($l_h_Wnd, $a_i_X1, $a_i_Y1, $l_i_SX1, $l_i_SY1)
-	Leveler_ClientToScreen($l_h_Wnd, $a_i_X2, $a_i_Y2, $l_i_SX2, $l_i_SY2)
-	Out("[Craft] Inventory screen-drag " & $l_i_SX1 & "," & $l_i_SY1 & " -> " & $l_i_SX2 & "," & $l_i_SY2)
-	Local $l_i_Old = Opt("MouseCoordMode", 1)
-	MouseClickDrag("left", $l_i_SX1, $l_i_SY1, $l_i_SX2, $l_i_SY2, 14)
-	Opt("MouseCoordMode", $l_i_Old)
-	Return True
-EndFunc
-
-; Equip a backpack Bag/Belt Pouch by letting the client UI do it.
-; Live Wine ruled out: CtoS ITEM_USE (no fill), EQUIP_BAG header (crash),
-; paperdoll EquipItem (no bag slots), UI kMoveItem (crash), and aa114ff
-; ControlClick/MouseCoordMode-2 at 1238,201 / 1058,201 (miss, no crash).
-; Double-click the backpack cell, then drag onto the dest container icon
-; while BACKPACK stays selected so the 20-cell grid stays on screen.
+; Equip a backpack Bag/Belt Pouch by letting the client UI Use it.
+; Live Wine ruled out: CtoS ITEM_USE 0x7E (no fill), EQUIP_BAG 0x6B (crash),
+; paperdoll EquipItem (no bag slots), UI kMoveItem (crash), and screen-drag
+; onto the computed dest-tab (live log: that point is backpack cell 1 and
+; re-seated the pouch). Wiki: double-click a bag, or right-click and Use.
+; Stay on the live cell. No backpack-tab pre-click. No drag.
 Func Leveler_EquipBagItem($a_i_Item, $a_i_Bag = 0, $a_i_Model = 0, $a_i_Attempt = 1)
 	If $a_i_Item = 0 Then Return False
 	Local $l_i_Id = Item_ItemID($a_i_Item)
@@ -1438,31 +1427,39 @@ Func Leveler_EquipBagItem($a_i_Item, $a_i_Bag = 0, $a_i_Model = 0, $a_i_Attempt 
 		Out("[Craft] Item " & $l_i_Id & " is not in a start bag cell")
 		Return False
 	EndIf
-	Local $l_i_X, $l_i_Y, $l_i_TX, $l_i_TY, $l_i_BX, $l_i_BY, $l_i_W, $l_i_H
+	Local $l_i_X, $l_i_Y, $l_i_W, $l_i_H, $l_i_SX, $l_i_SY
 	If Not Leveler_BackpackCellXY($l_i_Slot, $a_i_Attempt, $l_i_X, $l_i_Y) Then
 		Out("[Craft] No Guild Wars window for inventory click")
 		Return False
 	EndIf
-	If Not Leveler_BagTabXY($l_i_Dest, $a_i_Attempt, $l_i_TX, $l_i_TY) Then Return False
 	Leveler_GwClientSize($l_i_W, $l_i_H)
-	Local $l_s_Layout = Leveler_InventoryLayoutName($a_i_Attempt)
-	Out("[Craft] Inventory drag item " & $l_i_Id & " model " & $a_i_Model & " cell " & $l_i_Slot & " -> bag index " & $l_i_Dest & " " & $l_s_Layout & " client " & $l_i_W & "x" & $l_i_H & " cell " & $l_i_X & "," & $l_i_Y & " tab " & $l_i_TX & "," & $l_i_TY)
-	; Click the backpack container icon first so the 20-cell grid is actually shown.
-	If Leveler_BagTabXY($GC_I_INVENTORY_BACKPACK, $a_i_Attempt, $l_i_BX, $l_i_BY) Then
-		Leveler_ClickGwClient($l_i_BX, $l_i_BY, 1)
-		Sleep(220)
-	EndIf
-	If Not Leveler_BackpackCellXY($l_i_Slot, $a_i_Attempt, $l_i_X, $l_i_Y) Then Return False
+	Local $l_h_Wnd = Leveler_FocusGwForClick()
+	If $l_h_Wnd = 0 Then Return False
+	Leveler_ClientToScreen($l_h_Wnd, $l_i_X, $l_i_Y, $l_i_SX, $l_i_SY)
+	Out("[Craft] Inventory Use item " & $l_i_Id & " model " & $a_i_Model & " cell " & $l_i_Slot & " -> bag index " & $l_i_Dest & " " & Leveler_InventoryLayoutName($a_i_Attempt) & " client " & $l_i_W & "x" & $l_i_H & " cell " & $l_i_X & "," & $l_i_Y & " screen " & $l_i_SX & "," & $l_i_SY)
 	Out("[Craft] Inventory double-click cell " & $l_i_Slot & " at " & $l_i_X & "," & $l_i_Y)
-	Leveler_ClickGwClient($l_i_X, $l_i_Y, 2)
-	Sleep(250)
+	Leveler_SendInputClick($l_i_SX, $l_i_SY, "left", 2)
+	Sleep(450)
 	If Not Leveler_LooseItemStillInBags($l_i_Id) Then Return True
 	$l_i_Slot = Leveler_StartBagCellOfItem($l_i_Id)
 	If $l_i_Slot = 0 Then Return True
 	If Not Leveler_BackpackCellXY($l_i_Slot, $a_i_Attempt, $l_i_X, $l_i_Y) Then Return True
-	If Not Leveler_BagTabXY($l_i_Dest, $a_i_Attempt, $l_i_TX, $l_i_TY) Then Return True
-	Out("[Craft] Inventory drag leftover cell " & $l_i_Slot & " " & $l_i_X & "," & $l_i_Y & " -> tab " & $l_i_Dest & " " & $l_i_TX & "," & $l_i_TY)
-	Leveler_DragGwClient($l_i_X, $l_i_Y, $l_i_TX, $l_i_TY)
+	Leveler_ClientToScreen($l_h_Wnd, $l_i_X, $l_i_Y, $l_i_SX, $l_i_SY)
+	Out("[Craft] Inventory context Use cell " & $l_i_Slot & " at " & $l_i_X & "," & $l_i_Y)
+	Leveler_SendInputClick($l_i_SX, $l_i_SY, "right", 1)
+	Sleep(200)
+	; First menu row is Use. Click the same point (Use under cursor), then one row down.
+	Leveler_SendInputClick($l_i_SX, $l_i_SY, "left", 1)
+	Sleep(350)
+	If Not Leveler_LooseItemStillInBags($l_i_Id) Then Return True
+	$l_i_Slot = Leveler_StartBagCellOfItem($l_i_Id)
+	If $l_i_Slot = 0 Then Return True
+	If Not Leveler_BackpackCellXY($l_i_Slot, $a_i_Attempt, $l_i_X, $l_i_Y) Then Return True
+	Leveler_ClientToScreen($l_h_Wnd, $l_i_X, $l_i_Y, $l_i_SX, $l_i_SY)
+	Out("[Craft] Inventory context Use row cell " & $l_i_Slot & " at " & $l_i_X & "," & ($l_i_Y + $BAG_INV_CONTEXT_USE_DY))
+	Leveler_SendInputClick($l_i_SX, $l_i_SY, "right", 1)
+	Sleep(200)
+	Leveler_SendInputClick($l_i_SX, $l_i_SY + $BAG_INV_CONTEXT_USE_DY, "left", 1)
 	Return True
 EndFunc
 
@@ -1496,7 +1493,8 @@ Func Leveler_WaitForBagEquip($a_i_Item, $a_i_Model, $a_i_Bag, $a_s_InfoKey = "",
 	Return Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey)
 EndFunc
 
-; Equip a start-bag Bag/Belt Pouch into Belt Pouch / Bag1 / Bag2 via inventory click/drag.
+; Equip a start-bag Bag/Belt Pouch into Belt Pouch / Bag1 / Bag2 via inventory Use.
+; Keep the AutoIt overlay hidden for the whole loop — it covers backpack cell 1.
 Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 	If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
 	If Leveler_LegalBagDest($a_i_Model, $a_i_Bag) = 0 Then
@@ -1505,9 +1503,10 @@ Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 	EndIf
 	Leveler_CloseMerchantWindow()
 	Leveler_OpenInventoryForBagEquip($a_i_Bag)
+	Leveler_FocusGwForClick()
 	Local $i
 	Local $l_b_Ok = False
-	For $i = 1 To 8
+	For $i = 1 To 6
 		If $g_b_LevelerPaused Then ExitLoop
 		If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then
 			$l_b_Ok = True
@@ -1518,21 +1517,19 @@ Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 			Out("[Craft] No TYPE_BAG model " & $a_i_Model & " in start bag to move into bag slot " & $a_i_Bag)
 			ExitLoop
 		EndIf
-		Leveler_LogBagState("Before inventory click/drag " & $l_i_Item & " -> " & $a_i_Bag)
+		Leveler_LogBagState("Before inventory Use " & $l_i_Item & " -> " & $a_i_Bag)
 		Leveler_EquipBagItem($l_i_Item, $a_i_Bag, $a_i_Model, $i)
 		Other_PingSleep(250)
 		If Leveler_WaitForBagEquip($l_i_Item, $a_i_Model, $a_i_Bag, $a_s_InfoKey, 2500) Then
-			Out("[Craft] Bag slot filled after inventory click/drag (wanted " & $a_i_Bag & ")")
-			Leveler_LogBagState("After inventory click/drag")
+			Out("[Craft] Bag slot filled after inventory Use (wanted " & $a_i_Bag & ")")
+			Leveler_LogBagState("After inventory Use")
 			$l_b_Ok = True
-			Leveler_RestoreLevelerGui()
 			ExitLoop
 		EndIf
-		Out("[Craft] Inventory click/drag did not fill slot " & $a_i_Bag & " yet")
-		Leveler_RestoreLevelerGui()
+		Out("[Craft] Inventory Use did not fill slot " & $a_i_Bag & " yet")
 		Leveler_OpenInventoryForBagEquip($a_i_Bag)
 	Next
-	If Not $l_b_Ok Then Leveler_LogBagState("Inventory click/drag retries exhausted")
+	If Not $l_b_Ok Then Leveler_LogBagState("Inventory Use retries exhausted")
 	Leveler_RestoreLevelerGui()
 	If $l_b_Ok Then Return True
 	Return Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey)
@@ -1645,11 +1642,11 @@ Func Leveler_ExtendInventory()
 	EndIf
 	If Leveler_CountLooseBags($MODEL_BAG) > 0 Or Leveler_CountLooseBags($MODEL_BELT_POUCH) > 0 Then
 		Out("[Craft] Start bag already has a small bag; not buying more")
-		Leveler_LogBagState("Inventory click/drag did not fill slots")
+		Leveler_LogBagState("Inventory Use did not fill slots")
 		Return False
 	EndIf
 
-	; No small bag in inventory. Buy exactly one for the next empty slot, then click/drag it.
+	; No small bag in inventory. Buy exactly one for the next empty slot, then Use it.
 	If Not Leveler_EnsureBagSlot($MODEL_BELT_POUCH, $GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr") Then
 		Out("[Craft] Inventory bags are still missing after the merchant")
 		Leveler_LogBagState("After pouch")

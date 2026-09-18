@@ -366,13 +366,13 @@ Global Const $BAG_MAX_POUCH_BUYS = 1
 Global Const $BAG_MAX_BAG_BUYS = 2
 ; Backpack grid is 20 cells. Do not trust BagInfo "Slots" if it reads 2.
 Global Const $BAG_BACKPACK_SCAN_SLOTS = 20
-; Client-side inventory click layout for Wine 1280x800 (Kestrel stall.webp / during.webp).
-; Inventory (I) is the tall paperdoll window LEFT of the compass. Container icons
-; (backpack, pouch, bag1, bag2, trash) sit immediately ABOVE the 5x4 backpack grid
-; at the BOTTOM of that window, just above the skillbar. Compact top-of-screen
-; coords hit hero slots / paperdoll and miss the grid.
-; Live Wine: packets 0x7E/0x6B, kMoveItem, paperdoll EquipItem, ControlClick, and
-; e1fada5 Mode-1 drag of a non-bag "model 34" in cell 20 all failed. Do not send packets.
+; Client-side backpack GRID layout for Wine 1280x800 (Kestrel slot1.png / live log).
+; Inventory (I) is the tall paperdoll window LEFT of the compass. The 5x4 start-bag
+; grid hangs just above the skillbar. Live log: cell 20 hit at 1036,676; after the
+; pouch moved, cell 1 is 892,568. Dest tab 928,514 is INSIDE that grid (cell 1) —
+; MouseClickDrag there re-seats the pouch, it does not equip. Do not drag to tabs.
+; Live Wine already failed: CtoS 0x7E, EQUIP_BAG 0x6B (crash), kMoveItem (crash),
+; paperdoll EquipItem, ControlClick. Equip with mouse_event double-click / Use.
 ; A Bag/Belt Pouch is TYPE_BAG (3) AND model 16/34. Model 34 alone is not a pouch.
 Global Const $BAG_INV_WIDTH = 248
 Global Const $BAG_INV_COMPASS = 172
@@ -383,8 +383,7 @@ Global Const $BAG_INV_CELL = 36
 Global Const $BAG_INV_SKILLBAR = 88
 Global Const $BAG_INV_BOTTOM_PAD = 18
 Global Const $BAG_INV_TAB_ABOVE_GRID = 36
-Global Const $BAG_INV_PAPER_ICON_Y = 398
-Global Const $BAG_INV_PAPER_GRID_Y = 478
+Global Const $BAG_INV_CONTEXT_USE_DY = 16
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000
