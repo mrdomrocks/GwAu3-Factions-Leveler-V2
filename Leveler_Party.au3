@@ -416,9 +416,9 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 
 	Out("Let's do " & $a_s_Name)
 	Out("Exiting Outpost")
-	; Arborstone enter. False = EnterMission(1) and instant-DCs on this client.
-	Ui_EnterChallenge(True)
-	If Not Map_WaitMapLoading($l_i_StartMap, 1) Then
+	; Native Factions character. Ui_EnterChallenge inits the load flag and waits.
+	Ui_EnterChallenge(False, True)
+	If Not Leveler_InMissionInstance($a_i_MapID) Then
 		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
 			Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
 			Return False
