@@ -370,13 +370,13 @@ Func Leveler_Step_ExtendInventory()
 		Out("[Step] Belt Pouch is equipped; inventory already extended")
 		Return True
 	EndIf
-	; Use backpack bags first. Never walk to Er Ming to buy more filler.
+	; Scan backpack for a small bag and UseItem it. Never buy while one is already there.
 	If Leveler_EquipOwnedInventoryBags() Then
 		Out("[Step] Equipped bags already in inventory")
 		Return True
 	EndIf
 	If Leveler_CountLooseBags($MODEL_BAG) > 0 Or Leveler_CountLooseBags($MODEL_BELT_POUCH) > 0 Then
-		Out("[Step] Backpack already has bags; not buying more. Retrying UseItem into bag slots.")
+		Out("[Step] Backpack already has a small bag; not buying more. Retrying UseItem into bag slots.")
 		Return False
 	EndIf
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False

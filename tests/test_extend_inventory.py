@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Source-level checks for the Extend Inventory bag stall fix.
 
-These do not talk to Guild Wars. They lock the buy/equip contract so the
-Kestrel Shade loop cannot come back from Item_FindItemByModelID + EquipItem
-or from mass-buying Bags into every backpack slot.
+These do not talk to Guild Wars. They lock the scan-then-use-or-buy-one
+contract so Kestrel Shade cannot mass-buy Bags into every backpack slot.
 """
 from pathlib import Path
 import re
@@ -31,12 +30,26 @@ class ExtendInventoryContract(unittest.TestCase):
     def test_extend_inventory_does_not_equip_merchant_listings(self):
         for name in (
             "Leveler_ExtendInventory",
+            "Leveler_EnsureBagSlot",
             "Leveler_UseLooseBagIntoSlot",
             "Leveler_BuyInventoryBag",
             "Leveler_FindLooseBagItem",
         ):
             body = func_body(CRAFT, name)
             self.assertNotIn("Item_FindItemByModelID", body, name)
+
+    def test_scan_backpack_then_use_or_buy_one(self):
+        ensure = func_body(CRAFT, "Leveler_EnsureBagSlot")
+        self.assertIn("Leveler_FindLooseBagItem", ensure)
+        self.assertIn("Scan backpack", ensure)
+        self.assertIn("Buying one", ensure)
+        self.assertIn("Leveler_BuyInventoryBag", ensure)
+        self.assertIn("Leveler_UseLooseBagIntoSlot", ensure)
+        found_at = ensure.find("Leveler_FindLooseBagItem")
+        buy_at = ensure.find("Leveler_BuyInventoryBag")
+        use_at = ensure.find("Leveler_UseLooseBagIntoSlot")
+        self.assertLess(found_at, buy_at)
+        self.assertLess(found_at, use_at)
 
     def test_useitem_after_closing_merchant(self):
         use = func_body(CRAFT, "Leveler_UseLooseBagIntoSlot")
@@ -63,24 +76,26 @@ class ExtendInventoryContract(unittest.TestCase):
         self.assertIn("not buying more", step)
         extend = func_body(CRAFT, "Leveler_ExtendInventory")
         self.assertIn("not buying more", extend)
+        extend_owned_at = extend.find("Leveler_EquipOwnedInventoryBags")
+        extend_buy_at = extend.find("Leveler_EnsureBagSlot")
+        self.assertGreater(extend_owned_at, 0)
+        self.assertGreater(extend_buy_at, extend_owned_at)
         buy = func_body(CRAFT, "Leveler_BuyInventoryBag")
         self.assertIn("Already have bag model", buy)
-        self.assertIn("Leveler_FindLooseBagItem", buy)
         self.assertIn("Merchant_BuyItem($a_i_Model, 1, False)", buy)
 
-    def test_pouch_is_bought_before_extra_bags(self):
+    def test_pouch_slot_before_extra_bags(self):
         body = func_body(CRAFT, "Leveler_ExtendInventory")
-        pouch_at = body.find("Leveler_BuyInventoryBag($MODEL_BELT_POUCH)")
-        bag_at = body.find("Leveler_BuyInventoryBag($MODEL_BAG)")
+        pouch_at = body.find("Leveler_EnsureBagSlot($MODEL_BELT_POUCH")
+        bag_at = body.find("Leveler_EnsureBagSlot($MODEL_BAG")
         self.assertGreater(pouch_at, 0)
         self.assertGreater(bag_at, pouch_at)
 
     def test_buy_caps_prevent_mass_fill(self):
         self.assertIn("$BAG_MAX_POUCH_BUYS = 1", CONST)
         self.assertIn("$BAG_MAX_BAG_BUYS = 2", CONST)
-        body = func_body(CRAFT, "Leveler_ExtendInventory")
-        self.assertIn("$BAG_MAX_POUCH_BUYS", body)
-        self.assertIn("$BAG_MAX_BAG_BUYS", body)
+        buy = func_body(CRAFT, "Leveler_BuyInventoryBag")
+        self.assertIn("Merchant_BuyItem($a_i_Model, 1, False)", buy)
 
     def test_has_extended_bags_uses_bag_slots_not_worn_items(self):
         body = func_body(CRAFT, "Leveler_HasExtendedBags")
@@ -99,7 +114,7 @@ class ExtendInventoryContract(unittest.TestCase):
         body = func_body(CRAFT, "Leveler_FindLooseBagItem")
         self.assertIn("Item_GetItemBySlot", body)
         self.assertIn("Item_GetInventoryArray", body)
-        self.assertIn("BagPtr", body)  # comment + 0xC bag ptr filter
+        self.assertIn("BagPtr", body)
 
 
 if __name__ == "__main__":
