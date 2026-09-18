@@ -366,18 +366,18 @@ EndFunc
 Func Leveler_Step_ExtendInventory()
 	$g_s_CurrentHeader = "Extend Inventory"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_HasExtendedBags() Then
-		Out("[Step] Belt Pouch is equipped; inventory already extended")
+	If Leveler_BagsStepComplete() Then
+		If Leveler_HasExtendedBags() Then
+			Out("[Step] Belt Pouch is equipped; inventory already extended")
+		Else
+			Out("[Step] Extend Inventory skip is armed; continuing without bag-slot install")
+		EndIf
 		Return True
 	EndIf
-	; Scan start bag (backpack) slots for a small bag and Item_EquipItem it. Never buy while one is already there.
-	If Leveler_EquipOwnedInventoryBags() Then
-		Out("[Step] Equipped bags already in inventory")
+	; Scan start bag (backpack) for a TYPE_BAG. Own it, do not install it under Wine.
+	If Leveler_SkipBagEquipIfOwned() Then
+		Out("[Step] Start bag already has a small bag; not buying more")
 		Return True
-	EndIf
-	If Leveler_CountLooseBags($MODEL_BAG) > 0 Or Leveler_CountLooseBags($MODEL_BELT_POUCH) > 0 Then
-		Out("[Step] Start bag already has a small bag; not buying more. Retrying Item_EquipItem into bag slots.")
-		Return False
 	EndIf
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_SetPacifist()

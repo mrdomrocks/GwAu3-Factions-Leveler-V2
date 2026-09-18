@@ -1251,147 +1251,42 @@ EndFunc
 Func Leveler_ItemModelId($a_i_Item)
 	Local $l_p_Item = Item_GetItemPtr($a_i_Item)
 	If $l_p_Item = 0 Then Return 0
-	Return Memory_Read($l_p_Item + 0x2C, "dword")
+	Return Item_GetItemInfoByPtr($l_p_Item, "ModelID")
 EndFunc
 
-; Bags (model 16) only go to Bag1/Bag2. Belt Pouch (model 34) only goes to the pouch.
-; Never default a Bag onto $GC_I_INVENTORY_BELT_POUCH (index 2).
-Func Leveler_LegalBagDest($a_i_Model, $a_i_Bag = 0)
-	If $a_i_Model = $MODEL_BELT_POUCH Then
-		If $a_i_Bag = 0 Or $a_i_Bag = $GC_I_INVENTORY_BELT_POUCH Then Return $GC_I_INVENTORY_BELT_POUCH
-		Return 0
-	EndIf
-	If $a_i_Model = $MODEL_BAG Then
-		If $a_i_Bag = $GC_I_INVENTORY_BELT_POUCH Then Return 0
-		If $a_i_Bag = $GC_I_INVENTORY_BAG1 Or $a_i_Bag = $GC_I_INVENTORY_BAG2 Then Return $a_i_Bag
-		If $a_i_Bag = 0 Then
-			If Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") Then Return $GC_I_INVENTORY_BAG1
-			If Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") Then Return $GC_I_INVENTORY_BAG2
-		EndIf
-		Return 0
-	EndIf
-	Return 0
+Func Leveler_HasOwnedSmallBag()
+	If Leveler_CountLooseBags($MODEL_BELT_POUCH) > 0 Then Return True
+	If Leveler_CountLooseBags($MODEL_BAG) > 0 Then Return True
+	Return False
 EndFunc
 
-; Equip with GwAu3 Item_EquipItem (same helper as weapons). Item id comes from
-; Item_GetItemBySlot / Item_ItemID. Do not send 0x6B, Item_UseItem, or kMoveItem.
-Func Leveler_EquipBagItem($a_i_Item, $a_i_Bag = 0, $a_i_Model = 0, $a_i_Attempt = 1)
-	#forceref $a_i_Attempt
-	If $a_i_Item = 0 Then Return False
-	Local $l_i_Id = Item_ItemID($a_i_Item)
-	If $l_i_Id = 0 Then Return False
-	If $a_i_Model = 0 Then $a_i_Model = Leveler_ItemModelId($l_i_Id)
-	Local $l_i_Dest = Leveler_LegalBagDest($a_i_Model, $a_i_Bag)
-	If $l_i_Dest = 0 Then
-		Out("[Craft] Refusing bag equip item " & $l_i_Id & " model " & $a_i_Model & " onto bag index " & $a_i_Bag)
+; Equipped pouch/bags, or Wine skip after a TYPE_BAG is owned in the backpack.
+Func Leveler_BagsStepComplete()
+	If Leveler_HasExtendedBags() Then Return True
+	If $g_b_BagsStepSkipped Then Return True
+	If $LEVELER_SKIP_BAG_EQUIP And Leveler_HasOwnedSmallBag() Then Return True
+	Return False
+EndFunc
+
+; GwAu3 has no Wine-safe container-install API. HEADER_EQUIP_BAG 0x6B crashed;
+; Item_EquipItem 0x30 is paperdoll-only (Kestrel 1640 type=3 model=34 stayed in cell 1).
+Func Leveler_SkipBagEquip($a_s_Why)
+	If Not $LEVELER_SKIP_BAG_EQUIP Then
+		Out("[Craft] " & $a_s_Why & ". $LEVELER_SKIP_BAG_EQUIP is off and no Wine-safe bag install exists")
 		Return False
 	EndIf
-	Local $l_i_Slot = Leveler_StartBagCellOfItem($l_i_Id)
-	If $l_i_Slot = 0 Then
-		Out("[Craft] Item " & $l_i_Id & " is not in a start bag cell")
-		Return False
-	EndIf
-	; Re-read the backpack cell through Item_GetItemBySlot (slot 1 is visible even if Slots=2).
-	Local $l_p_Slot = Item_GetItemBySlot($GC_I_INVENTORY_BACKPACK, $l_i_Slot)
-	If $l_p_Slot = 0 Then $l_p_Slot = Leveler_ItemPtrInBagCell($GC_I_INVENTORY_BACKPACK, $l_i_Slot)
-	If $l_p_Slot <> 0 Then $l_i_Id = Leveler_ItemIdFromPtr($l_p_Slot)
-	If $l_i_Id = 0 Then Return False
-	If $a_i_Model = $MODEL_BELT_POUCH Then
-		Out("[Craft] Belt Pouch item id " & $l_i_Id & " Item_GetItemBySlot backpack cell " & $l_i_Slot)
-	EndIf
-	Out("[Craft] Item_GetItemBySlot backpack cell " & $l_i_Slot & " ptr=" & $l_p_Slot & " ItemID=" & $l_i_Id & " model " & $a_i_Model & " -> dest bag " & $l_i_Dest)
-	Out("[Craft] Item_EquipItem " & $l_i_Id)
-	Item_EquipItem($l_i_Id)
-	Sleep(200)
-	Local $l_i_Agent = Agent_ConvertID(-2)
-	If $l_i_Agent <> 0 Then Ui_EquipItem($l_i_Id, $l_i_Agent)
+	$g_b_BagsStepSkipped = True
+	Leveler_LogBagState($a_s_Why)
+	Out("[Craft] Skipping bag-slot install. Ruled out: Item_EquipItem (no-op), 0x6B (crash), Item_UseItem, kMoveItem, mouse-drag. Pouch stays in the start bag. Continuing.")
 	Return True
 EndFunc
 
-; Success if the wanted slot filled, or a previously empty compatible bag slot filled.
-Func Leveler_WaitForBagEquip($a_i_Item, $a_i_Model, $a_i_Bag, $a_s_InfoKey = "", $a_i_Timeout = 3000)
-	Local $l_b_Pouch0 = Leveler_BagSlotFilled($GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr")
-	Local $l_b_Bag10 = Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr")
-	Local $l_b_Bag20 = Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr")
-	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If $g_b_LevelerPaused Then Return False
-		If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
-		If $a_i_Model = $MODEL_BAG Then
-			If Not $l_b_Bag10 And Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") Then Return True
-			If Not $l_b_Bag20 And Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") Then Return True
-		EndIf
-		If $a_i_Model = $MODEL_BELT_POUCH And Not $l_b_Pouch0 Then
-			If Leveler_BagSlotFilled($GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr") Then Return True
-		EndIf
-		If $a_i_Item <> 0 And Not Leveler_LooseItemStillInBags($a_i_Item) Then
-			Sleep(250)
-			If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
-			If $a_i_Model = $MODEL_BAG Then
-				If Not $l_b_Bag10 And Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") Then Return True
-				If Not $l_b_Bag20 And Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") Then Return True
-			EndIf
-			Return False
-		EndIf
-		Sleep(150)
-	WEnd
-	Return Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey)
-EndFunc
-
-; Equip a start-bag Bag/Belt Pouch with GwAu3 Item_EquipItem.
-Func Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
-	If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
-	If Leveler_LegalBagDest($a_i_Model, $a_i_Bag) = 0 Then
-		Out("[Craft] Model " & $a_i_Model & " cannot go into bag index " & $a_i_Bag)
-		Return False
-	EndIf
-	Leveler_CloseMerchantWindow()
-	Local $i
-	Local $l_b_Ok = False
-	For $i = 1 To 6
-		If $g_b_LevelerPaused Then ExitLoop
-		If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then
-			$l_b_Ok = True
-			ExitLoop
-		EndIf
-		Local $l_i_Item = Leveler_FindLooseBagItem($a_i_Model)
-		If $l_i_Item = 0 Then
-			Out("[Craft] No TYPE_BAG model " & $a_i_Model & " in start bag to Item_EquipItem into bag slot " & $a_i_Bag)
-			ExitLoop
-		EndIf
-		Leveler_LogBagState("Before Item_EquipItem " & $l_i_Item & " -> " & $a_i_Bag)
-		Leveler_EquipBagItem($l_i_Item, $a_i_Bag, $a_i_Model, $i)
-		Other_PingSleep(250)
-		If Leveler_WaitForBagEquip($l_i_Item, $a_i_Model, $a_i_Bag, $a_s_InfoKey, 2500) Then
-			Out("[Craft] Bag slot filled after Item_EquipItem (wanted " & $a_i_Bag & ")")
-			Leveler_LogBagState("After Item_EquipItem")
-			$l_b_Ok = True
-			ExitLoop
-		EndIf
-		Out("[Craft] Item_EquipItem did not fill slot " & $a_i_Bag & " yet")
-	Next
-	If Not $l_b_Ok Then Leveler_LogBagState("Item_EquipItem retries exhausted")
-	If $l_b_Ok Then Return True
-	Return Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey)
-EndFunc
-
-Func Leveler_EquipOwnedInventoryBags()
-	Out("[Craft] Scan start bag for small bags: pouch x" & Leveler_CountLooseBags($MODEL_BELT_POUCH) & " bag x" & Leveler_CountLooseBags($MODEL_BAG))
-	If Leveler_CountLooseBags($MODEL_BELT_POUCH) > 0 Then
-		Leveler_EquipLooseBagIntoSlot($MODEL_BELT_POUCH, $GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr")
-	EndIf
+Func Leveler_SkipBagEquipIfOwned()
 	If Leveler_HasExtendedBags() Then Return True
-	If Leveler_CountLooseBags($MODEL_BAG) > 0 And Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") Then
-		Leveler_EquipLooseBagIntoSlot($MODEL_BAG, $GC_I_INVENTORY_BAG1, "Bag1Ptr")
-	EndIf
-	If Leveler_HasExtendedBags() Then Return True
-	If Leveler_CountLooseBags($MODEL_BAG) > 0 And Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") Then
-		Leveler_EquipLooseBagIntoSlot($MODEL_BAG, $GC_I_INVENTORY_BAG2, "Bag2Ptr")
-	EndIf
-	Return Leveler_HasExtendedBags()
+	If Not Leveler_HasOwnedSmallBag() Then Return False
+	Return Leveler_SkipBagEquip("Start bag already has a small bag; not installing")
 EndFunc
 
-; Buy exactly one. Refuse if that small bag is already in the backpack.
 Func Leveler_BuyInventoryBag($a_i_Model)
 	If Leveler_FindLooseBagItem($a_i_Model) <> 0 Then
 		Out("[Craft] Already have bag model " & $a_i_Model & " in start bag; not buying")
@@ -1440,18 +1335,20 @@ Func Leveler_OpenBagMerchant()
 	Return False
 EndFunc
 
-; Per slot: scan start bag (backpack) slots for that small bag. Move it into the bag slot if found. Else buy exactly one and move it.
+; Per slot: scan start bag for that small bag. If found (or after buying one), skip Wine-unsafe install.
 Func Leveler_EnsureBagSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
 	If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
 	Local $l_i_Item = Leveler_FindLooseBagItem($a_i_Model)
 	If $l_i_Item <> 0 Then
-		Out("[Craft] Scan start bag: found small bag " & $l_i_Item & " (model " & $a_i_Model & "). Equipping.")
-		Return Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey)
+		Out("[Craft] Scan start bag: found small bag " & $l_i_Item & " (model " & $a_i_Model & "). Not installing.")
+		Return Leveler_SkipBagEquip("Owned model " & $a_i_Model & " item " & $l_i_Item)
 	EndIf
 	Out("[Craft] Scan start bag: no model " & $a_i_Model & ". Buying one.")
 	If Not Leveler_OpenBagMerchant() Then Return False
 	If Not Leveler_BuyInventoryBag($a_i_Model) Then Return False
-	Return Leveler_EquipLooseBagIntoSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey)
+	$l_i_Item = Leveler_FindLooseBagItem($a_i_Model)
+	If $l_i_Item = 0 Then Return False
+	Return Leveler_SkipBagEquip("Bought model " & $a_i_Model & " item " & $l_i_Item)
 EndFunc
 
 Func Leveler_DestroyStarterArmorAndJunk()
@@ -1469,31 +1366,30 @@ Func Leveler_DestroyStarterArmorAndJunk()
 EndFunc
 
 Func Leveler_ExtendInventory()
-	If Leveler_HasExtendedBags() Then
-		Out("[Craft] Belt Pouch already equipped")
+	If Leveler_BagsStepComplete() Then
+		If Leveler_HasExtendedBags() Then
+			Out("[Craft] Belt Pouch already equipped")
+		Else
+			Out("[Craft] Extend Inventory skip is armed")
+		EndIf
 		Return True
 	EndIf
 	Leveler_LogBagState("Extend Inventory start")
 
-	; Scan start bag first. Kestrel-style leftover Bags are moved into bag slots, never bought again.
-	If Leveler_EquipOwnedInventoryBags() Then
-		Out("[Craft] Inventory bags equipped")
+	; Scan start bag first. Never buy while a TYPE_BAG is already there.
+	If Leveler_SkipBagEquipIfOwned() Then
+		Out("[Craft] Start bag already has a small bag; not buying more")
 		Return True
 	EndIf
-	If Leveler_CountLooseBags($MODEL_BAG) > 0 Or Leveler_CountLooseBags($MODEL_BELT_POUCH) > 0 Then
-		Out("[Craft] Start bag already has a small bag; not buying more")
-		Leveler_LogBagState("Item_EquipItem did not fill slots")
-		Return False
-	EndIf
 
-	; No small bag in inventory. Buy exactly one for the next empty slot, then Item_EquipItem it.
+	; No small bag in inventory. Buy exactly one, then skip install under Wine.
 	If Not Leveler_EnsureBagSlot($MODEL_BELT_POUCH, $GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr") Then
 		Out("[Craft] Inventory bags are still missing after the merchant")
 		Leveler_LogBagState("After pouch")
 		Return False
 	EndIf
-	If Leveler_HasExtendedBags() Then
-		Out("[Craft] Inventory bags equipped")
+	If Leveler_BagsStepComplete() Then
+		Out("[Craft] Inventory bags owned; skipping Wine-unsafe install")
 		Return True
 	EndIf
 	If Not Leveler_EnsureBagSlot($MODEL_BAG, $GC_I_INVENTORY_BAG1, "Bag1Ptr") Then
@@ -1501,8 +1397,8 @@ Func Leveler_ExtendInventory()
 		Leveler_LogBagState("After bag1")
 		Return False
 	EndIf
-	If Leveler_HasExtendedBags() Then
-		Out("[Craft] Inventory bags equipped")
+	If Leveler_BagsStepComplete() Then
+		Out("[Craft] Inventory bags owned; skipping Wine-unsafe install")
 		Return True
 	EndIf
 	If Not Leveler_EnsureBagSlot($MODEL_BAG, $GC_I_INVENTORY_BAG2, "Bag2Ptr") Then
@@ -1510,11 +1406,11 @@ Func Leveler_ExtendInventory()
 		Leveler_LogBagState("After bag2")
 		Return False
 	EndIf
-	If Not Leveler_HasExtendedBags() Then
+	If Not Leveler_BagsStepComplete() Then
 		Out("[Craft] Inventory bags are still missing after the merchant")
 		Leveler_LogBagState("After merchant")
 		Return False
 	EndIf
-	Out("[Craft] Inventory bags equipped")
+	Out("[Craft] Inventory bags owned; skipping Wine-unsafe install")
 	Return True
 EndFunc
