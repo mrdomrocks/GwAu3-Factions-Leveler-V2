@@ -58,52 +58,138 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
 	Leveler_EnsurePathfinder()
 
-	Local $l_v_Obstacles = 0
-	Local $l_i_Aggro = 0
-	If $a_b_Combat Then
-		Leveler_PrepareCombatAI()
-		$l_v_Obstacles = "Leveler_GetObstacles"
-		$l_i_Aggro = $LEVELER_AGGRO
-	EndIf
-
-	Local $l_s_Callback = ""
-	If $g_b_SpiritRiftWatch Then $l_s_Callback = "Leveler_InterruptSpiritRifts"
+	If $a_b_Combat Then Leveler_PrepareCombatAI()
 
 	Local $l_b_Ok = False
-	If Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
+	Local $l_b_Outpost = Map_GetInstanceInfo("IsOutpost")
+	; Pathfinder_MoveTo loops until dist < 125 with no timeout. Unreachable
+	; dests (closed gate, water, cliff) hang silently. Walk a FindPath with
+	; timed hops instead. Outposts have no mesh; use Map_Move.
+	If $l_b_Outpost Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
+		If $l_b_Outpost Then
+			Out("[Move] Outpost walk to " & Round($a_f_X) & ", " & Round($a_f_Y) & " from " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & " (map " & $l_i_StartMap & ")")
+		EndIf
 		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 30000, $a_b_Combat)
 	Else
-		$l_b_Ok = Pathfinder_MoveTo($a_f_X, $a_f_Y, -1, $l_v_Obstacles, $l_i_Aggro, $LEVELER_FIGHT_RANGE_OUT, 0, $l_s_Callback)
+		Out("[Move] Walk to " & Round($a_f_X) & ", " & Round($a_f_Y) & " from " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & " (map " & $l_i_StartMap & ", dist " & Round(Agent_GetDistanceToXY($a_f_X, $a_f_Y)) & ")")
+		$l_b_Ok = Leveler_MoveByPath($a_f_X, $a_f_Y, $a_b_Combat)
 	EndIf
 
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
 	If Leveler_IsWiped() Then Return False
 	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+	If Not $l_b_Ok Then
+		Out("[Move] Failed to reach " & Round($a_f_X) & ", " & Round($a_f_Y) & " on map " & Map_GetMapID() & " (pos " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & ", dist " & Round(Agent_GetDistanceToXY($a_f_X, $a_f_Y)) & ")")
+	EndIf
 	Return $l_b_Ok
 EndFunc
 
 Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_f_StartX = Agent_GetAgentInfo(-2, "X")
+	Local $l_f_StartY = Agent_GetAgentInfo(-2, "Y")
+	Local $l_f_LastX = $l_f_StartX
+	Local $l_f_LastY = $l_f_StartY
+	Local $l_h_Stuck = TimerInit()
+	Local $l_b_Cleared = False
 	Local $l_h_Timer = TimerInit()
+	Local $l_h_Progress = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
 		If Leveler_IsWiped() Then Return False
 		If Map_GetMapID() <> $l_i_StartMap Then Return True
 		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+		If TimerDiff($l_h_Progress) >= 10000 Then
+			Out("[Move] Still walking to " & Round($a_f_X) & ", " & Round($a_f_Y) & " (pos " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & ", dist " & Round(Agent_GetDistanceToXY($a_f_X, $a_f_Y)) & ")")
+			$l_h_Progress = TimerInit()
+		EndIf
 		If $a_b_Combat Then Leveler_CombatTick()
+		Local $l_f_NowX = Agent_GetAgentInfo(-2, "X")
+		Local $l_f_NowY = Agent_GetAgentInfo(-2, "Y")
+		Local $l_f_Shift = Sqrt(($l_f_NowX - $l_f_LastX) ^ 2 + ($l_f_NowY - $l_f_LastY) ^ 2)
+		If $l_f_Shift > 40 Then
+			$l_f_LastX = $l_f_NowX
+			$l_f_LastY = $l_f_NowY
+			$l_h_Stuck = TimerInit()
+		ElseIf TimerDiff($l_h_Stuck) > 2500 And Not $l_b_Cleared Then
+			Out("[Move] No movement toward " & Round($a_f_X) & ", " & Round($a_f_Y) & " (still at " & Round($l_f_NowX) & ", " & Round($l_f_NowY) & "). Cancelling action.")
+			Agent_CancelAction()
+			$l_b_Cleared = True
+			$l_h_Stuck = TimerInit()
+		EndIf
 		Map_Move($a_f_X, $a_f_Y, 20)
 		Sleep(250)
 	WEnd
-	Return Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
+	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+	Out("[Move] Timed out walking to " & Round($a_f_X) & ", " & Round($a_f_Y) & " on map " & $l_i_StartMap & " (from " & Round($l_f_StartX) & ", " & Round($l_f_StartY) & " now " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & ", dist " & Round(Agent_GetDistanceToXY($a_f_X, $a_f_Y)) & ")")
+	Return False
+EndFunc
+
+; Walk a Pathfinder_FindPath with timed hops. Pathfinder_MoveTo has no timeout and
+; never returns if the dest is behind a gate, water, or a cliff (until dist < 125).
+Func Leveler_MoveByPath($a_f_X, $a_f_Y, $a_b_Combat = False)
+	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_av_Path = Leveler_FindWalkPath($a_f_X, $a_f_Y)
+	If IsArray($l_av_Path) Then
+		Out("[Move] Path has " & UBound($l_av_Path) & " waypoint(s)")
+		Local $i
+		For $i = 0 To UBound($l_av_Path) - 1
+			If $g_b_LevelerPaused Then Return False
+			If Leveler_IsWiped() Then Return False
+			If Map_GetMapID() <> $l_i_StartMap Then Return True
+			If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+			Local $l_f_Wx = $l_av_Path[$i][0]
+			Local $l_f_Wy = $l_av_Path[$i][1]
+			Local $l_i_Timeout = 45000 + Int(Agent_GetDistanceToXY($l_f_Wx, $l_f_Wy) * 40)
+			If $l_i_Timeout > 120000 Then $l_i_Timeout = 120000
+			If Not Leveler_MoveDirect($l_f_Wx, $l_f_Wy, $l_i_Timeout, $a_b_Combat) Then
+				If Map_GetMapID() <> $l_i_StartMap Then Return True
+				If Leveler_IsWiped() Then Return False
+			EndIf
+		Next
+	Else
+		Out("[Move] No pathfinder route to " & Round($a_f_X) & ", " & Round($a_f_Y) & "; walking direct")
+	EndIf
+	If Map_GetMapID() <> $l_i_StartMap Then Return True
+	If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+	Local $l_i_Final = 60000 + Int(Agent_GetDistanceToXY($a_f_X, $a_f_Y) * 40)
+	If $l_i_Final > 180000 Then $l_i_Final = 180000
+	Return Leveler_MoveDirect($a_f_X, $a_f_Y, $l_i_Final, $a_b_Combat)
+EndFunc
+
+Func Leveler_FindWalkPath($a_f_X, $a_f_Y)
+	Local $l_i_Map = Map_GetMapID()
+	If Not Pathfinder_IsMapAvailable($l_i_Map) Then Return 0
+	Local $l_f_StartX = Agent_GetAgentInfo(-2, "X")
+	Local $l_f_StartY = Agent_GetAgentInfo(-2, "Y")
+	Local $l_i_Layer = Agent_GetAgentInfo(-2, "Plane")
+	Local $l_av_Path = Pathfinder_FindPath($l_i_Map, $l_f_StartX, $l_f_StartY, $l_i_Layer, $a_f_X, $a_f_Y, -1, 0, 1250)
+	If IsArray($l_av_Path) And UBound($l_av_Path) > 0 Then Return $l_av_Path
+	; Dest may be through a closed gate. Aim short of it on the walkable side.
+	Local $l_af_Off[4][2] = [[0, 800], [0, -800], [800, 0], [-800, 0]]
+	Local $i
+	For $i = 0 To 3
+		$l_av_Path = Pathfinder_FindPath($l_i_Map, $l_f_StartX, $l_f_StartY, $l_i_Layer, $a_f_X + $l_af_Off[$i][0], $a_f_Y + $l_af_Off[$i][1], -1, 0, 1250)
+		If IsArray($l_av_Path) And UBound($l_av_Path) > 0 Then
+			Out("[Move] Exact dest is off-mesh; using approach " & Round($a_f_X + $l_af_Off[$i][0]) & ", " & Round($a_f_Y + $l_af_Off[$i][1]))
+			Return $l_av_Path
+		EndIf
+	Next
+	Return 0
 EndFunc
 
 Func Leveler_MoveAndDialog($a_f_X, $a_f_Y, $a_i_Dialog, $a_b_Combat = False, $a_i_NpcModel = 0)
 	Local $l_i_StartMap = Map_GetMapID()
-	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) And Map_GetMapID() = $l_i_StartMap Then Return False
+	Out("[Move] MoveAndDialog to " & Round($a_f_X) & ", " & Round($a_f_Y) & " dialog 0x" & Hex($a_i_Dialog, 6))
+	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) Then
+		If Map_GetMapID() <> $l_i_StartMap Then Return True
+		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) > 1000 Then Return False
+		Out("[Move] Did not arrive; trying the nearest NPC anyway")
+	EndIf
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
 
 	Local $l_i_Npc = Leveler_ResolveTalkNpc($a_f_X, $a_f_Y, $a_i_NpcModel)
 	If $l_i_Npc = 0 Then
-		Out("[Move] No NPC near " & Round($a_f_X) & ", " & Round($a_f_Y))
+		Out("[Move] No NPC near " & Round($a_f_X) & ", " & Round($a_f_Y) & " (pos " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & ")")
 		Return False
 	EndIf
 
@@ -251,7 +337,9 @@ Func Leveler_MoveAndExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False)
 		Map_Move($a_f_X, $a_f_Y, 10)
 		Sleep(1500)
 	EndIf
-	Return Map_WaitMapLoading($a_i_MapID)
+	If Map_WaitMapLoading($a_i_MapID) Then Return True
+	Out("[Move] Did not zone to map " & $a_i_MapID & " from " & $l_i_StartMap & " (now " & Map_GetMapID() & " at " & Round(Agent_GetAgentInfo(-2, "X")) & ", " & Round(Agent_GetAgentInfo(-2, "Y")) & ")")
+	Return False
 EndFunc
 
 ; Walk the Lost Treasure entrance portal back to Ran Musu. Used when a completed
@@ -280,9 +368,18 @@ Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
 	If Map_GetMapID() = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
 		If Not $a_b_Rezone Then Return True
 		Out("[Move] Rezoning map " & $a_i_MapID & " to reset position")
-		If Map_RndTravel($a_i_MapID, True, True) Then Return True
+		If Map_RndTravel($a_i_MapID, True, True) Then Return Leveler_WaitUntilMapReady()
+		Out("[Move] RndTravel rezone failed; trying Map_TravelTo")
+		If Map_TravelTo($a_i_MapID) Then
+			If Leveler_WaitUntilMapReady() And Map_GetMapID() = $a_i_MapID Then Return True
+		EndIf
 		Out("[Move] Rezone failed; walking from the current position")
 		Return True
+	EndIf
+	; Travel to a locked mission OP from Haiju resigns/wipes and never loads 213.
+	If Not Map_IsMapUnlocked($a_i_MapID) Then
+		Out("[Move] Not traveling to map " & $a_i_MapID & "; it is not unlocked")
+		Return False
 	EndIf
 	If Map_GetInstanceInfo("IsExplorable") Then
 		Out("[Move] Leaving explorable map " & Map_GetMapID() & " to travel to " & $a_i_MapID)
@@ -322,7 +419,8 @@ Func Leveler_StepOutpost($a_i_Step)
 			If Map_IsMapUnlocked($MAP_ZEN_OP) Then Return $MAP_ZEN_OP
 			Return $MAP_SEITUNG
 		Case $LEVELER_STEP_ZEN_MISSION
-			Return $MAP_ZEN_OP
+			If Map_IsMapUnlocked($MAP_ZEN_OP) Then Return $MAP_ZEN_OP
+			Return 0
 		Case $LEVELER_STEP_TO_MARKET
 			If Map_IsMapUnlocked($MAP_MARKETPLACE) Then Return $MAP_MARKETPLACE
 			Return $MAP_ZEN_OP
@@ -388,7 +486,9 @@ Func Leveler_StepAllowsMap($a_i_Step, $a_i_Map)
 			If Map_IsMapUnlocked($MAP_ZEN_OP) Then Return $a_i_Map = $MAP_ZEN_OP
 			Return $a_i_Map = $MAP_JAYA Or $a_i_Map = $MAP_HAIJU
 		Case $LEVELER_STEP_ZEN_MISSION
-			Return $a_i_Map = $MAP_ZEN_EXP Or $a_i_Map = $MAP_ZEN_OP
+			If $a_i_Map = $MAP_ZEN_EXP Or $a_i_Map = $MAP_ZEN_OP Then Return True
+			If Not Map_IsMapUnlocked($MAP_ZEN_OP) Then Return $a_i_Map = $MAP_JAYA Or $a_i_Map = $MAP_HAIJU Or $a_i_Map = $MAP_SEITUNG
+			Return False
 		Case $LEVELER_STEP_TO_MARKET
 			If Map_IsMapUnlocked($MAP_MARKETPLACE) Then Return $a_i_Map = $MAP_MARKETPLACE
 			Return $a_i_Map = $MAP_KAINENG_DOCKS
@@ -721,6 +821,7 @@ Func Leveler_CombatTick()
 	EndIf
 	If Not Leveler_ShouldFightHere() Then Return
 	If Not Leveler_PrepareCombatAI() Then Return
+	If $g_b_SpiritRiftWatch Then Leveler_InterruptSpiritRifts()
 	UAI_Fight(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $LEVELER_AGGRO, $LEVELER_FIGHT_RANGE_OUT)
 EndFunc
 

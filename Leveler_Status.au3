@@ -458,6 +458,7 @@ Func Leveler_StatusCheck()
 	Local $l_b_Seitung = Map_IsMapUnlocked($MAP_SEITUNG) Or $l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_SAOSHANG Or $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU Or $l_i_Map = $MAP_ZEN_OP
 	Local $l_b_TsumeiPath = $l_i_Map = $MAP_TSUMEI Or $l_i_Map = $MAP_PANJIANG
 	Local $l_b_ZenOp = Map_IsMapUnlocked($MAP_ZEN_OP) Or $l_i_Map = $MAP_ZEN_OP
+	; Path maps only. Do not treat this as To Zen complete; 213 is still locked.
 	Local $l_b_ToZenPath = $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU
 	Local $l_b_ShingJea = Map_IsMapUnlocked($MAP_SHING_JEA) Or $l_i_Map = $MAP_SHING_JEA Or $l_b_Cho Or $l_b_RanMusu Or $l_b_Seitung
 	Local $l_b_SeitungArmor = Leveler_HasSeitungArmor()
@@ -546,7 +547,11 @@ Func Leveler_StatusCheck()
 	Else
 		$g_ab_StepDone[$LEVELER_STEP_DESTROY_MON] = (Not Leveler_HasMonasteryArmor()) And ($l_b_SeitungArmor Or $l_b_ZenOp Or $l_b_ToZenPath)
 	EndIf
-	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp Or $l_b_ToZenPath
+	; Jaya / Haiju are the walk to Zen, not arrival. 213 stays locked until Hanjui.
+	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp
+	If $l_b_ToZenPath And Not $l_b_ZenOp Then
+		Out("[Status] On map " & $l_i_Map & " but Zen Daijun (213) is not unlocked. Staying on To Zen / Hanjui, not the mission.")
+	EndIf
 	$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or ($l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Not $l_b_ToZenPath)
 	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = (Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) And $l_i_Map <> $MAP_KAINENG_DOCKS
 	$g_ab_StepDone[$LEVELER_STEP_TO_KC] = $l_b_Kaineng
