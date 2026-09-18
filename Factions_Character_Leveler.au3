@@ -2,6 +2,8 @@
 Opt("GUIOnEventMode", True)
 Opt("GUICloseOnESC", False)
 Opt("ExpandVarStrings", 1)
+Opt("TrayAutoPause", 0)
+Opt("TrayMenuMode", 1)
 
 #include "../../API/_GwAu3.au3"
 #include "Leveler_Const.au3"
@@ -40,7 +42,7 @@ Next
 #Region GUI
 $g_h_MainGui = GUICreate($GC_S_BOT_TITLE, 640, 480, -1, -1, -1, BitOR($WS_EX_TOPMOST, $WS_EX_WINDOWEDGE))
 GUISetBkColor(0xEAEAEA, $g_h_MainGui)
-GUICtrlCreateGroup("Factions Leveler  -  Phase 1-5 (through Vaettir NPC)", 8, 8, 624, 464)
+GUICtrlCreateGroup("Factions Leveler  -  through remaining secondary professions", 8, 8, 624, 464)
 
 Global $g_h_NameCombo
 If $GC_B_LOAD_LOGGED_CHARS Then
@@ -64,6 +66,9 @@ GUICtrlSetOnEvent($g_h_StartButton, "GuiButtonHandler")
 $g_h_PauseButton = GUICtrlCreateButton("Pause", 112, 72, 80, 25)
 GUICtrlSetOnEvent($g_h_PauseButton, "GuiButtonHandler")
 GUICtrlSetState($g_h_PauseButton, $GUI_DISABLE)
+; Keep Enter from activating Pause once Start is disabled.
+Global $g_h_DummyDefault = GUICtrlCreateButton("", -200, -200, 1, 1)
+GUICtrlSetState($g_h_DummyDefault, BitOR($GUI_HIDE, $GUI_DEFBUTTON))
 
 $g_h_RefreshButton = GUICtrlCreateButton("Refresh", 200, 72, 80, 25)
 GUICtrlSetOnEvent($g_h_RefreshButton, "GuiButtonHandler")
@@ -90,8 +95,8 @@ GUISetOnEvent($GUI_EVENT_CLOSE, "_Exit")
 GUISetState(@SW_SHOW)
 #EndRegion GUI
 
-Out("Factions Character Leveler (Phase 1-5)")
-Out("Port of the Py4GW Factions bot through attribute quest 2, Kryta, Elona, and Vaettir unlock.")
+Out("Factions Character Leveler")
+Out("Port of the Py4GW Factions bot through remaining secondary professions.")
 Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
 Out("")
@@ -106,7 +111,7 @@ While 1
 			$g_b_NeedStatusCheck = False
 			Out("Starting at step: " & $g_i_Step & " — " & $g_as_StepNames[$g_i_Step])
 		ElseIf $g_i_Step >= $LEVELER_STEP_DONE Then
-			Out("Phase 1-5 complete. Post-20 unlocks finished (Kilroy, Olias, GToB, Vaettir NPC if A/Me).")
+			Out("Remaining secondary professions unlocked. Leveler is done.")
 			$g_b_BotRunning = False
 			GUICtrlSetData($g_h_StartButton, "Start")
 			GUICtrlSetState($g_h_PauseButton, $GUI_DISABLE)
@@ -143,6 +148,8 @@ Func StartBot()
 	GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
 
 	WinSetTitle($g_h_MainGui, "", Player_GetCharName() & " - " & $GC_S_BOT_TITLE)
+	GUICtrlSetState($g_h_DummyDefault, $GUI_DEFBUTTON)
+	ControlFocus($g_h_MainGui, "", $g_h_DummyDefault)
 	$g_b_BotRunning = True
 	$g_b_BotCoreInitialized = True
 	$g_b_LevelerPaused = False
@@ -173,6 +180,8 @@ Func TogglePause()
 		GUICtrlSetData($g_h_PauseButton, "Pause")
 		GUICtrlSetData($g_h_StartButton, "Running")
 		GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
+		GUICtrlSetState($g_h_DummyDefault, $GUI_DEFBUTTON)
+		ControlFocus($g_h_MainGui, "", $g_h_DummyDefault)
 		Out("Resuming. Status check will run on the next loop tick.")
 	EndIf
 EndFunc
@@ -233,6 +242,8 @@ Func GuiButtonHandler()
 				GUICtrlSetState($g_h_StartButton, $GUI_DISABLE)
 				GUICtrlSetData($g_h_PauseButton, "Pause")
 				GUICtrlSetState($g_h_PauseButton, $GUI_ENABLE)
+				GUICtrlSetState($g_h_DummyDefault, $GUI_DEFBUTTON)
+				ControlFocus($g_h_MainGui, "", $g_h_DummyDefault)
 				Out("Start pressed. Status check will run on the next loop tick.")
 			Else
 				StartBot()

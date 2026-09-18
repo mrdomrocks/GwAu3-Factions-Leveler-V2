@@ -311,6 +311,8 @@ Func Leveler_StepQuestID($a_i_Step)
 			Return $QUEST_SEARCH_CURE
 		Case $LEVELER_STEP_BURDEN
 			Return $QUEST_MASTERS_BURDEN
+		Case $LEVELER_STEP_EOTN_POOL
+			Return $QUEST_AGAINST_DESTROYERS
 		Case $LEVELER_STEP_ATTR_2
 			Return $QUEST_UNWELCOME
 		Case $LEVELER_STEP_KILROY
@@ -342,6 +344,15 @@ EndFunc
 
 Func Leveler_HasIncompleteQuest($a_i_QuestID)
 	Return Leveler_QuestNeedsHandIn($a_i_QuestID)
+EndFunc
+
+; Reward-ready or Fen already finished: go to Kamadan instead of re-entering Bloodstone Fen.
+Func Leveler_OliasReadyToTurnIn()
+	If $g_b_OliasFenDone Then Return True
+	If Leveler_QuestReadyForReward($QUEST_OLIAS) Then Return True
+	If Quest_GetQuestInfo($QUEST_OLIAS, "IsCompleted") Then Return True
+	If Leveler_QuestLogCompleted($QUEST_OLIAS) Then Return True
+	Return False
 EndFunc
 
 ; True in an explorable / mission. False in towns and while loading.
@@ -383,10 +394,12 @@ Func Leveler_StepHasActiveQuest($a_i_Step)
 			Return Leveler_QuestNeedsHandIn($QUEST_SEARCH_CURE)
 		Case $LEVELER_STEP_TO_BOREAL
 			Return Leveler_QuestNeedsHandIn($QUEST_EARTH_MOVE)
-		Case $LEVELER_STEP_TO_EOTN
-			Return Leveler_QuestNeedsHandIn($QUEST_EARTH_MOVE) Or Leveler_QuestNeedsHandIn($QUEST_AGAINST_DESTROYERS)
+		Case $LEVELER_STEP_TO_EOTN, $LEVELER_STEP_EOTN_POOL
+			Return Leveler_QuestNeedsHandIn($QUEST_AGAINST_DESTROYERS)
 		Case $LEVELER_STEP_ATTR_2
 			Return Leveler_QuestNeedsHandIn($QUEST_UNWELCOME)
+		Case $LEVELER_STEP_TO_GUNNAR
+			Return Leveler_QuestNeedsHandIn($QUEST_NORNBEAR)
 		Case $LEVELER_STEP_KILROY
 			Return Leveler_QuestNeedsHandIn($QUEST_PUNCH_CLOWN)
 		Case $LEVELER_STEP_TO_LA

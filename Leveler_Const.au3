@@ -1,6 +1,6 @@
 #include-once
 
-; Phase 1-5 step indices (Overlook through Vaettir NPC)
+; Phase 1-5 step indices (Overlook through remaining secondary professions)
 Global Const $LEVELER_STEP_OVERLOOK = 0
 Global Const $LEVELER_STEP_PARTY = 1
 Global Const $LEVELER_STEP_SECONDARY = 2
@@ -31,20 +31,17 @@ Global Const $LEVELER_STEP_UNLOCK_MOX = 26
 Global Const $LEVELER_STEP_TO_BOREAL = 27
 Global Const $LEVELER_STEP_TO_EOTN = 28
 Global Const $LEVELER_STEP_EOTN_POOL = 29
-Global Const $LEVELER_STEP_FARM_20 = 30
-Global Const $LEVELER_STEP_ATTR_2 = 31
-Global Const $LEVELER_STEP_TO_GUNNAR = 32
-Global Const $LEVELER_STEP_KILROY = 33
+Global Const $LEVELER_STEP_ATTR_2 = 30
+Global Const $LEVELER_STEP_TO_GUNNAR = 31
+Global Const $LEVELER_STEP_KILROY = 32
+Global Const $LEVELER_STEP_FARM_20 = 33
 Global Const $LEVELER_STEP_TO_LA = 34
 Global Const $LEVELER_STEP_TO_KAMADAN = 35
 Global Const $LEVELER_STEP_TO_DOCKS = 36
 Global Const $LEVELER_STEP_UNLOCK_OLIAS = 37
 Global Const $LEVELER_STEP_UNLOCK_PROFS = 38
-Global Const $LEVELER_STEP_UNLOCK_MERCS = 39
-Global Const $LEVELER_STEP_TO_LONGEYE = 40
-Global Const $LEVELER_STEP_VAETTIR = 41
-Global Const $LEVELER_STEP_DONE = 42
-Global Const $LEVELER_STEP_COUNT = 43
+Global Const $LEVELER_STEP_DONE = 39
+Global Const $LEVELER_STEP_COUNT = 40
 
 Global $g_as_StepNames[$LEVELER_STEP_COUNT] = [ _
 		"Exit Monastery Overlook", _
@@ -77,18 +74,15 @@ Global $g_as_StepNames[$LEVELER_STEP_COUNT] = [ _
 		"To Boreal Station", _
 		"To Eye of the North", _
 		"Unlock Eye of the North Pool", _
-		"Farm Until Level 20", _
 		"Quest: An Unwelcome Guest", _
 		"To Gunnar's Hold", _
 		"Unlock Kilroy Stonekin", _
+		"Farm Until Level 20", _
 		"To Lion's Arch", _
 		"To Kamadan", _
 		"To Consulate Docks", _
 		"Unlock Olias", _
 		"Unlock Remaining Secondary Professions", _
-		"Unlock Mercenary Heroes", _
-		"To Longeye's Ledge", _
-		"Unlock NPC for Vaettir Farm", _
 		"Done" _
 		]
 Global $g_ab_StepDone[$LEVELER_STEP_COUNT]
@@ -124,6 +118,7 @@ Global Const $MAP_AB = 849
 Global Const $MAP_NORRHART = 548
 Global Const $MAP_GUNNAR = 644
 Global Const $MAP_KILROY = 703
+Global Const $MAP_FRONIS = 704
 Global Const $MAP_LIONS_ARCH = 55
 Global Const $MAP_BEJUNKAN = 290
 Global Const $MAP_LIONS_GATE = 415
@@ -158,6 +153,7 @@ Global Const $QUEST_KNOWLEDGEABLE_ASURA = 915
 Global Const $QUEST_UNWELCOME = 348
 Global Const $QUEST_NORNBEAR = 808
 Global Const $QUEST_PUNCH_CLOWN = 858
+Global Const $QUEST_PUNCH_EXTRAVAGANZA = 856
 Global Const $QUEST_CHAOS_KRYTA = 479
 Global Const $QUEST_SUNSPEARS_CANTHA = 724
 Global Const $QUEST_OLIAS = 782
@@ -246,6 +242,11 @@ Global Const $DIALOG_EARTH_ACCEPT = 0x833501
 Global Const $DIALOG_DESTROYERS_STEP1 = 0x839104
 Global Const $DIALOG_POOL_CINEMATIC = 0x800001
 Global Const $DIALOG_POOL_STEP3 = 0x63C
+; Look deep into the pool.
+Global Const $DIALOG_POOL_LOOK_DEEP = 0x63D
+; I'll keep my eyes open. I don't want to miss anything.
+Global Const $DIALOG_POOL_EYES_OPEN = 0x63F
+Global Const $DIALOG_POOL_SEND = 0xD
 Global Const $DIALOG_GWEN_TAPESTRY = 0x89
 Global Const $DIALOG_VANGUARD_STEP = 0x831904
 Global Const $DIALOG_KEIRAN_BOW = 0x8A
@@ -258,6 +259,16 @@ Global Const $DIALOG_ZEN_SKIP = 0x80000B
 Global Const $DIALOG_NORNBEAR_ACCEPT = 0x832801
 Global Const $DIALOG_PUNCH_ACCEPT = 0x835A01
 Global Const $DIALOG_PUNCH_COMPLETE = 0x835A07
+Global Const $DIALOG_FRONIS_INTRO = 0x835803
+Global Const $DIALOG_FRONIS_ACCEPT = 0x835801
+Global Const $DIALOG_FRONIS_ENTER = 0x85
+Global Const $DIALOG_FRONIS_REWARD = 0x835807
+Global Const $KILROY_NPC_X = 17341.00
+Global Const $KILROY_NPC_Y = -4796.00
+Global Const $FRONIS_START_X = -16919.56
+Global Const $FRONIS_START_Y = -13485.12
+Global Const $FRONIS_CHEST_X = 13275.00
+Global Const $FRONIS_CHEST_Y = -16039.00
 Global Const $DIALOG_CHAOS_ACCEPT = 0x81DF01
 Global Const $DIALOG_CHAOS_STEP1 = 0x81DF04
 Global Const $DIALOG_CHAOS_STEP3 = 0x85
@@ -270,7 +281,6 @@ Global Const $DIALOG_UNLOCK_DOCKS = 0x85
 Global Const $DIALOG_OLIAS_ACCEPT = 0x830E01
 Global Const $DIALOG_OLIAS_STEP2 = 0x830E04
 Global Const $DIALOG_OLIAS_COMPLETE = 0x830E07
-Global Const $DIALOG_MERC_HEROES = 0x800004
 Global Const $DIALOG_PROF_WARRIOR = 0x184
 Global Const $DIALOG_PROF_RANGER = 0x284
 Global Const $DIALOG_PROF_MONK = 0x384
@@ -296,8 +306,22 @@ Global Const $MODEL_BROTHER_TOSAI = 3171
 Global Const $MODEL_BURDEN_NPC = 3307
 Global Const $MODEL_CURE_LOOT = 6496
 Global Const $MODEL_DESTROYERS_NPC = 6034
+Global Const $MODEL_JORA = 6034
+Global Const $MODEL_JORA_ALT = 6374
+Global Const $JORA_ICE_CLIFF_X = 2825.00
+Global Const $JORA_ICE_CLIFF_Y = -481.00
 Global Const $MODEL_GWEN = 6021
 Global Const $MODEL_EOTN_POOL = 5959
+Global Const $GWEN_HOM_X = -6583.00
+Global Const $GWEN_HOM_Y = 6672.00
+Global Const $EOTN_POOL_X = -6662.00
+Global Const $EOTN_POOL_Y = 6234.60
+Global Const $EOTN_POOL_TILE_X = -6662.00
+Global Const $EOTN_POOL_TILE_Y = 6584.00
+Global Const $OGDEN_HOM_X = -6133.41
+Global Const $OGDEN_HOM_Y = 5717.30
+Global Const $VEKK_HOM_X = -5626.80
+Global Const $VEKK_HOM_Y = 6259.57
 Global Const $MODEL_OGDEN = 5983
 Global Const $MODEL_VEKK = 5964
 Global Const $MODEL_KEIRAN_BOW = 35829
@@ -308,8 +332,11 @@ Global Const $MODEL_CHAOS_STEP3 = 2011
 Global Const $MODEL_SUNSPEARS_NPC = 4914
 Global Const $MODEL_SUNSPEARS_COMPLETE = 4829
 Global Const $MODEL_GTOB_TRAINER = 201
-Global Const $MODEL_MERC_NPC = 225
 Global Const $MODEL_BRASS_KNUCKLES = 24897
+; Michiko [Skills] in Kaineng Center, north edge near the Bejunkan Pier exit.
+Global Const $MODEL_MICHIKO = 3295
+Global Const $MICHIKO_KAINENG_X = -1661.91
+Global Const $MICHIKO_KAINENG_Y = -636.09
 
 ; Merchant bags
 Global Const $MODEL_BAG = 16
@@ -319,7 +346,7 @@ Global Const $MODEL_BELT_POUCH = 34
 Global Const $SKILL_ENERGY_BURN = 42
 Global Const $SKILL_LEECH_SIGNET = 61
 Global Const $SKILL_SIGNET_OF_DISRUPTION = 860
-; Xu Fengxia / Michiko (Ran Musu, then Kaineng).
+; Michiko in Kaineng: Cry of Frustration and Power Drain.
 Global Const $SKILL_CRY_OF_FRUSTRATION = 57
 Global Const $SKILL_POWER_DRAIN = 25
 Global Const $SKILL_BACKFIRE = 54
@@ -369,3 +396,13 @@ Global $g_b_ConnectionLost = False
 Global $g_b_LostTreasureToTenguOnce = False
 ; Set on Start only. Stay in an explorable after a client/script restart; do not block the next quest.
 Global $g_b_ExplorableResume = False
+; Sticky after this character has entered Gunnar's Hold.
+Global $g_b_ReachedGunnar = False
+; Sticky after Bloodstone Fen for All for One and One for Justice.
+Global $g_b_OliasFenDone = False
+; Sticky after Olias is in the party or can be added.
+Global $g_b_OliasUnlocked = False
+; Sticky after the Bukdek dialog actually puts Mox on the hero list.
+Global $g_b_MoxUnlocked = False
+; Sticky after GToB trainer dialogs.
+Global $g_b_SecondaryProfsTalked = False

@@ -30,9 +30,59 @@ Func Leveler_HasMesmer()
 	Return Leveler_PrimaryProfession() = $GC_I_PROFESSION_MESMER Or Leveler_SecondaryProfession() = $GC_I_PROFESSION_MESMER
 EndFunc
 
-Func Leveler_NeedsVaettirPath()
-	Local $l_i_Prof = Leveler_PrimaryProfession()
-	Return $l_i_Prof = $GC_I_PROFESSION_ASSASSIN Or $l_i_Prof = $GC_I_PROFESSION_MESMER
+; Bitmask of professions this character can select (PartyProfession.unlocked_professions).
+Func Leveler_UnlockedProfessionFlags()
+	Local $l_i_MyID = Agent_GetMyID()
+	Local $l_i_Primary = Agent_GetAgentInfo(-2, "Primary")
+	Local $l_i_Secondary = Agent_GetAgentInfo(-2, "Secondary")
+	Local $l_p_Ptr = World_GetWorldInfo("PartyProfessionArray")
+	Local $l_i_Size = World_GetWorldInfo("PartyProfessionArraySize")
+	If $l_p_Ptr = 0 Then Return 0
+	If $l_i_Size <= 0 Then $l_i_Size = 1
+	Local $l_i_Fallback = 0
+	Local $i
+	For $i = 0 To $l_i_Size - 1
+		Local $l_p_Entry = $l_p_Ptr + ($i * 0x14)
+		Local $l_i_Agent = Memory_Read($l_p_Entry, "dword")
+		Local $l_i_Flags = Memory_Read($l_p_Entry + 0xC, "dword")
+		If $l_i_Agent = $l_i_MyID Then Return $l_i_Flags
+		If Memory_Read($l_p_Entry + 0x4, "dword") = $l_i_Primary And Memory_Read($l_p_Entry + 0x8, "dword") = $l_i_Secondary And $l_i_Flags <> 0 Then $l_i_Fallback = $l_i_Flags
+	Next
+	Return $l_i_Fallback
+EndFunc
+
+; Accept both 1<<profession and 1<<(profession-1) bit layouts.
+Func Leveler_ProfessionBitOn($a_i_Flags, $a_i_Prof)
+	If $a_i_Prof < $GC_I_PROFESSION_WARRIOR Or $a_i_Prof > $GC_I_PROFESSION_DERVISH Then Return False
+	If BitAND($a_i_Flags, BitShift(1, -$a_i_Prof)) <> 0 Then Return True
+	If BitAND($a_i_Flags, BitShift(1, -($a_i_Prof - 1))) <> 0 Then Return True
+	Return False
+EndFunc
+
+Func Leveler_ProfessionUnlockCount($a_i_Flags)
+	Local $l_i_Count = 0
+	Local $i
+	For $i = $GC_I_PROFESSION_WARRIOR To $GC_I_PROFESSION_DERVISH
+		If Leveler_ProfessionBitOn($a_i_Flags, $i) Then $l_i_Count += 1
+	Next
+	Return $l_i_Count
+EndFunc
+
+Func Leveler_IsProfessionUnlocked($a_i_Prof)
+	Return Leveler_ProfessionBitOn(Leveler_UnlockedProfessionFlags(), $a_i_Prof)
+EndFunc
+
+; GToB trainers unlock every secondary, including Paragon and Dervish.
+Func Leveler_RemainingSecondariesUnlocked()
+	If $g_b_SecondaryProfsTalked Then Return True
+	Local $l_i_Flags = Leveler_UnlockedProfessionFlags()
+	If $l_i_Flags = 0 Then Return False
+	Local $i
+	For $i = $GC_I_PROFESSION_WARRIOR To $GC_I_PROFESSION_DERVISH
+		If Not Leveler_ProfessionBitOn($l_i_Flags, $i) Then Return False
+	Next
+	$g_b_SecondaryProfsTalked = True
+	Return True
 EndFunc
 
 #EndRegion Profession
@@ -52,6 +102,99 @@ Func Leveler_HeroCount()
 	Local $l_i_Count = Party_GetPartyContextInfo("HeroCount")
 	If $l_i_Count > 0 Then Return $l_i_Count
 	Return Party_GetMyPartyInfo("ArrayHeroPartyMemberSize")
+EndFunc
+
+Func Leveler_PartyHasHero($a_i_HeroID)
+	If $a_i_HeroID <= 0 Then Return False
+	Local $l_i_Count = Leveler_HeroCount()
+	Local $i
+	For $i = 1 To $l_i_Count
+		If Party_GetMyPartyHeroInfo($i, "HeroID") = $a_i_HeroID Then Return True
+	Next
+	Return False
+EndFunc
+
+; True if Mox is in the party, can be added, or this character already reached EotN.
+Func Leveler_HasMoxUnlocked()
+	If $g_b_MoxUnlocked Then Return True
+	If Leveler_PartyHasHero($GC_I_HERO_ID_MOX) Then
+		$g_b_MoxUnlocked = True
+		Return True
+	EndIf
+	If Leveler_IsOutpost() Then
+		Party_AddHero($GC_I_HERO_ID_MOX)
+		Sleep(800)
+		If Leveler_PartyHasHero($GC_I_HERO_ID_MOX) Then
+			$g_b_MoxUnlocked = True
+			Return True
+		EndIf
+	EndIf
+	Local $l_i_Map = Map_GetMapID()
+	If Map_IsMapUnlocked($MAP_EOTN) Or $l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_ICE_CLIFF Then
+		$g_b_MoxUnlocked = True
+		Return True
+	EndIf
+	If Leveler_HasIncompleteQuest($QUEST_AGAINST_DESTROYERS) Then
+		$g_b_MoxUnlocked = True
+		Return True
+	EndIf
+	Return False
+EndFunc
+
+; Add Mox. Stay False if the Bukdek dialog did not unlock him.
+Func Leveler_ConfirmMoxInHeroList()
+	If Leveler_HasMoxUnlocked() Then
+		Out("[Step] Mox is already on the hero list")
+		Return True
+	EndIf
+	Party_LeaveGroup(True)
+	Sleep(500)
+	Party_AddHero($GC_I_HERO_ID_MOX)
+	Sleep(1500)
+	If Leveler_PartyHasHero($GC_I_HERO_ID_MOX) Then
+		$g_b_MoxUnlocked = True
+		Out("[Step] Mox is in the hero list")
+		Return True
+	EndIf
+	Out("[Step] Mox is not in the hero list after the unlock dialog")
+	Return False
+EndFunc
+
+; True if Olias is already in the party or can be added in this outpost.
+Func Leveler_HasOliasUnlocked()
+	If $g_b_OliasUnlocked Then Return True
+	If Leveler_PartyHasHero($GC_I_HERO_ID_OLIAS) Then
+		$g_b_OliasUnlocked = True
+		Return True
+	EndIf
+	If Not Leveler_IsOutpost() Then Return False
+	Party_AddHero($GC_I_HERO_ID_OLIAS)
+	Sleep(800)
+	If Leveler_PartyHasHero($GC_I_HERO_ID_OLIAS) Then
+		$g_b_OliasUnlocked = True
+		Return True
+	EndIf
+	Return False
+EndFunc
+
+; Add Olias. Stay False if the Kamadan reward did not unlock him.
+Func Leveler_ConfirmOliasInHeroList()
+	If Leveler_HasOliasUnlocked() Then
+		Out("[Step] Olias is already on the hero list")
+		Return True
+	EndIf
+	If Not Leveler_IsOutpost() Then Return False
+	Party_LeaveGroup(True)
+	Sleep(500)
+	Party_AddHero($GC_I_HERO_ID_OLIAS)
+	Sleep(1500)
+	If Leveler_PartyHasHero($GC_I_HERO_ID_OLIAS) Then
+		$g_b_OliasUnlocked = True
+		Out("[Step] Olias is in the hero list")
+		Return True
+	EndIf
+	Out("[Step] Olias is not in the hero list after the unlock dialog")
+	Return False
 EndFunc
 
 Func Leveler_FormingPartyHenchIDs()
@@ -87,9 +230,14 @@ Func Leveler_HenchmenForMap($a_i_Map = 0)
 		Local $l_ai_Eotn[7] = [2, 3, 5, 6, 7, 9, 10]
 		Return $l_ai_Eotn
 	EndIf
-	If $a_i_Map = $MAP_GUNNAR Or $a_i_Map = $MAP_LONGEYE Then
+	If $a_i_Map = $MAP_GUNNAR Then
 		Local $l_ai_Gunnar[3] = [4, 5, 6]
 		Return $l_ai_Gunnar
+	EndIf
+	; EotN hench order: 1 Devona, 2 Talon, 3 Aidan, 4 Zho, 5 Lina, 6 Mhenlo, 7 Eve, 8 Lo Sha, 9 Cynn, 10 Herta
+	If $a_i_Map = $MAP_LONGEYE Then
+		Local $l_ai_Longeye[3] = [6, 4, 8]
+		Return $l_ai_Longeye
 	EndIf
 	If $a_i_Map = $MAP_LIONS_ARCH Then
 		Local $l_ai_La[1] = [1]
@@ -138,13 +286,21 @@ Func Leveler_EnsureFormingPartyHenchmen()
 	Return True
 EndFunc
 
-Func Leveler_AddHeroTeam()
-	Local $l_ai_Heroes[4] = [$GC_I_HERO_ID_GWEN, $GC_I_HERO_ID_VEKK, $GC_I_HERO_ID_OGDEN_STONEHEALER, $GC_I_HERO_ID_MOX]
+Func Leveler_AddHeroTeam($a_b_Olias = False)
+	Local $l_i_Fourth = $GC_I_HERO_ID_MOX
+	Local $l_s_FourthBar = "OgCikys8wchuD4xb5VAAAAAA"
+	Local $l_s_FourthName = "MOX"
+	If $a_b_Olias Then
+		$l_i_Fourth = $GC_I_HERO_ID_OLIAS
+		$l_s_FourthBar = "OAhjQoGYIP3hhWVVaO5EeDTqNA"
+		$l_s_FourthName = "Olias"
+	EndIf
+	Local $l_ai_Heroes[4] = [$GC_I_HERO_ID_GWEN, $GC_I_HERO_ID_VEKK, $GC_I_HERO_ID_OGDEN_STONEHEALER, $l_i_Fourth]
 	Local $l_as_Bars[4] = [ _
 			"OQhkAsC8gFKgGckjHFRUGCA", _
 			"OgVDI8gsCawROeUEtZIA", _
 			"OwUUMsG/E4GgMnZskzkIZQAA", _
-			"OgCikys8wchuD4xb5VAAAAAA" _
+			$l_s_FourthBar _
 			]
 	Local $i
 	For $i = 0 To 3
@@ -157,17 +313,17 @@ Func Leveler_AddHeroTeam()
 		Sleep(400)
 		Party_SetHeroAggression($i + 1, 1)
 	Next
-	Out("[Party] Added Gwen, Vekk, Ogden, MOX")
+	Out("[Party] Added Gwen, Vekk, Ogden, " & $l_s_FourthName)
 	Return True
 EndFunc
 
-Func Leveler_PrepareHeroTeam($a_ai_Hench = 0)
+Func Leveler_PrepareHeroTeam($a_ai_Hench = 0, $a_b_Olias = False)
 	$g_b_CombatMode = True
 	$g_b_UAIReady = False
 	Leveler_EquipSkillBar()
 	Party_LeaveGroup(True)
 	Sleep(400)
-	Leveler_AddHeroTeam()
+	Leveler_AddHeroTeam($a_b_Olias)
 	If IsArray($a_ai_Hench) Then Leveler_AddHenchmanList($a_ai_Hench)
 	Return True
 EndFunc
@@ -281,12 +437,12 @@ Func Leveler_PrepareCombatAI()
 	$g_b_CombatMode = True
 	Local $l_i_Map = Map_GetMapID()
 	If $l_i_Map <> $g_i_LastUAIMap Then $g_b_UAIReady = False
-	If Not Map_GetInstanceInfo("IsExplorable") Then
+	If Not Leveler_ShouldFightHere() Then
 		$g_b_UAIReady = False
 		Return True
 	EndIf
 	If $g_b_UAIReady And $g_i_LastUAIMap = $l_i_Map Then Return True
-	If Not Cache_SkillBar() Then
+	If Not Leveler_CacheSkillBarNow() Then
 		Out("[Combat] Cache_SkillBar failed on map " & $l_i_Map)
 		Return False
 	EndIf
@@ -296,7 +452,7 @@ Func Leveler_PrepareCombatAI()
 	Return True
 EndFunc
 
-; After a map load the old instance cache is invalid. Wait until this map is explorable, then recache.
+; After a map load the old instance cache is invalid. Wait until this map can fight, then recache.
 Func Leveler_CacheUtilityAIForMap($a_i_MapID)
 	$g_b_CombatMode = True
 	$g_b_UAIReady = False
@@ -304,24 +460,41 @@ Func Leveler_CacheUtilityAIForMap($a_i_MapID)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < 15000
 		If $g_b_LevelerPaused Then Return False
-		If Map_GetMapID() = $a_i_MapID And Map_GetInstanceInfo("IsExplorable") And Not Map_GetInstanceInfo("IsLoading") Then ExitLoop
+		If Map_GetMapID() = $a_i_MapID And Not Map_GetInstanceInfo("IsLoading") And Leveler_ShouldFightHere() Then ExitLoop
 		Sleep(200)
 	WEnd
 	If Map_GetMapID() <> $a_i_MapID Then
 		Out("[Combat] Wanted map " & $a_i_MapID & " for UtilityAI, now " & Map_GetMapID())
 		Return False
 	EndIf
-	If Not Map_GetInstanceInfo("IsExplorable") Then
-		Out("[Combat] Map " & $a_i_MapID & " is not explorable yet")
+	If Not Leveler_ShouldFightHere() Then
+		Out("[Combat] Map " & $a_i_MapID & " is not ready for UtilityAI yet")
 		Return False
 	EndIf
-	If Not Cache_SkillBar() Then
+	If Not Leveler_CacheSkillBarNow() Then
 		Out("[Combat] Cache_SkillBar failed on map " & $a_i_MapID)
 		Return False
 	EndIf
 	$g_i_LastUAIMap = $a_i_MapID
 	$g_b_UAIReady = True
 	Out("[Combat] UtilityAI skill bar cached on map " & $a_i_MapID)
+	Return True
+EndFunc
+
+; Fronis is a dungeon (instance type is not always Explorable). Cache anyway.
+Func Leveler_CacheSkillBarNow()
+	If Map_GetInstanceInfo("IsLoading") Then Return False
+	If Map_GetInstanceInfo("IsExplorable") Then
+		If Cache_SkillBar() Then Return True
+	EndIf
+	If Not Leveler_IsPunchoutMap() Then Return False
+	UAI_CacheSkillBar()
+	Local $i
+	For $i = 1 To 8
+		$g_as_BestTargetCache[$i] = UAI_GetBestTargetFunc($i)
+		$g_as_CanUseCache[$i] = UAI_GetCanUseFunc($i)
+	Next
+	If $g_b_CacheWeaponSet Then UAI_DetermineWeaponSets()
 	Return True
 EndFunc
 

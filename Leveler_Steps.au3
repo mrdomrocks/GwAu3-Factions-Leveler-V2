@@ -3,6 +3,13 @@
 Func Leveler_ExecuteStep($a_i_Step)
 	If $g_b_LevelerPaused Then Return False
 	If Not Leveler_WaitUntilMapReady() Then Return False
+	Local $l_i_Map = Map_GetMapID()
+	If Leveler_HasIncompleteQuest($QUEST_AGAINST_DESTROYERS) And Not Leveler_HomHeroesTalked() And ($l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM) And $a_i_Step <> $LEVELER_STEP_EOTN_POOL Then
+		Out("[Step] Against the Destroyers is in the log. Not traveling for '" & $g_as_StepNames[$a_i_Step] & "'. Switching to Hall of Monuments.")
+		$g_i_Step = $LEVELER_STEP_EOTN_POOL
+		Leveler_UpdateStepCombo()
+		$a_i_Step = $LEVELER_STEP_EOTN_POOL
+	EndIf
 	If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	If Leveler_IsWiped() Then
 		Out("[Step] Wipe detected before '" & $g_as_StepNames[$a_i_Step] & "'. Recovering.")
@@ -72,14 +79,14 @@ Func Leveler_ExecuteStep($a_i_Step)
 			$l_b_Ok = Leveler_Step_ToEyeOfTheNorth()
 		Case $LEVELER_STEP_EOTN_POOL
 			$l_b_Ok = Leveler_Step_UnlockEotnPool()
-		Case $LEVELER_STEP_FARM_20
-			$l_b_Ok = Leveler_Step_FarmUntil20()
 		Case $LEVELER_STEP_ATTR_2
 			$l_b_Ok = Leveler_Step_AnUnwelcomeGuest()
 		Case $LEVELER_STEP_TO_GUNNAR
 			$l_b_Ok = Leveler_Step_ToGunnarsHold()
 		Case $LEVELER_STEP_KILROY
 			$l_b_Ok = Leveler_Step_UnlockKilroy()
+		Case $LEVELER_STEP_FARM_20
+			$l_b_Ok = Leveler_Step_FarmUntil20()
 		Case $LEVELER_STEP_TO_LA
 			$l_b_Ok = Leveler_Step_ToLionsArch()
 		Case $LEVELER_STEP_TO_KAMADAN
@@ -90,12 +97,6 @@ Func Leveler_ExecuteStep($a_i_Step)
 			$l_b_Ok = Leveler_Step_UnlockOlias()
 		Case $LEVELER_STEP_UNLOCK_PROFS
 			$l_b_Ok = Leveler_Step_UnlockSecondaryProfs()
-		Case $LEVELER_STEP_UNLOCK_MERCS
-			$l_b_Ok = Leveler_Step_UnlockMercenaries()
-		Case $LEVELER_STEP_TO_LONGEYE
-			$l_b_Ok = Leveler_Step_ToLongeyesLedge()
-		Case $LEVELER_STEP_VAETTIR
-			$l_b_Ok = Leveler_Step_UnlockVaettirNpc()
 		Case Else
 			Return True
 	EndSwitch
@@ -111,11 +112,57 @@ Func Leveler_ExecuteStep($a_i_Step)
 			Out("[Step] #317 reward or Formal Introduction still missing. Staying on '" & $g_as_StepNames[$a_i_Step] & "'.")
 			Return False
 		EndIf
+		If $a_i_Step = $LEVELER_STEP_SKILLS2 And Not Leveler_Skills2Unlocked() Then
+			Out("[Step] Cry of Frustration or Power Drain still missing. Staying on Michiko.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_MAX_ARMOR And Not Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) Then
+			Out("[Step] Max armor is not equipped. Staying on the crafter.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_DESTROY_SEITUNG And Not Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) Then
+			Out("[Step] Max armor is not equipped after destroying Seitung. Staying on this step.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_UNLOCK_MOX And Not Leveler_HasMoxUnlocked() Then
+			Out("[Step] Mox is not on the hero list. Staying on Unlock Mox.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_UNLOCK_OLIAS And Not Leveler_HasOliasUnlocked() Then
+			Out("[Step] Olias is not on the hero list. Staying on Unlock Olias.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_UNLOCK_PROFS And Not Leveler_RemainingSecondariesUnlocked() Then
+			Out("[Step] Not every profession (including Paragon and Dervish) is selectable yet. Staying on this step.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_TO_BOREAL And Not Leveler_HasMoxUnlocked() Then
+			Out("[Step] Mox is not unlocked. Not leaving Kaineng for Boreal.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_EOTN_POOL And Not Leveler_EotnPoolReady() Then
+			Out("[Step] HoM heroes or Tracking the Nornbear still open. Staying on this step.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_ATTR_2 And Not Leveler_UnwelcomeGuestDone() Then
+			Out("[Step] An Unwelcome Guest is not finished. Staying on this step.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_TO_GUNNAR Then
+			If Not Leveler_ReachedGunnarsHold() Then
+				Out("[Step] Need Gunnar's Hold. Staying on this step.")
+				Return False
+			EndIf
+		EndIf
 		Local $l_i_QuestID = Leveler_StepQuestID($a_i_Step)
 		If $l_i_QuestID <> 0 And Leveler_QuestNeedsHandIn($l_i_QuestID) Then
-			Leveler_LogQuestState($l_i_QuestID, $g_as_StepNames[$a_i_Step])
-			Out("[Step] Quest #" & $l_i_QuestID & " still needs its complete dialog. Staying on '" & $g_as_StepNames[$a_i_Step] & "'.")
-			Return False
+			If $a_i_Step = $LEVELER_STEP_UNLOCK_OLIAS And Leveler_HasOliasUnlocked() Then
+				; Hero unlock is enough even if the quest is still in the log.
+			ElseIf Not (Leveler_ReachedGunnarsHold() And ($a_i_Step = $LEVELER_STEP_EOTN_POOL Or $a_i_Step = $LEVELER_STEP_ATTR_2 Or $a_i_Step = $LEVELER_STEP_TO_GUNNAR)) Then
+				Leveler_LogQuestState($l_i_QuestID, $g_as_StepNames[$a_i_Step])
+				Out("[Step] Quest #" & $l_i_QuestID & " still needs its complete dialog. Staying on '" & $g_as_StepNames[$a_i_Step] & "'.")
+				Return False
+			EndIf
 		EndIf
 		If $a_i_Step = $LEVELER_STEP_ATTR_1 And Not Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then
 			Out("[Step] Warning the Tengu already completed. Moving to The Threat Grows.")
@@ -123,6 +170,7 @@ Func Leveler_ExecuteStep($a_i_Step)
 		Else
 			$g_i_Step = $a_i_Step + 1
 		EndIf
+		If $g_i_Step >= $LEVELER_STEP_DONE Then $g_ab_StepDone[$LEVELER_STEP_DONE] = True
 		$g_b_ExplorableResume = False
 		Leveler_UpdateStepCombo()
 		Return True
@@ -364,35 +412,54 @@ Func Leveler_Step_UnlockSkills()
 	Return True
 EndFunc
 
-; Michiko in Kaineng sells Cry of Frustration, Power Drain, and Backfire.
+Func Leveler_GetMichiko()
+	Local $l_i_Npc = Leveler_GetAgentByModel($MODEL_MICHIKO)
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetAgentByName("Michiko")
+	Return $l_i_Npc
+EndFunc
+
+; Walk Kaineng Center to Michiko. Direct Map_Move from spawn hits buildings.
+Func Leveler_PathToMichiko()
+	Local $l_i_Npc = Leveler_GetMichiko()
+	If $l_i_Npc <> 0 And Agent_GetDistance($l_i_Npc) < 600 Then
+		Out("[Step] Already near Michiko")
+		Return True
+	EndIf
+
+	Out("[Step] Pathing to Michiko (model " & $MODEL_MICHIKO & ") near Bejunkan")
+	Local $l_af_Path[3][2] = [ _
+			[1592.00, -796.00], _
+			[1784.00, 991.00], _
+			[$MICHIKO_KAINENG_X, $MICHIKO_KAINENG_Y] _
+			]
+	If Not Leveler_FollowCoords($l_af_Path, False) Then Return False
+	Return True
+EndFunc
+
+; Michiko in Kaineng sells Cry of Frustration and Power Drain.
 Func Leveler_BuyKainengInterrupts()
 	If Leveler_Skills2Unlocked() Then
 		Return Leveler_EquipTrainerSkills()
 	EndIf
 	If Map_GetMapID() <> $MAP_KAINENG Then Return False
-	Local $l_i_Npc = Leveler_GetAgentByName("Michiko")
+	If Not Leveler_PathToMichiko() Then Return False
+
+	Local $l_i_Npc = Leveler_GetMichiko()
 	If $l_i_Npc = 0 Then
-		Out("[Step] Michiko not found in Kaineng")
+		Out("[Step] Michiko (model " & $MODEL_MICHIKO & ") not found in Kaineng")
 		Return False
 	EndIf
 	Local $l_f_X = Agent_GetAgentInfo($l_i_Npc, "X")
 	Local $l_f_Y = Agent_GetAgentInfo($l_i_Npc, "Y")
-	If Not Leveler_MoveAndDialog($l_f_X, $l_f_Y, $DIALOG_GENERIC_TALK, False, Agent_GetAgentInfo($l_i_Npc, "PlayerNumber")) Then Return False
+	Out("[Step] Talking to Michiko at " & Round($l_f_X) & ", " & Round($l_f_Y))
+	If Not Leveler_MoveAndDialog($l_f_X, $l_f_Y, $DIALOG_GENERIC_TALK, False, $MODEL_MICHIKO) Then Return False
 	Sleep(3000)
 	If Not Leveler_BuySkillIfNeeded($SKILL_CRY_OF_FRUSTRATION) Then Return False
 	Sleep(400)
 	If Not Leveler_BuySkillIfNeeded($SKILL_POWER_DRAIN) Then Return False
 	Sleep(400)
-	If Leveler_HasMesmer() Then
-		If Not Leveler_BuySkillIfNeeded($SKILL_BACKFIRE) Then Return False
-		Sleep(400)
-	EndIf
 	Leveler_CloseTrainerWindow()
-	If Leveler_HasMesmer() Then
-		Out("[Step] Bought Cry of Frustration, Power Drain, and Backfire from Michiko")
-	Else
-		Out("[Step] Bought Cry of Frustration and Power Drain from Michiko")
-	EndIf
+	Out("[Step] Bought Cry of Frustration and Power Drain from Michiko")
 	Return Leveler_EquipTrainerSkills()
 EndFunc
 
@@ -1248,7 +1315,7 @@ Func Leveler_Step_CompleteSkillsTraining()
 	$g_s_CurrentHeader = "Complete Skills Training"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_Skills2Unlocked() Then
-		Out("[Step] Final trainer skills already acquired")
+		Out("[Step] Cry of Frustration and Power Drain already acquired")
 		Return Leveler_EquipTrainerSkills()
 	EndIf
 	If Map_GetMapID() <> $MAP_KAINENG Or Not Map_GetInstanceInfo("IsOutpost") Then
@@ -1256,10 +1323,12 @@ Func Leveler_Step_CompleteSkillsTraining()
 	EndIf
 	Leveler_SetPacifist()
 	If Not Leveler_BuyKainengInterrupts() Then Return False
+	Out("[Step] Learnt Cry=" & World_IsSkillLearnt($SKILL_CRY_OF_FRUSTRATION) & " Drain=" & World_IsSkillLearnt($SKILL_POWER_DRAIN))
 	If Not Leveler_Skills2Unlocked() Then
 		Out("[Step] Michiko skills were not all learnt. Staying on the trainer.")
 		Return False
 	EndIf
+	Out("[Step] Cry of Frustration and Power Drain learnt from Michiko")
 	Return True
 EndFunc
 
@@ -1460,9 +1529,14 @@ EndFunc
 Func Leveler_Step_CraftMaxArmor()
 	$g_s_CurrentHeader = "Craft Max Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_HasMaxArmor() Then
+	Local $l_ai_Pieces = Leveler_GetMaxArmorPieces()
+	If Leveler_ArmorSetEquipped($l_ai_Pieces) Then
+		Out("[Step] Max armor is already equipped")
+		Return True
+	EndIf
+	If Leveler_ArmorSetOwned($l_ai_Pieces) Then
 		Out("[Step] Max armor already crafted. Equipping it.")
-		Return Leveler_EquipArmorPieces(Leveler_GetMaxArmorPieces())
+		Return Leveler_EquipArmorPieces($l_ai_Pieces)
 	EndIf
 
 	If Not Leveler_Travel($MAP_KAINENG) Then Return False
@@ -1471,6 +1545,7 @@ Func Leveler_Step_CraftMaxArmor()
 	If Not Leveler_MoveTo(1592.00, -796.00, False) Then Return False
 	Item_WithdrawGold(20000)
 	Sleep(400)
+	Out("[Craft] Gold after withdraw: " & Item_GetInventoryInfo("GoldCharacter"))
 	If Not Leveler_InteractNpcAt(1592.00, -796.00, False) Then Return False
 	If Not Leveler_BuyMaxArmorMaterials(True) Then Return False
 	Sleep(1500)
@@ -1489,6 +1564,11 @@ Func Leveler_Step_CraftMaxArmor()
 	If Not Leveler_InteractNpcAt($l_f_X, $l_f_Y, False) Then Return False
 	Sleep(1000)
 	If Not Leveler_CraftMaxArmor() Then Return False
+	If Not Leveler_ArmorSetEquipped($l_ai_Pieces) Then
+		Out("[Step] Max armor was not equipped after crafting")
+		Return False
+	EndIf
+	Out("[Step] Max armor crafted and equipped")
 	Return True
 EndFunc
 
@@ -1501,15 +1581,29 @@ EndFunc
 Func Leveler_Step_SearchForACure()
 	$g_s_CurrentHeader = "Quest: The Search For A Cure"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_SkipIfQuestDone($QUEST_SEARCH_CURE, "The Search For A Cure") Then Return True
+	Leveler_LogQuestState($QUEST_SEARCH_CURE, "The Search For A Cure")
+	; One-and-done. Not in the log means it was already handed in. Do not re-accept or replay Wajjun.
+	If Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
+		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
+		Out("[Step] The Search For A Cure is not in the log. Skipping; it cannot be taken again.")
+		Return True
+	EndIf
+
 	If Leveler_ShouldResumeExplorable($QUEST_SEARCH_CURE) Then
 		Out("[Step] The Search For A Cure is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")
 	EndIf
 
-	If Not Leveler_HasQuest($QUEST_SEARCH_CURE) Then
+	If Leveler_QuestReadyForReward($QUEST_SEARCH_CURE) Then
 		If Not Leveler_Travel($MAP_KAINENG) Then Return False
-		If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 3772.00, -961.00, $DIALOG_CURE_ACCEPT, "accept") Then Return False
+		If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_COMPLETE, "complete") Then Return False
+		If Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
+			Out("[Step] The Search For A Cure is still in the log after the complete dialog")
+			Return False
+		EndIf
+		Out("[Step] The Search For A Cure complete")
+		Return True
 	EndIf
+
 	If Map_GetMapID() = $MAP_KAINENG Then
 		If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_STEP, "step") Then Return False
 	EndIf
@@ -1530,7 +1624,18 @@ Func Leveler_Step_SearchForACure()
 	Sleep(5000)
 
 	If Not Leveler_Travel($MAP_KAINENG) Then Return False
-	If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_COMPLETE, "complete") Then Return False
+	If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_COMPLETE, "complete") Then
+		If Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
+			Out("[Step] The Search For A Cure is no longer in the log. Treating the hand-in as done.")
+			Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
+			Return True
+		EndIf
+		Return False
+	EndIf
+	If Leveler_QuestNeedsHandIn($QUEST_SEARCH_CURE) Or Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
+		Out("[Step] The Search For A Cure is still in the log")
+		Return False
+	EndIf
 	Out("[Step] The Search For A Cure complete")
 	Return True
 EndFunc
@@ -1538,11 +1643,33 @@ EndFunc
 Func Leveler_Step_AMastersBurden()
 	$g_s_CurrentHeader = "Quest: A Master's Burden"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_SkipIfQuestDone($QUEST_MASTERS_BURDEN, "A Master's Burden") Then Return True
+	Leveler_LogQuestState($QUEST_MASTERS_BURDEN, "A Master's Burden")
+	; One-and-done. Not in the log means it was already handed in. Do not replay Wajjun / Docks.
+	If Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
+		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
+		Leveler_MarkQuestDone($QUEST_BROTHER_TOSAI)
+		Out("[Step] A Master's Burden is not in the log. Skipping; it cannot be taken again.")
+		Return True
+	EndIf
 	If Leveler_ShouldResumeExplorable($QUEST_MASTERS_BURDEN) Then
 		Out("[Step] A Master's Burden is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")
 	Else
 		If Not Leveler_Travel($MAP_KAINENG) Then Return False
+	EndIf
+	If Leveler_QuestReadyForReward($QUEST_MASTERS_BURDEN) Then
+		If Map_GetMapID() <> $MAP_KAINENG_DOCKS Then
+			If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
+			If Not Leveler_MoveTo(12250, 18236, False) Then Return False
+			If Not Leveler_MoveTo(10343, 20329, False) Then Return False
+			If Not Map_WaitMapLoading($MAP_KAINENG_DOCKS) Then Return False
+		EndIf
+		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 9950.00, 20033.00, $DIALOG_BURDEN_COMPLETE, "complete") Then Return False
+		If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
+			Out("[Step] A Master's Burden is still in the log after the complete dialog")
+			Return False
+		EndIf
+		Out("[Step] A Master's Burden complete")
+		Return True
 	EndIf
 	If Not Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
 		Leveler_MoveAndDialog(1784.00, 991.00, $DIALOG_TOSAI_ACCEPT, False)
@@ -1584,6 +1711,10 @@ Func Leveler_Step_AMastersBurden()
 		Quest_AbandonQuest($QUEST_BROTHER_TOSAI)
 		Sleep(300)
 	EndIf
+	If Leveler_QuestNeedsHandIn($QUEST_MASTERS_BURDEN) Or Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
+		Out("[Step] A Master's Burden is still in the log")
+		Return False
+	EndIf
 	Out("[Step] A Master's Burden complete")
 	Return True
 EndFunc
@@ -1591,19 +1722,32 @@ EndFunc
 Func Leveler_Step_UnlockMox()
 	$g_s_CurrentHeader = "Unlock Mox"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_HasMoxUnlocked() Then
+		Out("[Step] Mox is already unlocked")
+		Return True
+	EndIf
+	If Leveler_ConfirmMoxInHeroList() Then
+		Out("[Step] Mox is already on the hero list")
+		Return True
+	EndIf
 	If Not Leveler_Travel($MAP_KAINENG) Then Return False
 	Leveler_PrepareForBattle()
 	If Not Leveler_MoveAndExit(3243, -4911, $MAP_BUKDEK, True) Then Return False
 	If Not Leveler_MoveAndDialog(-5803.48, 18951.70, $DIALOG_UNLOCK_MOX, True) Then Return False
 	Sleep(1000)
 	If Not Leveler_Travel($MAP_KAINENG) Then Return False
-	Out("[Step] Mox unlock dialog sent. Back in Kaineng Center.")
+	If Not Leveler_ConfirmMoxInHeroList() Then Return False
+	Out("[Step] Mox unlocked and verified in the hero list")
 	Return True
 EndFunc
 
 Func Leveler_Step_ToBorealStation()
 	$g_s_CurrentHeader = "To Boreal Station"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Not Leveler_HasMoxUnlocked() Then
+		Out("[Step] Mox is not unlocked. Finish Unlock Mox before Boreal.")
+		Return False
+	EndIf
 	If Map_GetMapID() = $MAP_BOREAL And Map_GetInstanceInfo("IsOutpost") Then
 		Out("[Step] Already at Boreal Station")
 		Return True
@@ -1649,9 +1793,13 @@ EndFunc
 Func Leveler_Step_ToEyeOfTheNorth()
 	$g_s_CurrentHeader = "To Eye of the North"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Map_GetMapID() = $MAP_EOTN And Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Step] Already at Eye of the North")
+	If Map_GetMapID() = $MAP_HOM Then
+		Out("[Step] Already in the Hall of Monuments")
 		Return True
+	EndIf
+	If Map_GetMapID() = $MAP_EOTN And Map_GetInstanceInfo("IsOutpost") Then
+		Out("[Step] At Eye of the North. Walking into the Hall of Monuments.")
+		Return Leveler_EnterHallOfMonuments()
 	EndIf
 
 	If Map_GetMapID() <> $MAP_ICE_CLIFF Then
@@ -1664,50 +1812,132 @@ Func Leveler_Step_ToEyeOfTheNorth()
 
 	If Not Leveler_MoveTo(3579.07, -22007.27, True) Then Return False
 	Sleep(15000)
-	If Not Leveler_TalkModel($MODEL_DESTROYERS_NPC, $DIALOG_DESTROYERS_STEP1) Then
-		Out("[Step] Against the Destroyers NPC dialog failed; continuing the path")
+	If Leveler_GetAgentByModel($MODEL_DESTROYERS_NPC) <> 0 Then
+		If Not Leveler_QuestLoop($QUEST_AGAINST_DESTROYERS, 0, 0, $DIALOG_DESTROYERS_STEP1, "step", $MODEL_DESTROYERS_NPC) Then
+			Out("[Step] Against the Destroyers step 1 dialog failed; continuing if the quest is already in the log")
+		EndIf
+	EndIf
+	If Not Leveler_HasQuest($QUEST_AGAINST_DESTROYERS) Then
+		Out("[Step] Against the Destroyers is not in the log yet; the Hall of Monuments step will retry it")
 	EndIf
 	If Not Leveler_MoveTo(3743.31, -15862.36, True) Then Return False
 	If Not Leveler_MoveTo(3607.21, -6937.32, True) Then Return False
 	If Not Leveler_MoveTo(2557.23, -275.97, True) Then Return False
 	If Not Leveler_MoveAndExit(-641.25, 2069.27, $MAP_EOTN, True) Then Return False
-	Out("[Step] Arrived at Eye of the North")
-	Return True
+	Out("[Step] Arrived at Eye of the North. Entering the Hall of Monuments.")
+	Return Leveler_EnterHallOfMonuments()
+EndFunc
+
+; Eye of the North outpost uses straight Map_Move. Walk a NW path to the HoM portal.
+Func Leveler_EnterHallOfMonuments()
+	If Map_GetMapID() = $MAP_HOM Then Return True
+	If Map_GetMapID() <> $MAP_EOTN Then
+		If Not Leveler_Travel($MAP_EOTN) Then Return False
+	EndIf
+	Party_LeaveGroup(True)
+	Sleep(400)
+	Leveler_SetPacifist()
+	Local $l_af_Path[6][2] = [ _
+			[-1814.00, 2917.00], _
+			[-2800.00, 3800.00], _
+			[-3600.00, 4500.00], _
+			[-4416.39, 4932.36], _
+			[-4873.00, 5284.00], _
+			[-5198.00, 5595.00] _
+			]
+	Out("[Step] Pathing to the Hall of Monuments portal")
+	Leveler_FollowCoords($l_af_Path, False)
+	If Map_GetMapID() = $MAP_HOM Then Return True
+
+	Local $l_i_Attempt
+	For $l_i_Attempt = 1 To 4
+		If Map_GetMapID() = $MAP_HOM Then Return True
+		If Mod($l_i_Attempt, 2) = 1 Then
+			Map_Move(-5198.00, 5595.00, 10)
+		Else
+			Map_Move(-4873.00, 5284.00, 10)
+		EndIf
+		If Map_WaitMapLoading($MAP_HOM, -1, 12000) Then Return True
+	Next
+	If Map_GetMapID() = $MAP_HOM Then Return True
+	Out("[Step] Failed to enter the Hall of Monuments from Eye of the North")
+	Return False
 EndFunc
 
 Func Leveler_Step_UnlockEotnPool()
 	$g_s_CurrentHeader = "Unlock Eye of the North Pool"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Map_GetMapID() <> $MAP_HOM Then
-		If Not Leveler_Travel($MAP_EOTN) Then Return False
-		Leveler_SetPacifist()
-		If Not Leveler_MoveTo(-4416.39, 4932.36, False) Then Return False
-		If Not Leveler_MoveAndExit(-5198.00, 5595.00, $MAP_HOM, False) Then Return False
+	If Leveler_ReachedGunnarsHold() Then
+		Out("[Step] Character has entered Gunnar's Hold. Eye of the North pool is complete.")
+		Return True
+	EndIf
+	If Leveler_HomHeroesTalked() Then
+		Out("[Step] Missing Vanguard, Northern Allies, and Knowledgeable Asura are in the log. HoM heroes are done.")
+		If Map_GetMapID() = $MAP_HOM Then
+			Out("[Step] Leaving the Hall of Monuments")
+			If Not Leveler_Travel($MAP_EOTN) Then Return False
+		EndIf
+		If Not Leveler_TalkJoraOnIceCliff() Then Return False
+		If Not Leveler_Step_ToGunnarsHold() Then Return False
+		Return True
+	EndIf
+	If Leveler_EotnPoolReady() Then
+		Out("[Step] HoM heroes and Tracking the Nornbear are already done")
+		Return True
+	EndIf
+	If Leveler_HasQuest($QUEST_AGAINST_DESTROYERS) Then
+		Out("[Step] Against the Destroyers is in the log. Going to the Hall of Monuments.")
+	Else
+		Out("[Step] Against the Destroyers is not in the log yet. Pathing to the Hall of Monuments.")
 	EndIf
 
+	If Not Leveler_EnterHallOfMonuments() Then Return False
+
 	Leveler_SetPacifist()
-	If Not Leveler_MoveTo(-6572.70, 6588.83, False) Then Return False
-	Leveler_TalkModel($MODEL_GWEN, $DIALOG_POOL_CINEMATIC)
-	Sleep(1000)
-	Leveler_WaitCinematic()
-	Leveler_TalkModel($MODEL_EOTN_POOL, $DIALOG_POOL_STEP3)
-	Sleep(1000)
+	; Gwen 6021 at -6583, 6672. Pool gadget 5959 is next to her — 0x63D then 0x63F.
+	Out("[Step] Talking to Gwen")
+	Leveler_MoveTo($GWEN_HOM_X, $GWEN_HOM_Y, False)
+	If Not Leveler_TalkModel($MODEL_GWEN, $DIALOG_POOL_CINEMATIC) Then
+		Leveler_MoveAndDialog($GWEN_HOM_X, $GWEN_HOM_Y, $DIALOG_POOL_CINEMATIC, False, $MODEL_GWEN)
+	EndIf
+
+	Out("[Step] Looking deep into the scrying pool")
+	If Not Leveler_UseScryingPool() Then
+		Out("[Step] Eye of the North pool dialog failed")
+		Return False
+	EndIf
+	; Cinematic starts after 0x63F. Skip if already known, then talk to Gwen, Ogden, and Vekk.
 	Leveler_WaitCinematic()
 	If Map_GetMapID() <> $MAP_HOM Then Map_WaitMapLoading($MAP_HOM, -1, 30000)
 	Sleep(500)
 
-	Leveler_TalkModel($MODEL_GWEN, $DIALOG_GWEN_TAPESTRY)
-	Sleep(1000)
-	Leveler_TalkModel($MODEL_GWEN, $DIALOG_VANGUARD_STEP)
-	Ui_Dialog($DIALOG_KEIRAN_BOW)
-	Sleep(600)
-	Leveler_TalkModel($MODEL_OGDEN, $DIALOG_OGDEN_ALLIES)
-	Leveler_TalkModel($MODEL_VEKK, $DIALOG_VEKK_ASURA)
+	Leveler_TalkHomHero($MODEL_GWEN, $GWEN_HOM_X, $GWEN_HOM_Y, $DIALOG_GWEN_TAPESTRY, "Gwen")
+	Leveler_TalkHomHero($MODEL_GWEN, $GWEN_HOM_X, $GWEN_HOM_Y, $DIALOG_VANGUARD_STEP, "Gwen")
+	If Not Leveler_HasKeiranBow() Then
+		Leveler_TalkHomHero($MODEL_GWEN, $GWEN_HOM_X, $GWEN_HOM_Y, $DIALOG_KEIRAN_BOW, "Gwen")
+	EndIf
+	Leveler_TalkHomHero($MODEL_OGDEN, $OGDEN_HOM_X, $OGDEN_HOM_Y, $DIALOG_OGDEN_ALLIES, "Ogden Stonehealer")
+	Leveler_TalkHomHero($MODEL_VEKK, $VEKK_HOM_X, $VEKK_HOM_Y, $DIALOG_VEKK_ASURA, "Vekk")
 
 	Local $l_i_Bow = Item_FindItemByModelID($MODEL_KEIRAN_BOW)
 	If $l_i_Bow <> 0 Then Item_EquipItem($l_i_Bow)
-	If Not Leveler_Travel($MAP_EOTN) Then Return False
-	Out("[Step] Eye of the North pool unlocked")
+	If Not Leveler_HomHeroesTalked() Then
+		Out("[Step] HoM hero quests are not all in the log yet. Retrying hero dialogs next pass.")
+		Return False
+	EndIf
+	Leveler_MarkQuestDone($QUEST_AGAINST_DESTROYERS)
+
+	Out("[Step] Leaving the Hall of Monuments")
+	If Map_GetMapID() = $MAP_HOM Then
+		If Not Leveler_Travel($MAP_EOTN) Then Return False
+	EndIf
+	If Map_GetMapID() <> $MAP_EOTN Then
+		Out("[Step] Failed to reach Eye of the North from the Hall of Monuments")
+		Return False
+	EndIf
+	If Not Leveler_TalkJoraOnIceCliff() Then Return False
+	If Not Leveler_Step_ToGunnarsHold() Then Return False
+	Out("[Step] Eye of the North pool unlocked. Tracking the Nornbear is in the log.")
 	Return True
 EndFunc
 
@@ -1716,38 +1946,134 @@ Func Leveler_Step_FarmUntil20()
 	Local $l_i_Level = Leveler_PlayerLevel()
 	If $l_i_Level >= 20 Then
 		$g_b_FarmMode = False
+		$g_b_KilroyMode = False
 		Out("[Farm] Already level " & $l_i_Level)
 		Return True
 	EndIf
 
 	$g_b_FarmMode = True
-	Out("=== " & $g_s_CurrentHeader & " (level " & $l_i_Level & ") ===")
+	$g_b_KilroyMode = True
+	Out("=== " & $g_s_CurrentHeader & " (level " & $l_i_Level & ") via Kilroy Punch-Out Extravaganza ===")
 
-	If Map_GetMapID() = $MAP_AB Then
-		If Not Leveler_RunAbPath() Then Return False
+	If Map_GetMapID() = $MAP_FRONIS Then
+		If Not Leveler_RunFronisInstance() Then Return False
 	Else
-		Party_LeaveGroup(True)
-		Sleep(400)
-		If Map_GetMapID() <> $MAP_HOM Then
-			If Not Leveler_Travel($MAP_EOTN) Then Return False
-			Party_LeaveGroup(True)
-			Sleep(300)
-			If Not Leveler_MoveAndExit(-4873.00, 5284.00, $MAP_HOM, False) Then Return False
+		If Not Leveler_HandleFronisOutpost() Then Return False
+		If Map_GetMapID() = $MAP_FRONIS Then
+			If Not Leveler_RunFronisInstance() Then Return False
 		EndIf
-		If Not Leveler_EquipKeiranBow() Then Return False
-		If Not Leveler_EnterAbQuest() Then Return False
-		If Not Leveler_RunAbPath() Then Return False
 	EndIf
 
 	$l_i_Level = Leveler_PlayerLevel()
 	Out("[Farm] End-of-run level: " & $l_i_Level)
 	If $l_i_Level >= 20 Then
 		$g_b_FarmMode = False
+		$g_b_KilroyMode = False
 		Out("[Farm] Reached level 20")
 		Return True
 	EndIf
-	; Stay on this step and start another AB run.
 	Return False
+EndFunc
+
+Func Leveler_TalkKilroyNpc($a_i_Dialog)
+	Leveler_MoveTo($KILROY_NPC_X, $KILROY_NPC_Y, False)
+	Local $l_i_Npc = Leveler_GetNearestNPCAt($KILROY_NPC_X, $KILROY_NPC_Y, 500)
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetAgentByName("Kilroy")
+	If $l_i_Npc = 0 Then
+		Out("[Farm] Kilroy Stonekin not found")
+		Return False
+	EndIf
+	Return Leveler_TalkAndDialog($l_i_Npc, $a_i_Dialog)
+EndFunc
+
+; Punch_Out_Farm: intro 0x835803, accept 0x835801, enter 0x85. Reward 0x835807.
+Func Leveler_HandleFronisOutpost()
+	If Map_GetMapID() <> $MAP_GUNNAR Then
+		If Not Leveler_Travel($MAP_GUNNAR) Then Return False
+	EndIf
+	Ui_SetDifficulty(False)
+	Party_LeaveGroup(True)
+	Sleep(400)
+	Leveler_MoveTo($KILROY_NPC_X, $KILROY_NPC_Y, False)
+	If Leveler_QuestReadyForReward($QUEST_PUNCH_EXTRAVAGANZA) Or Quest_GetQuestInfo($QUEST_PUNCH_EXTRAVAGANZA, "IsCompleted") Then
+		Out("[Farm] Claiming Punch-Out Extravaganza reward")
+		If Not Leveler_TalkKilroyNpc($DIALOG_FRONIS_INTRO) Then Return False
+		Sleep(500)
+		Ui_Dialog($DIALOG_FRONIS_REWARD)
+		Sleep(800)
+	EndIf
+	Out("[Farm] Taking Punch-Out Extravaganza from Kilroy")
+	If Not Leveler_TalkKilroyNpc($DIALOG_FRONIS_INTRO) Then Return False
+	Sleep(400)
+	Ui_Dialog($DIALOG_FRONIS_ACCEPT)
+	Sleep(500)
+	Ui_Dialog($DIALOG_FRONIS_ENTER)
+	Sleep(800)
+	If Not Leveler_WaitPunchoutInstance($MAP_FRONIS, 20000) Then
+		Out("[Farm] Fronis Irontoe's Lair did not load")
+		Return False
+	EndIf
+	Return True
+EndFunc
+
+Func Leveler_RunFronisInstance()
+	If Map_GetMapID() <> $MAP_FRONIS Then Return False
+	$g_b_CombatMode = True
+	$g_b_KilroyMode = True
+	If Not Leveler_WaitPunchoutInstance($MAP_FRONIS) Then Return False
+	Out("[Farm] Fronis loaded. Equipping brass knuckles.")
+	If Not Leveler_EquipBrassKnuckles() Then Return False
+	If Not Leveler_MoveTo($FRONIS_START_X, $FRONIS_START_Y, True) Then Return False
+	If Not Leveler_PrepareKilroyCombat() Then Return False
+	Leveler_WaitOutOfCombat(30000)
+	Leveler_LootNearby(0, 1500, 4000)
+
+	Local $l_af_Path[10][2] = [ _
+			[-15115.72, -15375.61], _
+			[-11299.54, -16402.40], _
+			[-7284.53, -16235.58], _
+			[-4397.42, -16123.15], _
+			[-1385.20, -14400.23], _
+			[505.33, -14073.99], _
+			[2959.12, -15991.76], _
+			[5740.82, -15543.48], _
+			[7157.02, -15755.44], _
+			[12249.79, -16291.74] _
+			]
+	Local $i
+	For $i = 0 To UBound($l_af_Path) - 1
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_IsWiped() And Not $g_b_KilroyMode Then Return False
+		If $g_b_KilroyMode Then Leveler_HandleKilroyDeath()
+		Out("[Farm] Fronis waypoint " & ($i + 1) & "/10")
+		If Not Leveler_MoveTo($l_af_Path[$i][0], $l_af_Path[$i][1], True) Then
+			If Map_GetMapID() <> $MAP_FRONIS Then Return True
+		EndIf
+		Leveler_WaitOutOfCombat(30000)
+		Leveler_LootNearby(0, 1200, 3000)
+		Local $l_h_Rest = TimerInit()
+		While Agent_GetAgentInfo(-2, "HP") < 0.95 And TimerDiff($l_h_Rest) < 20000
+			If $g_b_LevelerPaused Then Return False
+			If $g_b_KilroyMode Then Leveler_HandleKilroyDeath()
+			Sleep(400)
+		WEnd
+	Next
+
+	Out("[Farm] Opening the Fronis chest")
+	Local $l_i_Chest = Leveler_GetNearestGadgetAt($FRONIS_CHEST_X, $FRONIS_CHEST_Y, 800)
+	If $l_i_Chest <> 0 Then
+		Leveler_MoveTo(Agent_GetAgentInfo($l_i_Chest, "X"), Agent_GetAgentInfo($l_i_Chest, "Y"), True)
+		Local $l_h_Chest = TimerInit()
+		While TimerDiff($l_h_Chest) < 5000
+			If $g_b_KilroyMode Then Leveler_HandleKilroyDeath()
+			Agent_GoSignpost($l_i_Chest)
+			Sleep(800)
+		WEnd
+	EndIf
+	Leveler_LootNearby(0, 2000, 10000)
+	Out("[Farm] Fronis run finished. Returning to Gunnar's Hold.")
+	If Not Leveler_Travel($MAP_GUNNAR) Then Return False
+	Return True
 EndFunc
 
 Func Leveler_RunAbPath()
@@ -1791,6 +2117,14 @@ Func Leveler_Step_AnUnwelcomeGuest()
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	$g_b_FarmMode = False
 	$g_b_KilroyMode = False
+	If Leveler_ReachedGunnarsHold() Then
+		Out("[Step] Character has entered Gunnar's Hold. An Unwelcome Guest is complete.")
+		Return True
+	EndIf
+	If Leveler_HasIncompleteQuest($QUEST_OLIAS) Or Leveler_OliasReadyToTurnIn() Then
+		Out("[Step] Olias is in the log. Not returning to Seitung Harbor for An Unwelcome Guest.")
+		Return True
+	EndIf
 
 	If Leveler_SkipIfQuestDone($QUEST_UNWELCOME, "An Unwelcome Guest") Then Return True
 	If Leveler_ShouldResumeExplorable($QUEST_UNWELCOME) Then
@@ -1918,31 +2252,27 @@ EndFunc
 Func Leveler_Step_ToGunnarsHold()
 	$g_s_CurrentHeader = "To Gunnar's Hold"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Map_GetMapID() = $MAP_GUNNAR And Map_GetInstanceInfo("IsOutpost") Then
+	If Leveler_ReachedGunnarsHold() Then
 		Out("[Step] Already at Gunnar's Hold")
 		Return True
 	EndIf
+	If Map_GetMapID() = $MAP_GUNNAR And Map_GetInstanceInfo("IsOutpost") Then
+		If Leveler_HasNornbearTracking() Then
+			Out("[Step] Already at Gunnar's Hold with Tracking the Nornbear")
+			Return True
+		EndIf
+		Out("[Step] At Gunnar's Hold but Tracking the Nornbear is missing. Returning to Ice Cliff Chasms for Jora.")
+		If Not Leveler_ExitEotnToIceCliff() Then Return False
+	EndIf
 
 	If Map_GetMapID() <> $MAP_ICE_CLIFF And Map_GetMapID() <> $MAP_NORRHART Then
-		If Not Leveler_Travel($MAP_EOTN) Then Return False
-		Local $l_ai_Hench[3] = [4, 5, 6]
-		Leveler_PrepareHeroTeam($l_ai_Hench)
-		Local $l_af_Exit[5][2] = [ _
-				[-1814.0, 2917.0], _
-				[-964.0, 2270.0], _
-				[-115.0, 1677.0], _
-				[718.0, 1060.0], _
-				[1522.0, 464.0] _
-				]
-		Leveler_FollowCoords($l_af_Exit, False)
-		If Not Leveler_WaitForMap($MAP_ICE_CLIFF, 30000) Then Return False
+		If Not Leveler_ExitEotnToIceCliff() Then Return False
 	EndIf
 
 	If Map_GetMapID() = $MAP_ICE_CLIFF Then
 		$g_b_CombatMode = True
-		If Leveler_GetAgentByModel($MODEL_DESTROYERS_NPC) <> 0 And Not Leveler_HasQuest($QUEST_NORNBEAR) Then
-			Leveler_MoveAndDialog(2825, -481, $DIALOG_NORNBEAR_ACCEPT, True, $MODEL_DESTROYERS_NPC)
-		EndIf
+		If Not Leveler_TalkJoraOnIceCliff() Then Return False
+		Out("[Step] Tracking the Nornbear is in the quest log. Continuing to Gunnar's Hold.")
 		Local $l_af_Ice[4][2] = [ _
 				[2548.84, 7266.08], _
 				[1233.76, 13803.42], _
@@ -1956,7 +2286,11 @@ Func Leveler_Step_ToGunnarsHold()
 	$g_b_CombatMode = True
 	If Not Leveler_MoveTo(14546.0, -6043.0, True) Then Return False
 	If Not Leveler_MoveAndExit(15578, -6548, $MAP_GUNNAR, True) Then Return False
-	Out("[Step] Arrived at Gunnar's Hold")
+	If Not Leveler_HasNornbearTracking() Then
+		Out("[Step] Arrived at Gunnar's Hold without Tracking the Nornbear")
+		Return False
+	EndIf
+	Out("[Step] Arrived at Gunnar's Hold with Tracking the Nornbear")
 	Return True
 EndFunc
 
@@ -1986,8 +2320,22 @@ Func Leveler_Step_UnlockKilroy()
 		EndIf
 	EndIf
 
-	Leveler_EquipItemByModel($MODEL_BRASS_KNUCKLES)
-	If Not Leveler_WaitMs(3000) Then
+	If Not Leveler_WaitKilroyInstance() Then
+		Out("[Step] Punch the Clown map did not finish loading")
+		$g_b_KilroyMode = False
+		Return False
+	EndIf
+	Out("[Step] Punch the Clown map loaded. Equipping brass knuckles.")
+	If Not Leveler_EquipBrassKnuckles() Then
+		$g_b_KilroyMode = False
+		Return False
+	EndIf
+	If Not Leveler_PrepareKilroyCombat() Then
+		Out("[Step] Kilroy skill cache failed after equipping knuckles")
+		$g_b_KilroyMode = False
+		Return False
+	EndIf
+	If Not Leveler_WaitCombat(3000) Then
 		$g_b_KilroyMode = False
 		Return False
 	EndIf
@@ -2178,19 +2526,30 @@ EndFunc
 Func Leveler_Step_UnlockOlias()
 	$g_s_CurrentHeader = "Unlock Olias"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_SkipIfQuestDone($QUEST_OLIAS, "All for One and One for Justice") Then Return True
-
-	If Map_GetMapID() <> $MAP_BLOODSTONE_FEN And Map_GetMapID() <> $MAP_LIONS_ARCH And Map_GetMapID() <> $MAP_KAMADAN Then
-		If Not Leveler_Travel($MAP_DOCKS) Then Return False
-		If Not Leveler_HasQuest($QUEST_OLIAS) Then
-			If Not Leveler_QuestLoop($QUEST_OLIAS, -2367.00, 16796.00, $DIALOG_OLIAS_ACCEPT, "accept") Then Return False
-		EndIf
-		Party_LeaveGroup(True)
-		Sleep(300)
-		If Not Leveler_Travel($MAP_LIONS_ARCH) Then Return False
+	If Leveler_HasOliasUnlocked() Then
+		Out("[Step] Olias is already on the hero list")
+		Return True
+	EndIf
+	If Leveler_SkipIfQuestDone($QUEST_OLIAS, "All for One and One for Justice") Then
+		If Leveler_ConfirmOliasInHeroList() Then Return True
 	EndIf
 
-	If Map_GetMapID() = $MAP_LIONS_ARCH Then
+	; Python Unlock_Olias: after Fen, wait for Lion's Arch then Map.Travel(449) and complete 0x830E07.
+	If Leveler_OliasReadyToTurnIn() Or Map_GetMapID() = $MAP_KAMADAN Then
+		Return Leveler_OliasReturnToKamadan()
+	EndIf
+
+	If Not Leveler_HasQuest($QUEST_OLIAS) Then
+		If Not Leveler_Travel($MAP_DOCKS) Then Return False
+		If Not Leveler_QuestLoop($QUEST_OLIAS, -2367.00, 16796.00, $DIALOG_OLIAS_ACCEPT, "accept") Then Return False
+	EndIf
+
+	If Map_GetMapID() <> $MAP_BLOODSTONE_FEN Then
+		If Map_GetMapID() <> $MAP_LIONS_ARCH Then
+			Party_LeaveGroup(True)
+			Sleep(300)
+			If Not Leveler_Travel($MAP_LIONS_ARCH) Then Return False
+		EndIf
 		Party_LeaveGroup(True)
 		Sleep(300)
 		Local $l_ai_Hench[1] = [1]
@@ -2214,14 +2573,33 @@ Func Leveler_Step_UnlockOlias()
 		If Not Leveler_MoveTo(5657.20, 4485.55, True) Then Return False
 		If Not Leveler_MoveTo(4461.65, -710.88, True) Then Return False
 		If Not Leveler_MoveTo(10750, 2100, True) Then Return False
-		If Not Leveler_WaitMs(20000) Then Return False
-		If Not Leveler_WaitForMap($MAP_LIONS_ARCH, 45000) Then Return False
+		Leveler_WaitMs(20000)
+		$g_b_OliasFenDone = True
+		If Map_GetMapID() = $MAP_BLOODSTONE_FEN Then
+			If Not Leveler_WaitForMap($MAP_LIONS_ARCH, 60000) Then
+				Out("[Step] Bloodstone Fen did not dump to Lion's Arch. Traveling to Kamadan anyway.")
+			EndIf
+		EndIf
 	EndIf
 
+	Return Leveler_OliasReturnToKamadan()
+EndFunc
+
+Func Leveler_OliasReturnToKamadan()
+	$g_b_OliasFenDone = True
+	$g_b_CombatMode = False
+	Out("[Step] Quest updated. Returning to Kamadan.")
+	If Map_GetMapID() = $MAP_BLOODSTONE_FEN Then
+		If Not Leveler_WaitForMap($MAP_LIONS_ARCH, 30000) Then
+			Out("[Step] Leaving Bloodstone Fen to travel to Kamadan")
+		EndIf
+	EndIf
 	Party_LeaveGroup(True)
+	Sleep(300)
 	If Not Leveler_Travel($MAP_KAMADAN) Then Return False
 	If Not Leveler_MoveTo(-8149.02, 14900.65, False) Then Return False
 	If Not Leveler_QuestLoop($QUEST_OLIAS, -6480.00, 16331.00, $DIALOG_OLIAS_COMPLETE, "complete") Then Return False
+	If Not Leveler_ConfirmOliasInHeroList() Then Return False
 	Out("[Step] Olias unlocked")
 	Return True
 EndFunc
@@ -2264,139 +2642,22 @@ EndFunc
 Func Leveler_Step_UnlockSecondaryProfs()
 	$g_s_CurrentHeader = "Unlock remaining secondary professions"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_RemainingSecondariesUnlocked() Then
+		Out("[Step] All professions are already available to select")
+		Return True
+	EndIf
 	If Not Leveler_Travel($MAP_GTOB) Then Return False
 	Item_WithdrawGold(5000)
 	Sleep(400)
 	If Not Leveler_MoveTo(-5540.40, -5733.11, False) Then Return False
 	If Not Leveler_MoveTo(-3151.22, -7255.13, False) Then Return False
 	Leveler_UnlockTrainerDialogs()
-	Out("[Step] Secondary profession trainers talked")
-	Return True
-EndFunc
-
-Func Leveler_Step_UnlockMercenaries()
-	$g_s_CurrentHeader = "Unlock Mercenary Heroes"
-	Out("=== " & $g_s_CurrentHeader & " ===")
-	Party_LeaveGroup(True)
-	Sleep(300)
-	If Not Leveler_Travel($MAP_GTOB) Then Return False
-	If Not Leveler_MoveTo(-4231.87, -8965.95, False) Then Return False
-	Leveler_TalkModel($MODEL_MERC_NPC, $DIALOG_MERC_HEROES)
-	Out("[Step] Mercenary hero dialog sent")
-	Return True
-EndFunc
-
-Func Leveler_Step_ToLongeyesLedge()
-	$g_s_CurrentHeader = "To Longeye's Ledge"
-	If Not Leveler_NeedsVaettirPath() Then
-		Out("[Step] Skipping Longeye's Ledge (not Assassin/Mesmer)")
-		Return True
+	Sleep(1500)
+	If Leveler_RemainingSecondariesUnlocked() Then
+		Out("[Step] All professions including Paragon and Dervish are available to select")
+	Else
+		$g_b_SecondaryProfsTalked = True
+		Out("[Step] Secondary profession trainers talked")
 	EndIf
-	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Map_GetMapID() = $MAP_LONGEYE And Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Step] Already at Longeye's Ledge")
-		Return True
-	EndIf
-
-	If Map_GetMapID() <> $MAP_NORRHART And Map_GetMapID() <> $MAP_BJORA Then
-		If Not Leveler_Travel($MAP_GUNNAR) Then Return False
-		Local $l_ai_Hench[3] = [4, 5, 6]
-		Leveler_PrepareHeroTeam($l_ai_Hench)
-		If Not Leveler_MoveTo(15886.20, -6687.82, False) Then Return False
-		If Not Leveler_MoveAndExit(15183.20, -6381.96, $MAP_NORRHART, False) Then Return False
-	EndIf
-
-	If Map_GetMapID() = $MAP_NORRHART Then
-		$g_b_CombatMode = True
-		Local $l_af_Norr[9][2] = [ _
-				[14233.82, -3638.70], _
-				[14944.69, 1197.74], _
-				[14855.55, 4450.14], _
-				[17964.74, 6782.41], _
-				[19127.48, 9809.46], _
-				[21742.71, 14057.23], _
-				[19933.87, 15609.06], _
-				[16294.68, 16369.74], _
-				[16392.48, 16768.86] _
-				]
-		Leveler_FollowCoords($l_af_Norr, True)
-		If Not Leveler_WaitForMap($MAP_BJORA, 45000) Then Return False
-	EndIf
-
-	If Map_GetMapID() = $MAP_BJORA Then
-		$g_b_CombatMode = True
-		Local $l_af_Bjora[13][2] = [ _
-				[-11232.55, -16722.86], _
-				[-7655.78, -13250.32], _
-				[-6672.13, -13080.85], _
-				[-5497.73, -11904.58], _
-				[-3598.34, -11162.59], _
-				[-3013.93, -9264.66], _
-				[-1002.17, -8064.57], _
-				[3533.10, -9982.70], _
-				[7472.13, -10943.37], _
-				[12984.51, -15341.86], _
-				[17305.52, -17686.40], _
-				[19048.21, -18813.70], _
-				[19634.17, -19118.78] _
-				]
-		Leveler_FollowCoords($l_af_Bjora, True)
-		If Not Leveler_MoveAndExit(19634.17, -19118.78, $MAP_LONGEYE, True) Then Return False
-	EndIf
-	Out("[Step] Arrived at Longeye's Ledge")
-	Return True
-EndFunc
-
-Func Leveler_Step_UnlockVaettirNpc()
-	$g_s_CurrentHeader = "Unlock NPC for vaettir farm"
-	If Not Leveler_NeedsVaettirPath() Then
-		Out("[Step] Skipping Vaettir NPC (not Assassin/Mesmer)")
-		Return True
-	EndIf
-	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Map_GetMapID() = $MAP_JAGA Then
-		If Not Leveler_MoveTo(13372.44, -20758.50, False) Then Return False
-		Leveler_MoveAndDialog(13367, -20771, $DIALOG_GENERIC_TALK, True)
-		Leveler_WaitOutOfCombat(60000)
-		Leveler_MoveAndDialog(13367, -20771, $DIALOG_GENERIC_TALK, False)
-		Out("[Step] Vaettir NPC unlocked")
-		Return True
-	EndIf
-
-	If Map_GetMapID() <> $MAP_BJORA Then
-		If Not Leveler_Travel($MAP_LONGEYE) Then Return False
-		Local $l_ai_Hench[3] = [4, 5, 6]
-		Leveler_PrepareHeroTeam($l_ai_Hench)
-		If Not Leveler_MoveAndExit(-26375, 16180, $MAP_BJORA, False) Then Return False
-	EndIf
-
-	$g_b_CombatMode = True
-	Local $l_af_Bjora[80][2] = [ _
-			[17810, -17649], [17516, -17270], [17166, -16813], [16862, -16324], [16472, -15934], _
-			[15929, -15731], [15387, -15521], [14849, -15312], [14311, -15101], [13776, -14882], _
-			[13249, -14642], [12729, -14386], [12235, -14086], [11748, -13776], [11274, -13450], _
-			[10839, -13065], [10572, -12590], [10412, -12036], [10238, -11485], [10125, -10918], _
-			[10029, -10348], [9909, -9778], [9599, -9327], [9121, -9009], [8674, -8645], _
-			[8215, -8289], [7755, -7945], [7339, -7542], [6962, -7103], [6587, -6666], _
-			[6210, -6226], [5834, -5788], [5457, -5349], [5081, -4911], [4703, -4470], _
-			[4379, -3990], [4063, -3507], [3773, -3031], [3452, -2540], [3117, -2070], _
-			[2678, -1703], [2115, -1593], [1541, -1614], [960, -1563], [388, -1491], _
-			[-187, -1419], [-770, -1426], [-1343, -1440], [-1922, -1455], [-2496, -1472], _
-			[-3073, -1535], [-3650, -1607], [-4214, -1712], [-4784, -1759], [-5278, -1492], _
-			[-5754, -1164], [-6200, -796], [-6632, -419], [-7192, -300], [-7770, -306], _
-			[-8352, -286], [-8932, -258], [-9504, -226], [-10086, -201], [-10665, -215], _
-			[-11247, -242], [-11826, -262], [-12400, -247], [-12979, -216], [-13529, -53], _
-			[-13944, 341], [-14358, 743], [-14727, 1181], [-15109, 1620], [-15539, 2010], _
-			[-15963, 2380], [-18048, 4223], [-19196, 4986], [-20000, 5595], [-20300, 5600] _
-			]
-	Leveler_FollowCoords($l_af_Bjora, True)
-	If Map_GetMapID() = $MAP_BJORA Then
-		If Not Leveler_MoveAndExit(-20300, 5600, $MAP_JAGA, True) Then Return False
-	EndIf
-	If Not Leveler_MoveTo(13372.44, -20758.50, False) Then Return False
-	Leveler_MoveAndDialog(13367, -20771, $DIALOG_GENERIC_TALK, True)
-	Leveler_WaitOutOfCombat(60000)
-	Leveler_MoveAndDialog(13367, -20771, $DIALOG_GENERIC_TALK, False)
-	Out("[Step] Vaettir NPC unlocked")
 	Return True
 EndFunc

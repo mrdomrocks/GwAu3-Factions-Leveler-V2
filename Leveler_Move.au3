@@ -33,11 +33,11 @@ Func Leveler_EnsurePathfinder()
 	Return True
 EndFunc
 
-; Fight in explorables. Stay pacifist in outposts. Return False for a map ID
-; here only when Dominic says that explorable should not fight.
+; Fight in explorables and punch-out instances. Stay pacifist in outposts.
 Func Leveler_ShouldFightHere()
 	If Map_GetInstanceInfo("IsLoading") Then Return False
 	If Map_GetInstanceInfo("IsOutpost") Then Return False
+	If Leveler_IsPunchoutMap() Then Return True
 	Return Map_GetInstanceInfo("IsExplorable") = True
 EndFunc
 
@@ -45,6 +45,7 @@ EndFunc
 ; Outposts never fight. Returns True if we arrived or the map changed.
 Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_LevelerPaused Then Return False
+	If $g_b_KilroyMode Or $g_b_FarmMode Or Leveler_IsPunchoutMap() Then Leveler_HandleKilroyDeath()
 	If Leveler_IsWiped() Then Return False
 
 	If Leveler_ShouldFightHere() Then
@@ -107,6 +108,117 @@ Func Leveler_MoveAndDialog($a_f_X, $a_f_Y, $a_i_Dialog, $a_b_Combat = False, $a_
 	EndIf
 
 	Return Leveler_TalkAndDialog($l_i_Npc, $a_i_Dialog)
+EndFunc
+
+Func Leveler_TalkHomHero($a_i_Model, $a_f_X, $a_f_Y, $a_i_Dialog, $a_s_Name)
+	Out("[Step] Talking to " & $a_s_Name)
+	Leveler_MoveTo($a_f_X, $a_f_Y, False)
+	Local $l_i_Npc = Leveler_GetAgentByModel($a_i_Model)
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetNearestNPCAt($a_f_X, $a_f_Y, 500)
+	If $l_i_Npc = 0 Then
+		Out("[Step] " & $a_s_Name & " not found (model " & $a_i_Model & ")")
+		Return False
+	EndIf
+	Local $l_i_Id = Number(Agent_GetAgentInfo($l_i_Npc, "ID"))
+	If $l_i_Id = 0 Then $l_i_Id = Number($l_i_Npc)
+	Agent_ChangeTarget($l_i_Id)
+	Sleep(250)
+	If Number(Agent_GetCurrentTarget()) <> $l_i_Id Then Agent_ChangeTarget($l_i_Npc)
+	Sleep(150)
+	Agent_GoNPC($l_i_Id)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 8000
+		If Agent_GetDistance($l_i_Npc) < $LEVELER_ARRIVE_RANGE Then ExitLoop
+		Map_Move(Agent_GetAgentInfo($l_i_Npc, "X"), Agent_GetAgentInfo($l_i_Npc, "Y"), 20)
+		Sleep(250)
+	WEnd
+	If Agent_GetDistance($l_i_Npc) >= $LEVELER_ARRIVE_RANGE Then
+		Out("[Step] Could not reach " & $a_s_Name)
+		Return False
+	EndIf
+	Sleep(500)
+	Out("[Step] " & $a_s_Name & " dialog 0x" & Hex($a_i_Dialog, 6))
+	Ui_Dialog($a_i_Dialog)
+	Sleep(800)
+	Return True
+EndFunc
+
+Func Leveler_GetJora()
+	Local $l_i_Npc = Leveler_GetAgentByModel($MODEL_JORA)
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetAgentByModel($MODEL_JORA_ALT)
+	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetAgentByName("Jora")
+	Return $l_i_Npc
+EndFunc
+
+; Jora is in Ice Cliff Chasms at 2825, -481. Tracking the Nornbear is 0x832801.
+Func Leveler_ExitEotnToIceCliff()
+	If Map_GetMapID() = $MAP_ICE_CLIFF Then Return True
+	If Map_GetMapID() = $MAP_HOM Then
+		If Not Leveler_Travel($MAP_EOTN) Then Return False
+	EndIf
+	If Map_GetMapID() <> $MAP_EOTN Then
+		If Not Leveler_Travel($MAP_EOTN) Then Return False
+	EndIf
+	Out("[Step] Leaving Eye of the North for Ice Cliff Chasms")
+	Local $l_ai_Hench[3] = [4, 5, 6]
+	Leveler_PrepareHeroTeam($l_ai_Hench)
+	Local $l_af_Exit[5][2] = [ _
+			[-1814.0, 2917.0], _
+			[-964.0, 2270.0], _
+			[-115.0, 1677.0], _
+			[718.0, 1060.0], _
+			[1522.0, 464.0] _
+			]
+	Leveler_FollowCoords($l_af_Exit, False)
+	If Not Leveler_WaitForMap($MAP_ICE_CLIFF, 30000) Then Return False
+	Return Map_GetMapID() = $MAP_ICE_CLIFF
+EndFunc
+
+Func Leveler_TalkJoraOnIceCliff()
+	If Leveler_HasNornbearTracking() Then
+		Out("[Step] Tracking the Nornbear is already handled")
+		Return True
+	EndIf
+	If Map_GetMapID() <> $MAP_ICE_CLIFF Then
+		If Not Leveler_ExitEotnToIceCliff() Then Return False
+	EndIf
+	If Map_GetMapID() <> $MAP_ICE_CLIFF Then
+		Out("[Step] Failed to reach Ice Cliff Chasms for Jora")
+		Return False
+	EndIf
+
+	$g_b_CombatMode = True
+	Out("[Step] Talking to Jora in Ice Cliff Chasms. Sending 0x832801.")
+	Leveler_MoveTo($JORA_ICE_CLIFF_X, $JORA_ICE_CLIFF_Y, True)
+	Local $l_i_Jora = Leveler_GetJora()
+	Local $l_f_X = $JORA_ICE_CLIFF_X
+	Local $l_f_Y = $JORA_ICE_CLIFF_Y
+	If $l_i_Jora <> 0 Then
+		$l_f_X = Agent_GetAgentInfo($l_i_Jora, "X")
+		$l_f_Y = Agent_GetAgentInfo($l_i_Jora, "Y")
+		Out("[Step] Jora at " & Round($l_f_X) & ", " & Round($l_f_Y))
+	EndIf
+	If Not Leveler_TalkHomHero($MODEL_JORA, $l_f_X, $l_f_Y, $DIALOG_NORNBEAR_ACCEPT, "Jora") Then
+		If Not Leveler_TalkHomHero($MODEL_JORA_ALT, $l_f_X, $l_f_Y, $DIALOG_NORNBEAR_ACCEPT, "Jora") Then
+			$l_i_Jora = Leveler_GetJora()
+			If $l_i_Jora = 0 Or Not Leveler_TalkAndDialog($l_i_Jora, $DIALOG_NORNBEAR_ACCEPT) Then
+				Out("[Step] Failed to take Tracking the Nornbear from Jora")
+				Return False
+			EndIf
+		EndIf
+	EndIf
+	Ui_Dialog($DIALOG_NORNBEAR_ACCEPT)
+	Sleep(800)
+	If Not Leveler_HasNornbearTracking() Then
+		Out("[Step] Tracking the Nornbear is not in the log after talking to Jora")
+		Return False
+	EndIf
+	Out("[Step] Tracking the Nornbear accepted from Jora")
+	Return True
+EndFunc
+
+Func Leveler_TalkJoraInEotn()
+	Return Leveler_TalkJoraOnIceCliff()
 EndFunc
 
 ; Target the living NPC, walk into talk range, then send the dialog.
@@ -201,7 +313,10 @@ Func Leveler_StepOutpost($a_i_Step)
 			Return $MAP_CHO_OUTPOST
 		Case $LEVELER_STEP_ATTR_1, $LEVELER_STEP_TENGU
 			Return $MAP_RAN_MUSU
-		Case $LEVELER_STEP_SEITUNG, $LEVELER_STEP_DESTROY_MON, $LEVELER_STEP_ATTR_2
+		Case $LEVELER_STEP_SEITUNG, $LEVELER_STEP_DESTROY_MON
+			Return $MAP_SEITUNG
+		Case $LEVELER_STEP_ATTR_2
+			If Leveler_ReachedGunnarsHold() Or Map_IsMapUnlocked($MAP_GUNNAR) Then Return $MAP_GUNNAR
 			Return $MAP_SEITUNG
 		Case $LEVELER_STEP_TO_ZEN
 			If Map_IsMapUnlocked($MAP_ZEN_OP) Then Return $MAP_ZEN_OP
@@ -219,11 +334,12 @@ Func Leveler_StepOutpost($a_i_Step)
 		Case $LEVELER_STEP_TO_EOTN
 			If Map_IsMapUnlocked($MAP_EOTN) Then Return $MAP_EOTN
 			Return $MAP_BOREAL
-		Case $LEVELER_STEP_EOTN_POOL, $LEVELER_STEP_FARM_20, $LEVELER_STEP_TO_GUNNAR
+		Case $LEVELER_STEP_EOTN_POOL, $LEVELER_STEP_TO_GUNNAR
 			Return $MAP_EOTN
-		Case $LEVELER_STEP_KILROY, $LEVELER_STEP_TO_LA, $LEVELER_STEP_TO_LONGEYE
-			If $a_i_Step = $LEVELER_STEP_TO_LA And Map_IsMapUnlocked($MAP_LIONS_ARCH) Then Return $MAP_LIONS_ARCH
-			If $a_i_Step = $LEVELER_STEP_TO_LONGEYE And Map_IsMapUnlocked($MAP_LONGEYE) Then Return $MAP_LONGEYE
+		Case $LEVELER_STEP_KILROY, $LEVELER_STEP_FARM_20
+			Return $MAP_GUNNAR
+		Case $LEVELER_STEP_TO_LA
+			If Map_IsMapUnlocked($MAP_LIONS_ARCH) Then Return $MAP_LIONS_ARCH
 			Return $MAP_GUNNAR
 		Case $LEVELER_STEP_TO_KAMADAN
 			If Map_IsMapUnlocked($MAP_KAMADAN) Then Return $MAP_KAMADAN
@@ -232,14 +348,11 @@ Func Leveler_StepOutpost($a_i_Step)
 			If Map_IsMapUnlocked($MAP_DOCKS) Then Return $MAP_DOCKS
 			Return $MAP_KAMADAN
 		Case $LEVELER_STEP_UNLOCK_OLIAS
+			If Leveler_OliasReadyToTurnIn() Then Return $MAP_KAMADAN
+			If Leveler_HasQuest($QUEST_OLIAS) Then Return $MAP_LIONS_ARCH
 			Return $MAP_DOCKS
 		Case $LEVELER_STEP_UNLOCK_PROFS
 			Return $MAP_GTOB
-		Case $LEVELER_STEP_UNLOCK_MERCS
-			Return $MAP_LIONS_ARCH
-		Case $LEVELER_STEP_VAETTIR
-			If Map_IsMapUnlocked($MAP_JAGA) Then Return $MAP_JAGA
-			Return $MAP_LONGEYE
 	EndSwitch
 	Return 0
 EndFunc
@@ -285,19 +398,19 @@ Func Leveler_StepAllowsMap($a_i_Step, $a_i_Map)
 		Case $LEVELER_STEP_UNLOCK_MOX, $LEVELER_STEP_TO_BOREAL
 			Return $a_i_Map = $MAP_TUNNELS
 		Case $LEVELER_STEP_TO_EOTN
-			If Map_IsMapUnlocked($MAP_EOTN) Then Return $a_i_Map = $MAP_EOTN
+			If Map_IsMapUnlocked($MAP_EOTN) Then Return $a_i_Map = $MAP_EOTN Or $a_i_Map = $MAP_HOM
 			Return $a_i_Map = $MAP_ICE_CLIFF
 		Case $LEVELER_STEP_EOTN_POOL
+			If Leveler_HomHeroesTalked() Then Return $a_i_Map = $MAP_EOTN Or $a_i_Map = $MAP_ICE_CLIFF Or $a_i_Map = $MAP_NORRHART Or $a_i_Map = $MAP_GUNNAR
 			Return $a_i_Map = $MAP_HOM
-		Case $LEVELER_STEP_FARM_20
-			Return $a_i_Map = $MAP_HOM Or $a_i_Map = $MAP_AB
 		Case $LEVELER_STEP_ATTR_2
 			Return $a_i_Map = $MAP_ZEN_EXP
 		Case $LEVELER_STEP_TO_GUNNAR
-			If Map_IsMapUnlocked($MAP_GUNNAR) Then Return $a_i_Map = $MAP_GUNNAR
-			Return $a_i_Map = $MAP_NORRHART
+			Return $a_i_Map = $MAP_GUNNAR Or $a_i_Map = $MAP_ICE_CLIFF Or $a_i_Map = $MAP_NORRHART
 		Case $LEVELER_STEP_KILROY
 			Return $a_i_Map = $MAP_KILROY
+		Case $LEVELER_STEP_FARM_20
+			Return $a_i_Map = $MAP_GUNNAR Or $a_i_Map = $MAP_FRONIS
 		Case $LEVELER_STEP_TO_LA
 			If Map_IsMapUnlocked($MAP_LIONS_ARCH) Then Return $a_i_Map = $MAP_LIONS_ARCH
 			Return $a_i_Map = $MAP_BEJUNKAN Or $a_i_Map = $MAP_LIONS_GATE
@@ -308,12 +421,8 @@ Func Leveler_StepAllowsMap($a_i_Step, $a_i_Map)
 			If Map_IsMapUnlocked($MAP_DOCKS) Then Return $a_i_Map = $MAP_DOCKS
 			Return $a_i_Map = $MAP_SUN_DOCKS Or $a_i_Map = $MAP_CONSULATE
 		Case $LEVELER_STEP_UNLOCK_OLIAS
-			Return $a_i_Map = $MAP_BLOODSTONE_FEN
-		Case $LEVELER_STEP_TO_LONGEYE
-			If Map_IsMapUnlocked($MAP_LONGEYE) Then Return $a_i_Map = $MAP_LONGEYE
-			Return False
-		Case $LEVELER_STEP_VAETTIR
-			Return $a_i_Map = $MAP_BJORA Or $a_i_Map = $MAP_JAGA
+			If Leveler_OliasReadyToTurnIn() Then Return $a_i_Map = $MAP_KAMADAN Or $a_i_Map = $MAP_LIONS_ARCH
+			Return $a_i_Map = $MAP_BLOODSTONE_FEN Or $a_i_Map = $MAP_LIONS_ARCH Or $a_i_Map = $MAP_DOCKS Or $a_i_Map = $MAP_CONSULATE
 	EndSwitch
 	Return False
 EndFunc
@@ -331,6 +440,10 @@ Func Leveler_EnsureStepOutpost($a_i_Step)
 	If Leveler_StepAllowsMap($a_i_Step, $l_i_Map) Then Return True
 	If $g_b_ExplorableResume And Not Leveler_IsOutpost() And Leveler_StepHasActiveQuest($a_i_Step) And Leveler_StepAllowsMap($a_i_Step, $l_i_Map) Then
 		Out("[Move] Restart recovery: quest is in the log on map " & $l_i_Map & ". Resuming '" & $g_as_StepNames[$a_i_Step] & "' from here.")
+		Return True
+	EndIf
+	If Leveler_HasIncompleteQuest($QUEST_AGAINST_DESTROYERS) And Not Leveler_HomHeroesTalked() And ($l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM) And $l_i_Outpost <> $MAP_EOTN And $l_i_Outpost <> $MAP_HOM Then
+		Out("[Move] Against the Destroyers is in the log. Not map-traveling to " & $l_i_Outpost & " for '" & $g_as_StepNames[$a_i_Step] & "'.")
 		Return True
 	EndIf
 	If Not Map_IsMapUnlocked($l_i_Outpost) Then
@@ -573,6 +686,7 @@ Func Leveler_InteractNpcAt($a_f_X, $a_f_Y, $a_b_Combat = False)
 EndFunc
 
 Func Leveler_IsWiped()
+	If Leveler_IsPunchoutMap() Or $g_b_FarmMode Then Return False
 	If Party_GetPartyContextInfo("IsDefeated") Then Return True
 	If Party_IsWiped() Then Return True
 	Return False
@@ -602,6 +716,9 @@ EndFunc
 
 ; One UtilityAI fight tick at the player's current position.
 Func Leveler_CombatTick()
+	If $g_b_KilroyMode Or $g_b_FarmMode Or Leveler_IsPunchoutMap() Then
+		If Leveler_HandleKilroyDeath() Then Return
+	EndIf
 	If Not Leveler_ShouldFightHere() Then Return
 	If Not Leveler_PrepareCombatAI() Then Return
 	UAI_Fight(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $LEVELER_AGGRO, $LEVELER_FIGHT_RANGE_OUT)
@@ -727,14 +844,18 @@ Func Leveler_FollowLostTreasurePath($a_i_Timeout = 600000)
 EndFunc
 
 Func Leveler_GetNearestGadget($a_f_Range = 400)
-	Local $l_i_MyID = Agent_GetMyID()
+	Return Leveler_GetNearestGadgetAt(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $a_f_Range)
+EndFunc
+
+Func Leveler_GetNearestGadgetAt($a_f_X, $a_f_Y, $a_f_Range = 400)
 	Local $l_i_Best = 0
 	Local $l_f_Best = $a_f_Range
 	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
 	For $i = 1 To $l_i_Max - 1
 		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
 		If Not Agent_GetAgentInfo($i, "IsGadgetType") Then ContinueLoop
-		Local $l_f_Dist = Agent_GetDistance($i, $l_i_MyID)
+		Local $l_f_Dist = Agent_GetDistanceToXY($a_f_X, $a_f_Y, $i)
 		If $l_f_Dist < $l_f_Best Then
 			$l_f_Best = $l_f_Dist
 			$l_i_Best = $i
@@ -780,6 +901,7 @@ Func Leveler_LootNearby($a_i_Model = 0, $a_f_Range = 2000, $a_i_Timeout = 10000)
 	Local $l_h_Timer = TimerInit()
 	Local $l_i_Picked = 0
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_KilroyMode Or $g_b_FarmMode Then Leveler_HandleKilroyDeath()
 		If Leveler_IsWiped() Then Return False
 		Local $l_i_Agent = Leveler_GetGroundItemByModel($a_i_Model, $a_f_Range)
 		If $l_i_Agent = 0 Then ExitLoop
@@ -844,16 +966,220 @@ Func Leveler_WaitUntilInCombat($a_i_Timeout = 60000)
 	Return Leveler_InDanger($LEVELER_AGGRO)
 EndFunc
 
-Func Leveler_WaitCinematic($a_i_Timeout = 30000)
+; Wine can report a live cinematic pointer that is actually null. Do not treat that as a video.
+Func Leveler_InCinematic()
+	Local $l_p_Ptr = Game_GetGameInfo("Cinematic")
+	If $l_p_Ptr = 0 Then Return False
+	If Memory_Read($l_p_Ptr) = 0 And Memory_Read($l_p_Ptr + 0x4) = 0 Then Return False
+	Return True
+EndFunc
+
+Func Leveler_OnCinematicMap()
+	Local $l_i_Map = Map_GetMapID()
+	If $l_i_Map >= 679 And $l_i_Map <= 685 Then Return True
+	If $l_i_Map = 689 Or $l_i_Map = 694 Then Return True
+	Return False
+EndFunc
+
+; Press skip only if this account already knows the cinematic. Never block the next action.
+Func Leveler_SkipKnownCinematic($a_i_StartTimeout = 2500)
 	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If Game_GetGameInfo("IsCinematic") Then
-			Sleep(500)
-			ContinueLoop
-		EndIf
-		If TimerDiff($l_h_Timer) > 1500 Then Return True
+	While Not Leveler_InCinematic()
+		If TimerDiff($l_h_Timer) > $a_i_StartTimeout Then Return True
+		Sleep(100)
+	WEnd
+	Other_PingSleep(1200)
+	$l_h_Timer = TimerInit()
+	While Leveler_InCinematic() And TimerDiff($l_h_Timer) < 5000
+		Cinematic_SkipCinematic()
 		Sleep(200)
 	WEnd
+	If Not Leveler_InCinematic() Then Out("[Move] Skipped known cinematic")
+	Return True
+EndFunc
+
+; After the scrying pool: skip if this account already knows the video, else wait it out.
+Func Leveler_WaitCinematic($a_i_StartTimeout = 8000, $a_i_PlayTimeout = 240000)
+	Local $l_h_Timer = TimerInit()
+	Local $l_b_Saw = False
+	While TimerDiff($l_h_Timer) < $a_i_StartTimeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_InCinematic() Then
+			$l_b_Saw = True
+			ExitLoop
+		EndIf
+		Sleep(150)
+	WEnd
+	If Not $l_b_Saw Then Return True
+
+	Other_PingSleep(1500)
+	$l_h_Timer = TimerInit()
+	While Leveler_InCinematic() And TimerDiff($l_h_Timer) < 6000
+		Cinematic_SkipCinematic()
+		Sleep(250)
+	WEnd
+	If Not Leveler_InCinematic() Then
+		Out("[Move] Skipped known cinematic")
+		Sleep(500)
+		Return True
+	EndIf
+
+	Out("[Move] Cinematic is new; waiting for it to finish")
+	$l_h_Timer = TimerInit()
+	While Leveler_InCinematic() Or Map_GetInstanceInfo("IsLoading") Or Leveler_OnCinematicMap()
+		If $g_b_LevelerPaused Then Return False
+		If TimerDiff($l_h_Timer) > $a_i_PlayTimeout Then
+			Out("[Move] Cinematic wait timed out")
+			Return False
+		EndIf
+		Sleep(400)
+	WEnd
+	Sleep(500)
+	Return True
+EndFunc
+
+Func Leveler_SkipCinematic($a_i_StartTimeout = 8000, $a_i_PlayTimeout = 240000)
+	Return Leveler_WaitCinematic($a_i_StartTimeout, $a_i_PlayTimeout)
+EndFunc
+
+; Model 5959 may be living or gadget. Do not match ExtraType (garbage on other agents).
+Func Leveler_GetScryingPool()
+	Local $l_i_Best = 0
+	Local $l_f_Best = 999999
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		Local $l_i_Model = Number(Agent_GetAgentInfo($i, "PlayerNumber"))
+		Local $l_i_GadgetID = Number(Agent_GetAgentInfo($i, "GadgetID"))
+		Local $l_b_Gadget = Agent_GetAgentInfo($i, "IsGadgetType")
+		If $l_i_Model <> $MODEL_EOTN_POOL And Not ($l_b_Gadget And $l_i_GadgetID = $MODEL_EOTN_POOL) Then ContinueLoop
+		Local $l_f_Dist = Agent_GetDistanceToXY($EOTN_POOL_TILE_X, $EOTN_POOL_TILE_Y, $i)
+		If $l_f_Dist < $l_f_Best Then
+			$l_f_Best = $l_f_Dist
+			$l_i_Best = $i
+		EndIf
+	Next
+	If $l_i_Best <> 0 Then Return $l_i_Best
+	$l_i_Best = Leveler_GetNearestGadgetAt($EOTN_POOL_TILE_X, $EOTN_POOL_TILE_Y, 350)
+	If $l_i_Best <> 0 Then Return $l_i_Best
+	Return Leveler_GetNearestGadgetAt($EOTN_POOL_X, $EOTN_POOL_Y, 350)
+EndFunc
+
+Func Leveler_LogPoolAgents($a_f_Range = 1500)
+	Local $l_i_Max = Agent_GetMaxAgents()
+	Local $i
+	Local $l_i_Count = 0
+	For $i = 1 To $l_i_Max - 1
+		If Agent_GetAgentPtr($i) = 0 Then ContinueLoop
+		If Agent_GetDistance($i) > $a_f_Range Then ContinueLoop
+		Local $l_i_Type = Number(Agent_GetAgentInfo($i, "Type"))
+		If $l_i_Type <> 0x200 And $l_i_Type <> 0xDB Then ContinueLoop
+		$l_i_Count = $l_i_Count + 1
+		Out("[Move] Agent " & $i & " ID=" & Agent_GetAgentInfo($i, "ID") & _
+				" type=0x" & Hex($l_i_Type, 3) & _
+				" gadget=" & Agent_GetAgentInfo($i, "IsGadgetType") & _
+				" GadgetID=" & Agent_GetAgentInfo($i, "GadgetID") & _
+				" Model=" & Agent_GetAgentInfo($i, "PlayerNumber") & _
+				" at " & Round(Agent_GetAgentInfo($i, "X")) & ", " & Round(Agent_GetAgentInfo($i, "Y")))
+		If $l_i_Count >= 12 Then Return
+	Next
+	If $l_i_Count = 0 Then Out("[Move] No living/gadget agents within " & $a_f_Range)
+EndFunc
+
+Func Leveler_SelectAgent($a_i_Agent, $a_i_Timeout = 6000)
+	If $a_i_Agent = 0 Then Return False
+	Local $l_i_Id = Number(Agent_GetAgentInfo($a_i_Agent, "ID"))
+	If $l_i_Id = 0 Then $l_i_Id = Number($a_i_Agent)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		Agent_ChangeTarget($l_i_Id)
+		Sleep(250)
+		Local $l_i_Cur = Number(Agent_GetCurrentTarget())
+		If $l_i_Cur = $l_i_Id Or $l_i_Cur = Number($a_i_Agent) Then
+			Out("[Move] Selected scrying pool (target " & $l_i_Cur & ")")
+			Return True
+		EndIf
+		Agent_ChangeTarget($a_i_Agent)
+		Sleep(250)
+		$l_i_Cur = Number(Agent_GetCurrentTarget())
+		If $l_i_Cur = $l_i_Id Or $l_i_Cur = Number($a_i_Agent) Then
+			Out("[Move] Selected scrying pool (target " & $l_i_Cur & ")")
+			Return True
+		EndIf
+	WEnd
+	Out("[Move] Did not select pool agent " & $a_i_Agent & " id " & $l_i_Id & " (current " & Agent_GetCurrentTarget() & ", rejects " & Agent_GetTargetRejectCount() & ")")
+	Return False
+EndFunc
+
+; Stand on the pool tile, select it, interact, then send 0x63D.
+Func Leveler_UseScryingPool()
+	Out("[Move] Walking to the scrying pool tile")
+	Leveler_MoveTo($EOTN_POOL_TILE_X, $EOTN_POOL_TILE_Y, False)
+	Local $l_i_Pool = Leveler_GetScryingPool()
+	If $l_i_Pool = 0 Then
+		Leveler_MoveTo($EOTN_POOL_X, $EOTN_POOL_Y, False)
+		$l_i_Pool = Leveler_GetScryingPool()
+	EndIf
+	If $l_i_Pool = 0 Then
+		$l_i_Pool = Leveler_GetNearestGadget(400)
+	EndIf
+	If $l_i_Pool = 0 Then
+		Leveler_LogPoolAgents()
+		Out("[Move] Scrying pool was not found")
+		Return False
+	EndIf
+
+	Local $l_i_Id = Number(Agent_GetAgentInfo($l_i_Pool, "ID"))
+	If $l_i_Id = 0 Then $l_i_Id = Number($l_i_Pool)
+	Local $l_f_X = Agent_GetAgentInfo($l_i_Pool, "X")
+	Local $l_f_Y = Agent_GetAgentInfo($l_i_Pool, "Y")
+	Out("[Move] Pool agent " & $l_i_Pool & " ID=" & $l_i_Id & _
+			" type=0x" & Hex(Number(Agent_GetAgentInfo($l_i_Pool, "Type")), 3) & _
+			" GadgetID=" & Agent_GetAgentInfo($l_i_Pool, "GadgetID") & _
+			" Model=" & Agent_GetAgentInfo($l_i_Pool, "PlayerNumber") & _
+			" at " & Round($l_f_X) & ", " & Round($l_f_Y))
+
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 20000
+		If $g_b_LevelerPaused Then Return False
+		If Agent_GetDistance($l_i_Pool) < 180 Then ExitLoop
+		Map_Move($l_f_X, $l_f_Y, 20)
+		Sleep(250)
+		$l_i_Pool = Leveler_GetScryingPool()
+		If $l_i_Pool = 0 Then $l_i_Pool = Leveler_GetNearestGadget(400)
+		If $l_i_Pool = 0 Then ExitLoop
+		$l_f_X = Agent_GetAgentInfo($l_i_Pool, "X")
+		$l_f_Y = Agent_GetAgentInfo($l_i_Pool, "Y")
+		$l_i_Id = Number(Agent_GetAgentInfo($l_i_Pool, "ID"))
+		If $l_i_Id = 0 Then $l_i_Id = Number($l_i_Pool)
+	WEnd
+
+	If Not Leveler_SelectAgent($l_i_Pool) Then
+		Leveler_LogPoolAgents()
+		Return False
+	EndIf
+
+	If Agent_GetAgentInfo($l_i_Pool, "IsGadgetType") Then
+		Agent_GoSignpost($l_i_Id)
+	Else
+		Agent_GoNPC($l_i_Id)
+	EndIf
+	Sleep(800)
+	If Number(Agent_GetCurrentTarget()) <> $l_i_Id Then Agent_ChangeTarget($l_i_Id)
+	If Agent_GetAgentInfo($l_i_Pool, "IsGadgetType") Then
+		Agent_GoNPC($l_i_Id)
+	Else
+		Agent_GoSignpost($l_i_Id)
+	EndIf
+	Sleep(1000)
+	Out("[Move] Sending 0x63D for Look deep into the pool")
+	Game_Dialog($DIALOG_POOL_LOOK_DEEP)
+	Sleep(700)
+	Out("[Move] Sending 0x63F I'll keep my eyes open")
+	Game_Dialog($DIALOG_POOL_EYES_OPEN)
+	Sleep(400)
 	Return True
 EndFunc
 
@@ -923,9 +1249,10 @@ Func Leveler_WaitMs($a_i_Ms)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Ms
 		If $g_b_LevelerPaused Then Return False
-		If Leveler_IsWiped() Then Return False
+		If Leveler_IsWiped() And Not $g_b_KilroyMode Then Return False
 		If $g_b_KilroyMode Then Leveler_HandleKilroyDeath()
-		Sleep(250)
+		If Leveler_ShouldFightHere() Then Leveler_CombatTick()
+		Sleep(50)
 	WEnd
 	Return True
 EndFunc
@@ -942,7 +1269,8 @@ Func Leveler_WaitUntilOutpost($a_i_Timeout = 180000)
 		If $g_b_KilroyMode Then Leveler_HandleKilroyDeath()
 		If Map_GetInstanceInfo("IsOutpost") Then Return True
 		If Leveler_IsWiped() And Not $g_b_KilroyMode Then Return False
-		Sleep(400)
+		If Leveler_ShouldFightHere() Then Leveler_CombatTick()
+		Sleep(50)
 	WEnd
 	Return Map_GetInstanceInfo("IsOutpost")
 EndFunc
@@ -1003,6 +1331,85 @@ Func Leveler_WaitUntilMapReady($a_i_Timeout = 45000)
 	Return False
 EndFunc
 
+Func Leveler_IsPunchoutMap($a_i_Map = 0)
+	If $a_i_Map = 0 Then $a_i_Map = Map_GetMapID()
+	Return $a_i_Map = $MAP_KILROY Or $a_i_Map = $MAP_FRONIS
+EndFunc
+
+Func Leveler_WaitKilroyInstance($a_i_Timeout = 45000)
+	Return Leveler_WaitPunchoutInstance($MAP_KILROY, $a_i_Timeout)
+EndFunc
+
+Func Leveler_WaitPunchoutInstance($a_i_MapID, $a_i_Timeout = 45000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Map_GetMapID() = $a_i_MapID And Not Map_GetInstanceInfo("IsLoading") And Not Map_GetInstanceInfo("IsOutpost") And Leveler_ClientIsReady() Then Return True
+		Sleep(200)
+	WEnd
+	Return Map_GetMapID() = $a_i_MapID And Not Map_GetInstanceInfo("IsLoading") And Not Map_GetInstanceInfo("IsOutpost") And Leveler_ClientIsReady()
+EndFunc
+
+Func Leveler_BrassKnucklesEquipped()
+	If Item_GetInventoryInfo("WeaponSet0WeaponModelID") = $MODEL_BRASS_KNUCKLES Then Return True
+	If Item_GetInventoryInfo("WeaponSet1WeaponModelID") = $MODEL_BRASS_KNUCKLES Then Return True
+	Return False
+EndFunc
+
+; Brass knuckles only exist / can be worn after Punch the Clown (map 703) is loaded.
+Func Leveler_EquipBrassKnuckles()
+	If Not Leveler_IsPunchoutMap() Then
+		Out("[Kilroy] Brass knuckles wait until the punch-out map is loaded")
+		Return False
+	EndIf
+	If Leveler_BrassKnucklesEquipped() Then
+		Out("[Kilroy] Brass knuckles already equipped")
+		Return True
+	EndIf
+	Local $l_i_Attempt
+	For $l_i_Attempt = 1 To 10
+		If Not Leveler_IsPunchoutMap() Then Return False
+		Local $l_i_Item = Item_FindItemByModelID($MODEL_BRASS_KNUCKLES)
+		If $l_i_Item = 0 Then
+			Out("[Kilroy] Brass knuckles not in bags yet. Waiting.")
+			Sleep(500)
+			ContinueLoop
+		EndIf
+		Item_EquipItem($l_i_Item)
+		Sleep(600)
+		If Leveler_BrassKnucklesEquipped() Then
+			Out("[Kilroy] Brass knuckles equipped")
+			Return True
+		EndIf
+	Next
+	Out("[Kilroy] Failed to equip brass knuckles")
+	Return False
+EndFunc
+
+; Knuckles swap the bar to brawling skills. Recache after that or UtilityAI keeps the old bar.
+Func Leveler_PrepareKilroyCombat()
+	$g_b_CombatMode = True
+	$g_b_UAIReady = False
+	$g_i_LastUAIMap = 0
+	If Not Leveler_WaitBrawlingBar() Then
+		Out("[Kilroy] Brawling skills are not on the bar yet")
+		Return False
+	EndIf
+	If Not Leveler_CacheUtilityAIForMap(Map_GetMapID()) Then Return False
+	Out("[Kilroy] Brawling bar cached: " & Skill_GetSkillbarInfo(1, "SkillID") & ", " & Skill_GetSkillbarInfo(2, "SkillID") & ", " & Skill_GetSkillbarInfo(3, "SkillID") & ", " & Skill_GetSkillbarInfo(8, "SkillID"))
+	Return True
+EndFunc
+
+Func Leveler_WaitBrawlingBar($a_i_Timeout = 8000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Skill_GetSkillbarInfo(1, "SkillID") <> 0 Then Return True
+		Sleep(200)
+	WEnd
+	Return Skill_GetSkillbarInfo(1, "SkillID") <> 0
+EndFunc
+
 Func Leveler_EquipItemByModel($a_i_Model)
 	Local $l_i_Item = Item_FindItemByModelID($a_i_Model)
 	If $l_i_Item = 0 Then
@@ -1014,14 +1421,21 @@ Func Leveler_EquipItemByModel($a_i_Model)
 	Return True
 EndFunc
 
-; Punchout death: refill energy with slot 8 unless max energy is already high, then bail to Gunnar's.
-Func Leveler_HandleKilroyDeath()
-	If Not $g_b_KilroyMode Then Return False
-	If Not Agent_GetAgentInfo(-2, "IsDead") Then Return False
+; Punch-out downstate: IsDead, knocked down, or HP gone. Skill 8 is the revive.
+Func Leveler_IsPunchoutDowned()
+	If Agent_GetAgentInfo(-2, "IsDead") Then Return True
+	If Agent_GetAgentInfo(-2, "IsKnockedDown") Then Return True
+	If Agent_GetAgentInfo(-2, "HP") <= 0 Then Return True
+	Return False
+EndFunc
 
-	Local $l_i_MaxEnergy = Agent_GetAgentInfo(-2, "MaxEnergy")
-	If $l_i_MaxEnergy >= 80 Then
-		Out("[Kilroy] High-energy death. Returning to Gunnar's Hold.")
+; Spam skill 8 until standing. Fronis uses this as the revive; do not resign.
+Func Leveler_HandleKilroyDeath()
+	If Not $g_b_KilroyMode And Not $g_b_FarmMode And Not Leveler_IsPunchoutMap() Then Return False
+	If Not Leveler_IsPunchoutDowned() Then Return False
+
+	If Map_GetMapID() = $MAP_KILROY And Agent_GetAgentInfo(-2, "MaxEnergy") >= 80 Then
+		Out("[Kilroy] High-energy death during Punch the Clown. Returning to Gunnar's Hold.")
 		$g_b_KilroyMode = False
 		Sleep(800)
 		If Not Leveler_Travel($MAP_GUNNAR) Then
@@ -1033,16 +1447,40 @@ Func Leveler_HandleKilroyDeath()
 		Return True
 	EndIf
 
+	Out("[Kilroy] Downed. Using skill 8 until revived.")
 	Local $l_h_Timer = TimerInit()
-	While Agent_GetAgentInfo(-2, "EnergyPercent") < 0.999 And TimerDiff($l_h_Timer) < 20000
+	While Leveler_IsPunchoutDowned() And TimerDiff($l_h_Timer) < 30000
+		If $g_b_LevelerPaused Then Return True
+		If Not Leveler_IsPunchoutMap() Then Return True
 		Skill_UseSkill(8)
-		Sleep(40)
+		Sleep(50)
 	WEnd
-	Return False
+	If Leveler_IsPunchoutDowned() Then
+		Out("[Kilroy] Still down after skill 8. Retrying next tick.")
+		Return True
+	EndIf
+	Out("[Kilroy] Revived")
+	Sleep(300)
+	Return True
 EndFunc
 
 Func Leveler_RecoverWipe()
 	$g_b_SpiritRiftWatch = False
+	If $g_b_FarmMode Then
+		Out("[Recover] Wiped during Punch-Out farm. Returning to Gunnar's Hold.")
+		Sleep(2000)
+		If Map_GetMapID() <> $MAP_GUNNAR Then
+			If Not Leveler_Travel($MAP_GUNNAR) Then
+				Chat_SendChat("resign", "/")
+				Sleep(1200)
+				If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
+				Map_WaitMapLoading()
+			EndIf
+		EndIf
+		$g_b_KilroyMode = True
+		Out("[Recover] Farm wipe handled. Retrying Kilroy Punch-Out Extravaganza.")
+		Return True
+	EndIf
 	If $g_b_KilroyMode Then
 		Out("[Recover] Wiped during Kilroy. Returning to Gunnar's Hold.")
 		$g_b_KilroyMode = False
@@ -1056,20 +1494,6 @@ Func Leveler_RecoverWipe()
 			EndIf
 		EndIf
 		Out("[Recover] Kilroy wipe handled. Retrying Punch the Clown.")
-		Return True
-	EndIf
-	If $g_b_FarmMode Then
-		Out("[Recover] Wiped during AB farm. Waiting, then returning to Eye of the North.")
-		Sleep(8000)
-		If Map_GetMapID() <> $MAP_EOTN And Map_GetMapID() <> $MAP_HOM Then
-			If Not Leveler_Travel($MAP_EOTN) Then
-				Chat_SendChat("resign", "/")
-				Sleep(1200)
-				If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
-				Map_WaitMapLoading()
-			EndIf
-		EndIf
-		Out("[Recover] Farm wipe handled. Retrying AB prepare.")
 		Return True
 	EndIf
 

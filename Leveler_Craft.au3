@@ -447,6 +447,20 @@ Func Leveler_DestroyModel($a_i_Model)
 	Return True
 EndFunc
 
+; Bags only. Do not destroy equipped armor or crafter-window listings.
+Func Leveler_DestroyBagModel($a_i_Model)
+	If $a_i_Model = 0 Then Return True
+	If Leveler_IsModelEquipped($a_i_Model) Then
+		Out("[Craft] Not destroying equipped model " & $a_i_Model)
+		Return True
+	EndIf
+	Local $l_i_Item = Item_GetBagsItembyModelID($a_i_Model)
+	If $l_i_Item = 0 Then Return True
+	Item_DestroyItem($l_i_Item)
+	Sleep(200)
+	Return True
+EndFunc
+
 Func Leveler_GetStarterArmorModels()
 	Local $l_i_Prof = Leveler_PrimaryProfession()
 	Local $l_ai_Armor[5]
@@ -816,11 +830,28 @@ Func Leveler_DestroyMonasteryArmor()
 EndFunc
 
 Func Leveler_DestroySeitungArmor()
+	If Not Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) Then
+		Out("[Craft] Max armor is not equipped. Not destroying Seitung pieces.")
+		Return False
+	EndIf
+	Local $l_ai_Mon = Leveler_GetMonasteryPieces()
+	Local $i
+	For $i = 0 To UBound($l_ai_Mon) - 1
+		Leveler_DestroyBagModel($l_ai_Mon[$i][0])
+	Next
 	Local $l_ai_Pieces = Leveler_GetSeitungPieces()
 	For $i = 0 To UBound($l_ai_Pieces) - 1
-		Leveler_DestroyModel($l_ai_Pieces[$i][0])
+		If Leveler_IsModelEquipped($l_ai_Pieces[$i][0]) Then
+			Out("[Craft] Seitung model " & $l_ai_Pieces[$i][0] & " is still equipped. Not destroying it.")
+			Return False
+		EndIf
+		Leveler_DestroyBagModel($l_ai_Pieces[$i][0])
 	Next
-	Out("[Craft] Destroyed Seitung armor")
+	If Not Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) Then
+		Out("[Craft] Max armor is no longer equipped after destroying Seitung")
+		Return False
+	EndIf
+	Out("[Craft] Destroyed leftover monastery and Seitung armor from bags")
 	Return True
 EndFunc
 
