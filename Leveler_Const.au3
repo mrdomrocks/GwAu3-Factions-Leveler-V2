@@ -357,6 +357,10 @@ Global Const $MODEL_CLAIRVOYANT_STAFF = 11647
 ; Paid from the Choose Your Secondary Profession (#317) complete reward, not storage.
 Global Const $XUNLAI_GOLD_COST = 50
 Global Const $WEAPON_GOLD_COST = 100
+; Er Ming [Merchant] in Shing Jea Monastery. Bag and Belt Pouch each cost 100g.
+Global Const $BAG_GOLD_COST = 100
+Global Const $BAG_MERCHANT_X = -11866
+Global Const $BAG_MERCHANT_Y = 11444
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000

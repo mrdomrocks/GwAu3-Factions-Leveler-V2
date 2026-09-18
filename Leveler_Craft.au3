@@ -1044,10 +1044,112 @@ Func Leveler_HasCraftedWeapon()
 	Return Leveler_OwnsModel($MODEL_CLAIRVOYANT_STAFF)
 EndFunc
 
+Func Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey = "")
+	If Item_GetBagPtr($a_i_Bag) <> 0 Then Return True
+	If $a_s_InfoKey <> "" And Item_GetInventoryInfo($a_s_InfoKey) <> 0 Then Return True
+	Return False
+EndFunc
+
+; Belt pouch, or both extra bags. Do not treat merchant-window listings as equipped.
 Func Leveler_HasExtendedBags()
-	If Item_GetBagPtr($GC_I_INVENTORY_BELT_POUCH) <> 0 Then Return True
-	If Leveler_IsModelEquipped($MODEL_BELT_POUCH) Then Return True
-	If Item_GetBagPtr($GC_I_INVENTORY_BAG1) <> 0 And Item_GetBagPtr($GC_I_INVENTORY_BAG2) <> 0 Then Return True
+	If Leveler_BagSlotFilled($GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr") Then Return True
+	If Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") And Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") Then Return True
+	Return False
+EndFunc
+
+Func Leveler_LogBagState($a_s_Why)
+	Out("[Craft] " & $a_s_Why & " pouch=" & Item_GetBagPtr($GC_I_INVENTORY_BELT_POUCH) & "/" & Item_GetInventoryInfo("BeltPouchPtr") & _
+			" bag1=" & Item_GetBagPtr($GC_I_INVENTORY_BAG1) & "/" & Item_GetInventoryInfo("Bag1Ptr") & _
+			" bag2=" & Item_GetBagPtr($GC_I_INVENTORY_BAG2) & "/" & Item_GetInventoryInfo("Bag2Ptr") & _
+			" inv bag=" & Item_GetBagsItembyModelID($MODEL_BAG) & " pouch=" & Item_GetBagsItembyModelID($MODEL_BELT_POUCH) & _
+			" gold=" & Item_GetInventoryInfo("GoldCharacter") & " merchant=" & Merchant_GetMerchantItemsSize())
+EndFunc
+
+Func Leveler_WaitForMerchantOffer($a_i_Model, $a_i_Timeout = 8000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Merchant_GetMerchantItemPtr($a_i_Model) <> 0 Then Return True
+		Sleep(200)
+	WEnd
+	Return False
+EndFunc
+
+Func Leveler_WaitForBagSlot($a_i_Bag, $a_s_InfoKey = "", $a_i_Timeout = 4000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
+		Sleep(200)
+	WEnd
+	Return False
+EndFunc
+
+; Bags are used into an empty slot. ITEM_EQUIP / Ui_EquipItem are armor packets and
+; Item_FindItemByModelID matches the open merchant listing, which cannot be equipped.
+Func Leveler_EquipBagToSlot($a_i_Model, $a_i_Bag, $a_s_InfoKey = "")
+	If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
+	Local $i
+	For $i = 1 To 8
+		If $g_b_LevelerPaused Then Return False
+		Local $l_i_Item = Item_GetBagsItembyModelID($a_i_Model)
+		If $l_i_Item = 0 Then
+			Sleep(300)
+			ContinueLoop
+		EndIf
+		Out("[Craft] Using bag item " & $l_i_Item & " (model " & $a_i_Model & ") into slot " & $a_i_Bag)
+		Item_UseItem($l_i_Item)
+		If Leveler_WaitForBagSlot($a_i_Bag, $a_s_InfoKey, 1500) Then Return True
+		Item_EquipItem($l_i_Item)
+		Sleep(250)
+		If Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey) Then Return True
+	Next
+	Return Leveler_BagSlotFilled($a_i_Bag, $a_s_InfoKey)
+EndFunc
+
+Func Leveler_EquipOwnedInventoryBags()
+	If Item_GetBagsItembyModelID($MODEL_BELT_POUCH) <> 0 Then
+		Leveler_EquipBagToSlot($MODEL_BELT_POUCH, $GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr")
+	EndIf
+	If Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") And Item_GetBagsItembyModelID($MODEL_BAG) <> 0 Then
+		Leveler_EquipBagToSlot($MODEL_BAG, $GC_I_INVENTORY_BAG1, "Bag1Ptr")
+	EndIf
+	If Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") And Item_GetBagsItembyModelID($MODEL_BAG) <> 0 Then
+		Leveler_EquipBagToSlot($MODEL_BAG, $GC_I_INVENTORY_BAG2, "Bag2Ptr")
+	EndIf
+	Return Leveler_HasExtendedBags()
+EndFunc
+
+Func Leveler_BuyInventoryBag($a_i_Model)
+	If Item_GetBagsItembyModelID($a_i_Model) <> 0 Then Return True
+	Local $l_i_Gold = Item_GetInventoryInfo("GoldCharacter")
+	If $l_i_Gold < $BAG_GOLD_COST Then
+		Out("[Craft] Need " & $BAG_GOLD_COST & " gold for bag model " & $a_i_Model & ", have " & $l_i_Gold & ". Withdrawing.")
+		Item_WithdrawGold($BAG_GOLD_COST)
+		Sleep(400)
+		$l_i_Gold = Item_GetInventoryInfo("GoldCharacter")
+		If $l_i_Gold < $BAG_GOLD_COST Then
+			Out("[Craft] Still short of gold for bag model " & $a_i_Model)
+			Return False
+		EndIf
+	EndIf
+	If Not Leveler_WaitForMerchantOffer($a_i_Model) Then
+		Out("[Craft] Merchant is not offering bag model " & $a_i_Model & " (merchant size " & Merchant_GetMerchantItemsSize() & ")")
+		Return False
+	EndIf
+	Out("[Craft] Buying bag model " & $a_i_Model & " (gold " & $l_i_Gold & ")")
+	If Not Merchant_BuyItem($a_i_Model, 1, False) Then
+		Out("[Craft] Merchant_BuyItem failed for bag model " & $a_i_Model)
+		Return False
+	EndIf
+	; Bags only. WaitForBagModel also treats crafter/merchant listings as equipped.
+	Local $l_h_Appear = TimerInit()
+	While TimerDiff($l_h_Appear) < 6000
+		If $g_b_LevelerPaused Then Return False
+		If Item_GetBagsItembyModelID($a_i_Model) <> 0 Then Return True
+		Sleep(200)
+	WEnd
+	Out("[Craft] Bag model " & $a_i_Model & " did not appear in inventory after buy")
 	Return False
 EndFunc
 
@@ -1070,28 +1172,53 @@ Func Leveler_ExtendInventory()
 		Out("[Craft] Belt Pouch already equipped")
 		Return True
 	EndIf
-	If Not Leveler_InteractNpcAt(-11866, 11444, False) Then Return False
-	Sleep(400)
-	If Item_GetBagPtr($GC_I_INVENTORY_BAG1) = 0 Then
-		Merchant_BuyItem($MODEL_BAG, 1, False)
-		Sleep(300)
-		Local $l_i_Bag = Item_FindItemByModelID($MODEL_BAG)
-		If $l_i_Bag <> 0 Then Item_EquipItem($l_i_Bag)
-		Sleep(250)
+	Leveler_LogBagState("Extend Inventory start")
+	If Leveler_EquipOwnedInventoryBags() Then
+		Out("[Craft] Inventory bags equipped")
+		Return True
 	EndIf
-	If Item_GetBagPtr($GC_I_INVENTORY_BAG2) = 0 Then
-		Merchant_BuyItem($MODEL_BAG, 1, False)
-		Sleep(300)
-		Local $l_i_Bag2 = Item_FindItemByModelID($MODEL_BAG)
-		If $l_i_Bag2 <> 0 Then Item_EquipItem($l_i_Bag2)
-		Sleep(250)
+	If Not Leveler_InteractNpcAt($BAG_MERCHANT_X, $BAG_MERCHANT_Y, False) Then Return False
+	Local $l_h_Offer = TimerInit()
+	Local $l_b_Offer = False
+	While TimerDiff($l_h_Offer) < 8000
+		If $g_b_LevelerPaused Then Return False
+		If Merchant_GetMerchantItemPtr($MODEL_BAG) <> 0 Or Merchant_GetMerchantItemPtr($MODEL_BELT_POUCH) <> 0 Then
+			$l_b_Offer = True
+			ExitLoop
+		EndIf
+		Sleep(200)
+	WEnd
+	If Not $l_b_Offer Then
+		Leveler_LogBagState("Bag merchant did not open")
+		Return False
 	EndIf
-	If Item_GetBagPtr($GC_I_INVENTORY_BELT_POUCH) = 0 Then
-		Merchant_BuyItem($MODEL_BELT_POUCH, 1, False)
-		Sleep(300)
-		Local $l_i_Pouch = Item_FindItemByModelID($MODEL_BELT_POUCH)
-		If $l_i_Pouch <> 0 Then Item_EquipItem($l_i_Pouch)
-		Sleep(250)
+
+	; Pouch alone completes the step. Buy it first so we do not stall on extra bags.
+	If Not Leveler_BagSlotFilled($GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr") Then
+		If Leveler_BuyInventoryBag($MODEL_BELT_POUCH) Then
+			Leveler_EquipBagToSlot($MODEL_BELT_POUCH, $GC_I_INVENTORY_BELT_POUCH, "BeltPouchPtr")
+		EndIf
+	EndIf
+	If Leveler_HasExtendedBags() Then
+		Out("[Craft] Inventory bags equipped")
+		Return True
+	EndIf
+
+	If Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG1, "Bag1Ptr") Then
+		If Leveler_BuyInventoryBag($MODEL_BAG) Then
+			Leveler_EquipBagToSlot($MODEL_BAG, $GC_I_INVENTORY_BAG1, "Bag1Ptr")
+		EndIf
+	EndIf
+	If Not Leveler_BagSlotFilled($GC_I_INVENTORY_BAG2, "Bag2Ptr") Then
+		If Leveler_BuyInventoryBag($MODEL_BAG) Then
+			Leveler_EquipBagToSlot($MODEL_BAG, $GC_I_INVENTORY_BAG2, "Bag2Ptr")
+		EndIf
+	EndIf
+
+	If Not Leveler_HasExtendedBags() Then
+		Out("[Craft] Inventory bags are still missing after the merchant")
+		Leveler_LogBagState("After merchant")
+		Return False
 	EndIf
 	Out("[Craft] Inventory bags equipped")
 	Return True

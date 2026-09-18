@@ -370,6 +370,10 @@ Func Leveler_Step_ExtendInventory()
 		Out("[Step] Belt Pouch is equipped; inventory already extended")
 		Return True
 	EndIf
+	If Leveler_EquipOwnedInventoryBags() Then
+		Out("[Step] Equipped bags already in inventory")
+		Return True
+	EndIf
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_SetPacifist()
 	Return Leveler_ExtendInventory()
@@ -386,7 +390,7 @@ Func Leveler_Step_UnlockSkills()
 	; Rezone so we do not path from the bag merchant around courtyard objects.
 	If Not Leveler_Travel($MAP_SHING_JEA, True) Then Return False
 	Leveler_SetPacifist()
-	If Agent_GetDistanceToXY(-11866, 11444) < 1200 Then
+	If Agent_GetDistanceToXY($BAG_MERCHANT_X, $BAG_MERCHANT_Y) < 1200 Then
 		Out("[Step] Still near the bag merchant; taking the courtyard around the obstacle")
 		If Not Leveler_MoveTo(-10896.94, 10807.54, False) Then Return False
 	EndIf
