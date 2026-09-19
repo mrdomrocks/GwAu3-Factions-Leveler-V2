@@ -395,9 +395,8 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 450
 	Return False
 EndFunc
 
-; GwAu3 Party Formation enter. $a_b_Foreign = False is Native Character.
-; Ui_EnterChallenge writes Not $foreign, inits the load flag, enqueues EnterMission,
-; then Map_WaitMapIsLoaded when $a_b_WaitMapIsLoaded is True.
+; GwAu3 Party Formation enter: Ui_EnterChallenge(True).
+; $a_b_Foreign = True (Foreign Character); WaitMapIsLoaded stays at the default True.
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Local $l_i_StartMap = Map_GetMapID()
 	If Leveler_InMissionInstance($a_i_MapID) Then
@@ -421,8 +420,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 
 	Out("Let's do " & $a_s_Name)
 	Out("Exiting Outpost")
-	; Native Character (False), wait for Map_WaitMapIsLoaded (True).
-	Ui_EnterChallenge(False, True)
+	Ui_EnterChallenge(True)
 	Map_WaitMapLoading($a_i_MapID, 1)
 	Sleep(2000)
 	Cache_SkillBar()
