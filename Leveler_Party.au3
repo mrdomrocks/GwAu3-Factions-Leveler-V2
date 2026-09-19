@@ -558,13 +558,21 @@ Func Leveler_AbortStuckZenLoad()
 	Return False
 EndFunc
 
-; Native Factions enter. GwAu3 Ui_EnterChallenge:
+; Official GwAu3 Party Formation enter. Ui_EnterChallenge:
 ;   DllStructSetData($g_d_EnterMission, 2, Not $a_b_Foreign)
 ;   Map_InitMapIsLoaded()
 ;   Core_Enqueue($g_p_EnterMission, 8)
 ;   If $a_b_WaitMapIsLoaded Then Map_WaitMapIsLoaded()
-; False, False => arena_id=1 (native), no Map_WaitMapIsLoaded (that 30s wait
-; hung Wine type-2). Cho uses True, False => arena_id=0.
+;
+; GwAu3 names False "Native Character" (dword 1) and True "Foreign" (dword 0).
+; On this Wine client dword 1 is the challenge/PvP path, not a Factions
+; story-mission enter:
+;   Ui_EnterChallenge(False, True)  and (False, False)  -> Zen 213 type-2 hang
+;   Map_EnterChallenge packet payload 1                 -> Cho Code-007
+;   Ui_EnterChallenge(True, False)                      -> Cho 214 explorable
+; Py4GW Map.EnterChallenge / GWCA never send 1 for story missions (wparam 0
+; or CurrentMap 0x36d). A Factions Assassin on Zen uses the same official
+; call as Cho: True, False (dword 0, no Map_WaitMapIsLoaded).
 ; No MouseClick, ENTER, ControlClick, CommandUIMsg, or 0xA5.
 Func Leveler_SendZenEnterMission()
 	If $g_b_ZenNeedGwRestart Then
@@ -575,13 +583,12 @@ Func Leveler_SendZenEnterMission()
 		If Map_GetInstanceInfo("IsOutpost") Then $g_b_ZenNeedGwRestart = False
 	EndIf
 	If Leveler_MissionEnterStarted() Then Return True
-	Out("[Step] Ui_EnterChallenge(False, False) native arena_id=1 (Zen; no Map_WaitMapIsLoaded, not MouseClick, not 0xA5)")
-	Ui_EnterChallenge(False, False)
+	Out("[Step] Ui_EnterChallenge(True, False) arena_id=0 (Zen; same Cho call; dword 1 type-2 hang; not MouseClick, not 0xA5)")
+	Ui_EnterChallenge(True, False)
 	Return True
 EndFunc
 
-; Cho: Ui_EnterChallenge(True, False) — foreign/coop arena_id=0, no wait.
-; Zen: Ui_EnterChallenge(False, False) — native arena_id=1, no wait.
+; Cho and Zen: Ui_EnterChallenge(True, False) — dword 0, no wait.
 Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
 	If Leveler_MissionEnterStarted() Then Return True
 	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
