@@ -195,25 +195,72 @@ EndFunc
 Func Leveler_Step_FormingAParty()
 	$g_s_CurrentHeader = "Quest: Forming A Party"
 	Out("=== " & $g_s_CurrentHeader & " ===")
+	Leveler_LogQuestState($QUEST_FORMING_A_PARTY, "Forming A Party")
 	If Leveler_SkipIfQuestDone($QUEST_FORMING_A_PARTY, "Forming A Party") Then Return True
 	If Leveler_ShouldResumeExplorable($QUEST_FORMING_A_PARTY) Then
 		Out("[Step] Forming A Party is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")
 		If Map_GetMapID() = $MAP_SUNQUA_VALE Then
-			If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, 19673.00, -6982.00, $DIALOG_FORMING_COMPLETE, "complete") Then Return False
+			If Not Leveler_CompleteFormingAParty() Then Return False
 			Return True
 		EndIf
 	Else
 		If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	EndIf
 	Leveler_PrepareForBattle()
-	If Not Leveler_HasQuest($QUEST_FORMING_A_PARTY) Then
-		If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, -14063.00, 10044.00, $DIALOG_FORMING_ACCEPT, "accept", Leveler_TogoModel()) Then Return False
-	Else
-		Out("[Step] Forming A Party already in the log")
-	EndIf
+	If Not Leveler_AcceptFormingAParty() Then Return False
 	If Leveler_SkipIfQuestDone($QUEST_FORMING_A_PARTY, "Forming A Party") Then Return True
 	If Not Leveler_MoveAndExit(-14961, 11453, $MAP_SUNQUA_VALE, True) Then Return False
-	If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, 19673.00, -6982.00, $DIALOG_FORMING_COMPLETE, "complete") Then Return False
+	If Not Leveler_CompleteFormingAParty() Then Return False
+	Return True
+EndFunc
+
+; #440 is accepted from Ludo in Shing Jea, not Master Togo.
+Func Leveler_AcceptFormingAParty()
+	If Leveler_HasQuest($QUEST_FORMING_A_PARTY) Then
+		Out("[Step] Forming A Party already in the log")
+		Return True
+	EndIf
+	If Leveler_QuestFinished($QUEST_FORMING_A_PARTY) Then
+		Out("[Step] Forming A Party already completed")
+		Leveler_MarkQuestDone($QUEST_FORMING_A_PARTY)
+		Return True
+	EndIf
+	Local $l_i_Ludo = Leveler_GetLudo($LUDO_SHING_JEA_X, $LUDO_SHING_JEA_Y)
+	Local $l_f_X = $LUDO_SHING_JEA_X
+	Local $l_f_Y = $LUDO_SHING_JEA_Y
+	Local $l_i_Model = 0
+	If $l_i_Ludo <> 0 Then
+		$l_f_X = Agent_GetAgentInfo($l_i_Ludo, "X")
+		$l_f_Y = Agent_GetAgentInfo($l_i_Ludo, "Y")
+		$l_i_Model = Agent_GetAgentInfo($l_i_Ludo, "PlayerNumber")
+		Out("[Step] Accepting #440 from Ludo (model " & $l_i_Model & ") at " & Round($l_f_X) & ", " & Round($l_f_Y))
+	Else
+		Out("[Step] Ludo not found yet; walking to " & Round($l_f_X) & ", " & Round($l_f_Y) & " to accept #440")
+	EndIf
+	If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, $l_f_X, $l_f_Y, $DIALOG_FORMING_ACCEPT, "accept", $l_i_Model) Then Return False
+	Return True
+EndFunc
+
+; Hand-in is Ludo just outside the monastery in Sunqua Vale, not Togo.
+Func Leveler_CompleteFormingAParty()
+	If Leveler_QuestFinished($QUEST_FORMING_A_PARTY) And Not Leveler_QuestNeedsHandIn($QUEST_FORMING_A_PARTY) Then
+		Out("[Step] Forming A Party already handed in")
+		Leveler_MarkQuestDone($QUEST_FORMING_A_PARTY)
+		Return True
+	EndIf
+	Local $l_i_Ludo = Leveler_GetLudo($LUDO_SUNQUA_X, $LUDO_SUNQUA_Y)
+	Local $l_f_X = $LUDO_SUNQUA_X
+	Local $l_f_Y = $LUDO_SUNQUA_Y
+	Local $l_i_Model = 0
+	If $l_i_Ludo <> 0 Then
+		$l_f_X = Agent_GetAgentInfo($l_i_Ludo, "X")
+		$l_f_Y = Agent_GetAgentInfo($l_i_Ludo, "Y")
+		$l_i_Model = Agent_GetAgentInfo($l_i_Ludo, "PlayerNumber")
+		Out("[Step] Completing #440 with Ludo (model " & $l_i_Model & ") at " & Round($l_f_X) & ", " & Round($l_f_Y))
+	Else
+		Out("[Step] Ludo not found yet; walking to " & Round($l_f_X) & ", " & Round($l_f_Y) & " to complete #440")
+	EndIf
+	If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, $l_f_X, $l_f_Y, $DIALOG_FORMING_COMPLETE, "complete", $l_i_Model) Then Return False
 	Return True
 EndFunc
 

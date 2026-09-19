@@ -247,7 +247,24 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 	EndIf
 EndFunc
 
+; Forming a Party is done after Ludo's hand-in, or once later tutorial quests prove it already happened.
+; A 4/4 hench party is not enough — #440 still has to be accepted and completed.
+Func Leveler_FormingAPartyDone()
+	If Leveler_QuestNeedsHandIn($QUEST_FORMING_A_PARTY) Then Return False
+	If Leveler_QuestLogActive($QUEST_FORMING_A_PARTY) Then Return False
+	If Leveler_QuestFinished($QUEST_FORMING_A_PARTY) Then Return True
+	If Leveler_HasSecondaryProfession() Then Return True
+	If Leveler_HasQuest($QUEST_SECONDARY) Or Leveler_HasQuest($QUEST_FORMAL_INTRO) Then Return True
+	If Leveler_QuestProgress($QUEST_SECONDARY) Or Leveler_QuestProgress($QUEST_FORMAL_INTRO) Then Return True
+	Return False
+EndFunc
+
 Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
+	If $a_i_QuestID = $QUEST_FORMING_A_PARTY And Leveler_FormingAPartyDone() Then
+		Leveler_MarkQuestDone($QUEST_FORMING_A_PARTY)
+		Out("[Step] " & $a_s_Name & " already completed")
+		Return True
+	EndIf
 	If $a_i_QuestID = $QUEST_SEARCH_CURE And Leveler_SearchCureDone() Then
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 		Out("[Step] " & $a_s_Name & " already completed")
@@ -487,7 +504,7 @@ Func Leveler_StatusCheck()
 	; Monastery tutorial is character-specific. Account map unlocks, storage
 	; pointers, and account skill unlocks must not skip Secondary / Xunlai / craft.
 	$g_ab_StepDone[$LEVELER_STEP_OVERLOOK] = $l_b_ShingJea And Not Leveler_OnOverlook()
-	$g_ab_StepDone[$LEVELER_STEP_PARTY] = (Not Leveler_QuestLogActive($QUEST_FORMING_A_PARTY)) And (Leveler_QuestLogCompleted($QUEST_FORMING_A_PARTY) Or Leveler_HasSecondaryProfession() Or Leveler_HasQuest($QUEST_SECONDARY) Or Leveler_HasQuest($QUEST_FORMAL_INTRO))
+	$g_ab_StepDone[$LEVELER_STEP_PARTY] = Leveler_FormingAPartyDone()
 	$g_ab_StepDone[$LEVELER_STEP_SECONDARY] = Leveler_SecondaryStepReadyToLeave()
 	Out("[Status] Profession " & Leveler_PrimaryProfession() & "/" & Leveler_SecondaryProfession() & "  Gold " & Leveler_CharacterGold() & "  Secondary step done=" & $g_ab_StepDone[$LEVELER_STEP_SECONDARY])
 	$g_ab_StepDone[$LEVELER_STEP_XUNLAI] = Leveler_XunlaiUnlocked()
