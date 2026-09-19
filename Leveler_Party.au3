@@ -386,7 +386,8 @@ Func Leveler_InMissionInstance($a_i_MapID = 0)
 EndFunc
 
 Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 45000)
-	If Map_WaitMapLoading($a_i_StartMap, 1, $a_i_Timeout) Then Return True
+	If Map_WaitMapLoading($a_i_MapID, 1, $a_i_Timeout) Then Return True
+	If $a_i_StartMap <> $a_i_MapID And Map_WaitMapLoading($a_i_StartMap, 1, $a_i_Timeout) Then Return True
 	If Map_GetInstanceInfo("IsExplorable") Then
 		Local $l_i_Map = Map_GetMapID()
 		If $l_i_Map = $a_i_StartMap Or $l_i_Map = $a_i_MapID Then Return True
@@ -394,6 +395,13 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 450
 	Return False
 EndFunc
 
+; Arborstone GwAu3 enter, with Cho 214 / Zen 213 in place of $MAP_ID_Farm:
+;   Out("Let's do Arborstone")
+;   Out("Exiting Outpost")
+;   Ui_EnterChallenge(True)
+;   Map_WaitMapLoading($MAP_ID_Farm, 1)
+;   Sleep(2000)
+;   Cache_SkillBar()
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Local $l_i_StartMap = Map_GetMapID()
 	If Leveler_InMissionInstance($a_i_MapID) Then
@@ -404,9 +412,10 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	; Engine already accepted Enter Challenge. Do not send it again.
 	If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
 		Out("[Step] Mission is already starting; waiting for the map to load")
-		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
+		Map_WaitMapLoading($a_i_MapID, 1)
 		Sleep(2000)
-		Return True
+		Cache_SkillBar()
+		Return Leveler_InMissionInstance($a_i_MapID)
 	EndIf
 
 	If Not Map_GetInstanceInfo("IsOutpost") Then
@@ -416,17 +425,12 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 
 	Out("Let's do " & $a_s_Name)
 	Out("Exiting Outpost")
-	; Native Factions character. GwAu3 Ui_EnterChallenge inits the load flag and waits.
-	Ui_EnterChallenge(False, True)
-	If Not Leveler_InMissionInstance($a_i_MapID) Then
-		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
-			Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
-			Return False
-		EndIf
-	EndIf
+	Ui_EnterChallenge(True)
+	Map_WaitMapLoading($a_i_MapID, 1)
 	Sleep(2000)
+	Cache_SkillBar()
 	Out("[Step] Mission instance loaded on map " & Map_GetMapID())
-	Return True
+	Return Leveler_InMissionInstance($a_i_MapID)
 EndFunc
 
 #EndRegion Mission

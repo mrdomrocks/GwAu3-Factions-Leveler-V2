@@ -1335,7 +1335,7 @@ EndFunc
 Func Leveler_Step_ZenDaijunMission()
 	$g_s_CurrentHeader = "Zen Daijun Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+	If Leveler_InMissionInstance($MAP_ZEN_OP) Or Leveler_InMissionInstance($MAP_ZEN_EXP) Then
 		Out("[Step] Already inside Zen Daijun")
 	Else
 		If Map_GetMapID() <> $MAP_ZEN_OP Or Not Map_GetInstanceInfo("IsOutpost") Then
@@ -1345,7 +1345,7 @@ Func Leveler_Step_ZenDaijunMission()
 		If Not Leveler_LoadZenSkillBar() Then Return False
 		If Not Leveler_PrepareMissionParty() Then Return False
 		Out("[Step] Entering Zen Daijun")
-		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_EXP) Then Return False
+		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_OP) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	If Not Leveler_PrepareCombatAI() Then Return False
