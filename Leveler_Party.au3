@@ -524,51 +524,135 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 	Return Leveler_InMissionInstance($a_i_MapID) And Leveler_ClientIsReady()
 EndFunc
 
-; GwAu3 CommandUIMsg: push 0; push struct+8; push msgid; call UIMessage.
-; That is Py4GW UIManager.SendUIMessage(kSendEnterMission, [arena_id]), not
-; CommandEnterMission / Ui_EnterChallenge. Keep the DllStruct alive; a Local
-; one is freed before the engine queue drains.
-Func Leveler_EnsureUIEnterStruct()
-	If $g_p_LevelerUIEnter <> 0 Then Return True
-	If Not IsDeclared("g_d_MoveMap") Then
-		Out("[Step] g_d_MoveMap missing; no CommandUIMsg pointer")
-		Return False
+; ArenaNet DX client hwnd. Prefer that over the frame so PostMessage / ControlClick
+; land on the game, not the Wine chrome. Do not trust ClientToScreen on this prefix.
+Func Leveler_GwClientHwnd()
+	Local $l_s_Class = "ArenaNet_Dx_Window_Class"
+	Local $l_h_Wnd = 0
+	If IsDeclared("g_h_GWWindow") Then $l_h_Wnd = $g_h_GWWindow
+	If $l_h_Wnd = 0 Then $l_h_Wnd = Scanner_GetWindowHandle()
+
+	Local $l_i_Pid = 0
+	If $l_h_Wnd <> 0 Then $l_i_Pid = Number(WinGetProcess($l_h_Wnd))
+	If $l_i_Pid = 0 And IsDeclared("g_i_GWProcessId") Then $l_i_Pid = Number($g_i_GWProcessId)
+	If $l_i_Pid = 0 And IsDeclared("g_i_ProcessID") Then $l_i_Pid = Number($g_i_ProcessID)
+
+	Local $aClass = WinList("[CLASS:" & $l_s_Class & "]")
+	If IsArray($aClass) Then
+		Local $i
+		For $i = 1 To $aClass[0][0]
+			If $l_i_Pid > 0 And WinGetProcess($aClass[$i][1]) <> $l_i_Pid Then ContinueLoop
+			Return $aClass[$i][1]
+		Next
 	EndIf
-	Local $l_p_UIMsg = DllStructGetData($g_d_MoveMap, 1)
-	If $l_p_UIMsg = 0 Then
-		Out("[Step] CommandUIMsg pointer is 0")
-		Return False
-	EndIf
-	$g_d_LevelerUIEnter = DllStructCreate("ptr;dword;dword")
-	If @error Or $g_d_LevelerUIEnter = 0 Then
-		Out("[Step] Could not create persistent kSendEnterMission struct")
-		Return False
-	EndIf
-	$g_p_LevelerUIEnter = DllStructGetPtr($g_d_LevelerUIEnter)
-	DllStructSetData($g_d_LevelerUIEnter, 1, $l_p_UIMsg)
-	Return $g_p_LevelerUIEnter <> 0
+	Return $l_h_Wnd
 EndFunc
 
-; Wine live: both CommandEnterMission dwords fail on Zen 213.
-; dword 1 (PR #18 enqueue, Ui_EnterChallenge False) -> type-2 hang / char select
-; dword 0 (Ui_EnterChallenge True) -> load then drop to outpost
-; Py4GW Map.EnterChallenge is kSendEnterMission 0x30000002 arena_id=0.
-Func Leveler_SendUIEnterMission($a_i_ArenaId = 0)
-	If Not Leveler_EnsureUIEnterStruct() Then Return False
-	DllStructSetData($g_d_LevelerUIEnter, 2, $LEVELER_UIMSG_SEND_ENTER_MISSION)
-	DllStructSetData($g_d_LevelerUIEnter, 3, $a_i_ArenaId)
-	Out("[Step] CommandUIMsg kSendEnterMission 0x30000002 arena_id=" & $a_i_ArenaId & " (Py4GW Map.EnterChallenge; not CommandEnterMission, not 0xA5, not pixels)")
-	Core_Enqueue($g_p_LevelerUIEnter, 12)
+Func Leveler_OverlayHold()
+	If Not IsDeclared("g_h_MainGui") Then Return
+	If $g_h_MainGui = 0 Then Return
+	WinSetOnTop($g_h_MainGui, "", 0)
+	WinSetState($g_h_MainGui, "", @SW_HIDE)
+EndFunc
+
+Func Leveler_OverlayRestore()
+	If Not IsDeclared("g_h_MainGui") Then Return
+	If $g_h_MainGui = 0 Then Return
+	WinSetState($g_h_MainGui, "", @SW_SHOW)
+	If IsDeclared("g_h_OnTopCheckbox") And BitAND(GUICtrlRead($g_h_OnTopCheckbox), $GUI_CHECKED) Then
+		WinSetOnTop($g_h_MainGui, "", 1)
+	EndIf
+EndFunc
+
+; Post WM_MOUSEMOVE / LBUTTON* plus ControlClick on the DX hwnd.
+; Wine ClientToScreen(636,22) previously mapped above the Gw frame.
+Func Leveler_PostClientClick($a_h_Wnd, $a_i_X, $a_i_Y)
+	If $a_h_Wnd = 0 Then Return
+	Local $l_i_Lp = BitOR(BitAND($a_i_X, 0xFFFF), BitShift(BitAND($a_i_Y, 0xFFFF), -16))
+	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0200, "wparam", 0, "lparam", $l_i_Lp)
+	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0201, "wparam", 1, "lparam", $l_i_Lp)
+	Sleep(40)
+	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0202, "wparam", 0, "lparam", $l_i_Lp)
+	ControlClick($a_h_Wnd, "", "", "left", 1, $a_i_X, $a_i_Y)
+EndFunc
+
+Func Leveler_WaitZenLoadHint($a_i_Timeout)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If Leveler_MissionEnterStarted() Then Return True
+		Sleep(200)
+	WEnd
+	Return Leveler_MissionEnterStarted()
+EndFunc
+
+; Wine live: CommandEnterMission dwords fail on Zen 213 (drop or type-2 hang).
+; CommandUIMsg 0x30000002 is a Py4GW/GWCA send-range id (UI_enums.py), not a
+; game UIMessage. GwAu3 Const_Ui only lists 0x10000xxx ids; CommandUIMsg calls
+; the game UIMessage (push 0; push struct+8; push msgid). That path no-op'd:
+; stayed outpost, Enter Mission still visible. Official enter-via-UIMessage
+; call sites are Ui_MoveMap / Ui_EquipItem / Ui_Xunlai — none enter a mission.
+;
+; This repo's Wine_EnterChallenge previously started a 213 instance by hiding
+; the On-Top overlay and pressing the visible pill ({ENTER}, then top-center
+; client clicks). Stop input as soon as type-2 starts; more clicks during the
+; DX reset crashed Gw. Cho stays CommandEnterMission. No 0xA5.
+Func Leveler_SendZenEnterMission()
+	Local $l_h_Wnd = Leveler_GwClientHwnd()
+	If $l_h_Wnd = 0 Then
+		Out("[Step] No Gw window for Zen Enter Mission")
+		Return False
+	EndIf
+
+	Leveler_OverlayHold()
+	WinActivate($l_h_Wnd)
+	WinWaitActive($l_h_Wnd, "", 2)
+	DllCall("user32.dll", "bool", "SetForegroundWindow", "hwnd", $l_h_Wnd)
+	DllCall("user32.dll", "bool", "BringWindowToTop", "hwnd", $l_h_Wnd)
+	Sleep(400)
+
+	If Leveler_MissionEnterStarted() Then
+		Leveler_OverlayRestore()
+		Return True
+	EndIf
+
+	Out("[Step] Zen enter: hide overlay, {ENTER} on visible Enter Mission (not CommandEnterMission, not 0x30000002, not 0xA5)")
+	ControlSend($l_h_Wnd, "", "", "{ENTER}")
+	If Leveler_WaitZenLoadHint(2500) Then
+		Out("[Step] Zen enter: load started after {ENTER}")
+		Leveler_OverlayRestore()
+		Return True
+	EndIf
+
+	Local $l_i_Cx = 636
+	Local $l_a_Cli = WinGetClientSize($l_h_Wnd)
+	If IsArray($l_a_Cli) And Number($l_a_Cli[0]) > 0 Then $l_i_Cx = Int(Number($l_a_Cli[0]) / 2)
+	; Screenshot: Enter Mission pill sits at the top-center of the DX client.
+	; Historical Wine Y sweep was 22-80; stay on the pill and stop on load.
+	Local $l_ai_Y[4] = [22, 32, 42, 48]
+	Local $i
+	For $i = 0 To 3
+		If Leveler_MissionEnterStarted() Then ExitLoop
+		Out("[Step] Zen enter: click Enter Mission pill " & $l_i_Cx & "," & $l_ai_Y[$i])
+		Leveler_PostClientClick($l_h_Wnd, $l_i_Cx, $l_ai_Y[$i])
+		If Leveler_WaitZenLoadHint(1200) Then
+			Out("[Step] Zen enter: load started after pill click")
+			Leveler_OverlayRestore()
+			Return True
+		EndIf
+	Next
+
+	Leveler_OverlayRestore()
 	Return True
 EndFunc
 
 ; Cho: Wine-proven CommandEnterMission dword 0, no wait.
-; Zen: UI message path. Do not enqueue CommandEnterMission again.
+; Zen: overlay-hidden {ENTER} / pill click. Do not enqueue CommandEnterMission
+; or CommandUIMsg 0x30000002 again.
 Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
 	If Leveler_MissionEnterStarted() Then Return True
 	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
 	If $a_i_OutpostMap = $MAP_ZEN_OP Then
-		Return Leveler_SendUIEnterMission(0)
+		Return Leveler_SendZenEnterMission()
 	EndIf
 	Out("[Step] CommandEnterMission arena_id=0 (Ui_EnterChallenge(True, False); Cho; not 0xA5, not pixels)")
 	Ui_EnterChallenge(True, False)

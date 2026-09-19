@@ -408,8 +408,3 @@ Global $g_b_MoxUnlocked = False
 Global $g_b_SecondaryProfsTalked = False
 ; Sticky after OwVAIcdP8BogGwBFhAA is applied. Do not SKILLBAR_LOAD again next to Enter.
 Global $g_b_ZenTemplateApplied = False
-; Py4GW UIMessage.kSendEnterMission. wparam = uint32 arena_id.
-Global Const $LEVELER_UIMSG_SEND_ENTER_MISSION = 0x30000002
-; Persistent CommandUIMsg struct. A Local DllStruct is freed before the queue drains.
-Global $g_d_LevelerUIEnter = 0
-Global $g_p_LevelerUIEnter = 0
