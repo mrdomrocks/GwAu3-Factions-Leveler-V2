@@ -678,12 +678,33 @@ Func Leveler_AbortStuckZenLoad()
 	Return False
 EndFunc
 
-; 09:00 / 02:49: focus + 640,36 + {ENTER} can complete explorable 213.
-; 09:42 fresh Gw: same path then Y 44/52/60 at +3s jumped straight to type-2
-; and hung. Extra clicks after the first enter poison the instance.
-; One click, one ENTER, then no more input.
+; Wine 1280x800 reports client==window; Y=36 is the district title bar
+; (10:05: three misses, pill still visible). Loads that completed started
+; after a click in 44-60. Primary hit is 52 (under the chrome). If that
+; misses, probe 48 then 60 with >=1.2s idle — never click while in flight,
+; never Y=36, never a 3s 36-60 spam.
+Func Leveler_ZenClickOnce($a_h_Wnd, $a_i_X, $a_i_Y, $a_b_Enter, $a_i_Wait)
+	If Leveler_ZenEnterInFlight() Then Return True
+	Out("[Step] Zen enter: MouseClick window " & $a_i_X & "," & $a_i_Y)
+	Leveler_MouseClickWindow($a_h_Wnd, $a_i_X, $a_i_Y)
+	Sleep(400)
+	If Leveler_ZenEnterInFlight() Then
+		Out("[Step] Zen enter: load started after window MouseClick; no further input")
+		Return True
+	EndIf
+	If $a_b_Enter Then
+		Send("{ENTER}")
+		Out("[Step] Zen enter: Send {ENTER} after pill click")
+	EndIf
+	If Leveler_WaitZenLoadHint($a_i_Wait) Then
+		Out("[Step] Zen enter: load started after window MouseClick; no further input")
+		Return True
+	EndIf
+	Return False
+EndFunc
+
 Func Leveler_SendZenEnterMission()
-	Out("[Step] Zen enter: begin (no WinList-all, one click then wait)")
+	Out("[Step] Zen enter: begin (pill under title bar, no Y=36, no sweep)")
 	If $g_b_ZenNeedGwRestart Then
 		If Map_GetInstanceInfo("IsLoading") Or Map_GetInstanceInfo("Type") = 2 Or Map_GetMapID() <= 0 Then
 			Out("[Step] Last Zen enter hung type-2. Restart Gw.exe before clicking again")
@@ -715,39 +736,26 @@ Func Leveler_SendZenEnterMission()
 		Return True
 	EndIf
 
-	Out("[Step] Zen enter: MouseClick window " & $l_i_Wx & ",36")
-	Leveler_MouseClickWindow($l_h_Cli, $l_i_Wx, 36)
-	Sleep(400)
-	If Leveler_ZenEnterInFlight() Then
-		Out("[Step] Zen enter: load started after window MouseClick; no further input")
+	; First and intended hit: under the district bar, not Y=36 chrome.
+	If Leveler_ZenClickOnce($l_h_Cli, $l_i_Wx, 52, True, 3000) Then
 		Leveler_OverlayRestore()
 		Return True
 	EndIf
-	Send("{ENTER}")
-	Out("[Step] Zen enter: Send {ENTER} after first pill click")
-	If Leveler_WaitZenLoadHint(8000) Then
-		Out("[Step] Zen enter: load started after window MouseClick; no further input")
+	If Leveler_ZenClickOnce($l_h_Cli, $l_i_Wx, 48, False, 1500) Then
 		Leveler_OverlayRestore()
 		Return True
 	EndIf
-
-	If Not Map_GetInstanceInfo("IsOutpost") Or Leveler_ZenEnterInFlight() Then
-		Out("[Step] Zen enter: load started after window MouseClick; no further input")
+	If Leveler_ZenClickOnce($l_h_Cli, $l_i_Wx, 60, False, 1500) Then
 		Leveler_OverlayRestore()
 		Return True
 	EndIf
-
-	Out("[Step] Zen enter: first click did not start a load; one retry at " & $l_i_Wx & ",36 then no more input")
-	Leveler_MouseClickWindow($l_h_Cli, $l_i_Wx, 36)
-	Leveler_WaitZenLoadHint(5000)
-	If Leveler_ZenEnterInFlight() Then Out("[Step] Zen enter: load started after window MouseClick; no further input")
 
 	Leveler_OverlayRestore()
 	Return True
 EndFunc
 
 ; Cho: Wine-proven CommandEnterMission dword 0, no wait.
-; Zen: one focused window click + {ENTER}, then no more input.
+; Zen: one click on the pill (Y=52), then no input once load starts.
 Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
 	If Leveler_MissionEnterStarted() Then Return True
 	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
