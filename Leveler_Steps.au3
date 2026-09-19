@@ -2,11 +2,6 @@
 
 Func Leveler_ExecuteStep($a_i_Step)
 	If $g_b_LevelerPaused Then Return False
-	If Leveler_InstanceIsLoading() Then
-		Out("[Step] Map is loading; waiting instead of traveling or recovering")
-		Leveler_WaitUntilMapReady(180000)
-		Return False
-	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	If Leveler_HasIncompleteQuest($QUEST_AGAINST_DESTROYERS) And Not Leveler_HomHeroesTalked() And ($l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM) And $a_i_Step <> $LEVELER_STEP_EOTN_POOL Then
@@ -17,10 +12,6 @@ Func Leveler_ExecuteStep($a_i_Step)
 	EndIf
 	If Not Leveler_EnsureStepOutpost($a_i_Step) Then Return False
 	If Leveler_IsWiped() Then
-		If Leveler_InstanceIsLoading() Or Leveler_MissionEnterInFlight() Then
-			Out("[Step] Wipe flags during a map load; not resigning")
-			Return False
-		EndIf
 		Out("[Step] Wipe detected before '" & $g_as_StepNames[$a_i_Step] & "'. Recovering.")
 		Leveler_RecoverWipe()
 		Return False
@@ -111,10 +102,6 @@ Func Leveler_ExecuteStep($a_i_Step)
 	EndSwitch
 
 	If Leveler_IsWiped() Then
-		If Leveler_InstanceIsLoading() Or Leveler_MissionEnterInFlight() Then
-			Out("[Step] Wipe flags during a map load; not resigning")
-			Return False
-		EndIf
 		Leveler_RecoverWipe()
 		Return False
 	EndIf
@@ -642,9 +629,6 @@ Func Leveler_Step_ChosMission()
 	If Map_GetMapID() = $MAP_CHO_OUTPOST And Not Map_GetInstanceInfo("IsOutpost") Then
 		Out("[Step] Already inside Minister Cho's Estate")
 		Leveler_ReapplyZhaoDiSkillBar()
-	ElseIf Leveler_InstanceIsLoading() Or Leveler_MissionEnterInFlight() Then
-		Out("[Step] Cho enter already in flight; waiting for the instance")
-		If Not Leveler_EnterMission("Minister Cho's Estate", $MAP_CHO_OUTPOST) Then Return False
 	Else
 		If Map_GetMapID() <> $MAP_CHO_OUTPOST Or Not Map_GetInstanceInfo("IsOutpost") Then
 			If Not Leveler_Travel($MAP_CHO_OUTPOST) Then Return False
@@ -1351,11 +1335,8 @@ EndFunc
 Func Leveler_Step_ZenDaijunMission()
 	$g_s_CurrentHeader = "Zen Daijun Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_InMissionInstance($MAP_ZEN_OP) Or Leveler_InMissionInstance($MAP_ZEN_EXP) Then
+	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
 		Out("[Step] Already inside Zen Daijun")
-	ElseIf Leveler_InstanceIsLoading() Or Leveler_MissionEnterInFlight() Then
-		Out("[Step] Zen enter already in flight; waiting for the instance")
-		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_OP) Then Return False
 	Else
 		If Map_GetMapID() <> $MAP_ZEN_OP Or Not Map_GetInstanceInfo("IsOutpost") Then
 			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
@@ -1363,9 +1344,8 @@ Func Leveler_Step_ZenDaijunMission()
 		Out("[Step] Load skill bar, then henchmen, then enter")
 		If Not Leveler_LoadZenSkillBar() Then Return False
 		If Not Leveler_PrepareMissionParty() Then Return False
-		; Native Ui_EnterChallenge(False). Wait for 213, not post-mission 246.
 		Out("[Step] Entering Zen Daijun")
-		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_OP) Then Return False
+		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_EXP) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	If Not Leveler_PrepareCombatAI() Then Return False

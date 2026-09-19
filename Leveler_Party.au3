@@ -365,8 +365,7 @@ Func Leveler_PrepareMissionParty()
 	Else
 		Out("[Party] Mission henchmen already in the party")
 	EndIf
-	; Invite packets must drain before Enter Challenge.
-	Sleep(2500)
+	Sleep(1500)
 	Return True
 EndFunc
 
@@ -379,158 +378,20 @@ Func Leveler_InMissionInstance($a_i_MapID = 0)
 	If Map_GetInstanceInfo("IsOutpost") Then Return False
 	If Not Map_GetInstanceInfo("IsExplorable") Then Return False
 	If $a_i_MapID <> 0 And Map_GetMapID() = $a_i_MapID Then Return True
-	; Cho mission stays on outpost map 214. Zen mission stays on outpost map 213
-	; (Py4GW EnterChallenge + ForMapToChange(213)). Map 246 is the post-mission
-	; explorable from Seitung (An Unwelcome Guest), not the mission instance.
+	; Cho and Zen keep the outpost map ID when the mission instance loads.
 	If Map_GetMapID() = $MAP_CHO_OUTPOST Then Return True
 	If Map_GetMapID() = $MAP_ZEN_OP Then Return True
 	If Map_GetMapID() = $MAP_ZEN_EXP Then Return True
 	Return False
 EndFunc
 
-; GwAu3 Map_GetInstanceInfo("Type"): 0 = outpost, 1 = explorable, 2 = loading.
-Func Leveler_InstanceTypeName($a_i_Type = -1)
-	If $a_i_Type < 0 Then $a_i_Type = Map_GetInstanceInfo("Type")
-	Switch $a_i_Type
-		Case 0
-			Return "outpost"
-		Case 1
-			Return "explorable"
-		Case 2
-			Return "loading"
-	EndSwitch
-	Return "type " & $a_i_Type
-EndFunc
-
-; Type 2 and IsLoading are the same dword. Also treat a just-sent enter as in-flight.
-Func Leveler_InstanceIsLoading()
-	If Map_GetInstanceInfo("IsLoading") Then Return True
-	If Map_GetInstanceInfo("Type") = 2 Then Return True
-	Return False
-EndFunc
-
-; True after native enter is queued and Wine has not finished flipping instance type.
-Func Leveler_MissionEnterInFlight()
-	If Leveler_InstanceIsLoading() Then Return True
-	If Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
-	If $g_h_MissionEnterSent = 0 Then Return False
-	If Map_GetInstanceInfo("IsExplorable") Then Return False
-	If Map_GetInstanceInfo("IsOutpost") And Leveler_ClientIsReady() And TimerDiff($g_h_MissionEnterSent) > 60000 Then Return False
-	Return TimerDiff($g_h_MissionEnterSent) < 60000
-EndFunc
-
-; Do not use Map_WaitMapLoading for mission enter. That helper:
-; - treats type 2 (loading) as a miss and times out after 30s + 45s
-; - sends Cinematic_Skip (0x63) whenever IsCinematic is set, including while loading
-; 0x63 during a live load logs the client out to the load / character-select screen.
-Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180000)
-	Local $l_h_Timer = TimerInit()
-	Local $l_i_LastType = -1
-	Local $l_b_SawLoading = False
-	Local $l_b_LoggedReady = False
-	Local $l_i_CinematicSkips = 0
-
-	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If $g_b_LevelerPaused Then Return False
-
-		Local $l_i_Type = Map_GetInstanceInfo("Type")
+Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 45000)
+	If Map_WaitMapLoading($a_i_StartMap, 1, $a_i_Timeout) Then Return True
+	If Map_GetInstanceInfo("IsExplorable") Then
 		Local $l_i_Map = Map_GetMapID()
-		If $l_i_Type <> $l_i_LastType Then
-			Out("[Step] Mission load: map " & $l_i_Map & " " & Leveler_InstanceTypeName($l_i_Type) & " (want " & $a_i_MapID & " explorable)")
-			$l_i_LastType = $l_i_Type
-		EndIf
-
-		; Stay silent during type-2. Do not abort, travel, skip, or re-enter.
-		If Leveler_InstanceIsLoading() Then
-			$l_b_SawLoading = True
-			Sleep(250)
-			ContinueLoop
-		EndIf
-
-		If Leveler_InMissionInstance($a_i_MapID) Or (Map_GetInstanceInfo("IsExplorable") And ($l_i_Map = $a_i_StartMap Or $l_i_Map = $a_i_MapID)) Then
-			If Not $l_b_LoggedReady Then
-				Out("[Step] Mission instance is explorable on map " & $l_i_Map)
-				$l_b_LoggedReady = True
-			EndIf
-			; Never Cinematic_Skip until the player agent is in-world. 0x63 on the
-			; load screen is what logs Gw out to character select.
-			If Not Leveler_ClientIsReady() Then
-				Sleep(250)
-				ContinueLoop
-			EndIf
-			If Game_GetGameInfo("IsCinematic") Then
-				If $l_i_CinematicSkips < 3 Then
-					Cinematic_SkipCinematic()
-					$l_i_CinematicSkips += 1
-				EndIf
-				Sleep(800)
-				ContinueLoop
-			EndIf
-			$g_h_MissionEnterSent = 0
-			Return True
-		EndIf
-
-		; Wine can sit on outpost type for a long time after EnterMission is queued.
-		; 15s was re-sending enter (and travel) while the first load was in flight.
-		If Not $l_b_SawLoading And Map_GetInstanceInfo("IsOutpost") And TimerDiff($l_h_Timer) > 45000 Then
-			If Leveler_MissionEnterInFlight() Then
-				Sleep(250)
-				ContinueLoop
-			EndIf
-			Out("[Step] Enter Challenge did not start loading (still outpost after 45s)")
-			Return False
-		EndIf
-
-		If Leveler_ClientDisconnected() And Not Leveler_InstanceIsLoading() Then
-			Out("[Step] Client dropped during mission enter (map " & $l_i_Map & ", " & Leveler_InstanceTypeName($l_i_Type) & ")")
-			Return False
-		EndIf
-
-		Sleep(250)
-	WEnd
-
-	If Leveler_InstanceIsLoading() Then
-		Out("[Step] Mission still loading after " & $a_i_Timeout & " ms; not traveling or re-entering")
-	ElseIf Not $l_b_SawLoading Then
-		Out("[Step] Enter Challenge never started a map load")
+		If $l_i_Map = $a_i_StartMap Or $l_i_Map = $a_i_MapID Then Return True
 	EndIf
-	Return Leveler_InMissionInstance($a_i_MapID) And Leveler_ClientIsReady()
-EndFunc
-
-; Quiet period after skillbar / hench invite packets.
-; Do not Agent_CancelAction here. ACTION_CANCEL next to EnterMission is the same
-; class of CtoS as SKILLBAR_LOAD 0x005D and can drop the client into the load screen.
-Func Leveler_WaitMissionEnterReady()
-	If Leveler_MissionEnterStarted() Then Return True
-	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < 4000
-		If $g_b_LevelerPaused Then Return False
-		If Leveler_MissionEnterStarted() Then Return True
-		If Not Map_GetInstanceInfo("IsOutpost") Then Return True
-		Sleep(250)
-	WEnd
-	Sleep(1500)
-	Return True
-EndFunc
-
-Func Leveler_MissionEnterStarted()
-	If Leveler_InstanceIsLoading() Then Return True
-	If Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
-	If Map_GetInstanceInfo("IsExplorable") Then Return True
-	If Leveler_MissionEnterInFlight() Then Return True
 	Return False
-EndFunc
-
-; Factions characters are native. Always Ui_EnterChallenge(False, False):
-;   $a_b_Foreign = False -> dword 1 (Native Character / Party Formation)
-; Never Ui_EnterChallenge(True) (foreign / dword 0).
-Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
-	If Leveler_MissionEnterStarted() Then Return True
-	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
-	Out("[Step] Ui_EnterChallenge(False, False) native character on map " & $a_i_OutpostMap & " (not foreign True, not 0xA5, not pixels)")
-	Ui_EnterChallenge(False, False)
-	$g_h_MissionEnterSent = TimerInit()
-	Return True
 EndFunc
 
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
@@ -541,7 +402,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	EndIf
 
 	; Engine already accepted Enter Challenge. Do not send it again.
-	If Leveler_MissionEnterStarted() Then
+	If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
 		Out("[Step] Mission is already starting; waiting for the map to load")
 		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
 		Sleep(2000)
@@ -549,26 +410,19 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	EndIf
 
 	If Not Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Step] Cannot enter " & $a_s_Name & " from map " & $l_i_StartMap & " " & Leveler_InstanceTypeName())
+		Out("[Step] Cannot enter " & $a_s_Name & " from map " & $l_i_StartMap & " type " & Map_GetInstanceInfo("Type"))
 		Return False
-	EndIf
-
-	If Not Leveler_WaitMissionEnterReady() Then Return False
-	If Leveler_InMissionInstance($a_i_MapID) Then Return True
-	If Leveler_MissionEnterStarted() Then
-		Out("[Step] Mission is already starting; waiting for the map to load")
-		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
-		Sleep(2000)
-		Return True
 	EndIf
 
 	Out("Let's do " & $a_s_Name)
-	Out("[Step] Enter " & $a_s_Name & ": map " & $l_i_StartMap & " " & Leveler_InstanceTypeName() & ", hench " & Leveler_HenchmanCount() & ", waiting=" & Party_GetPartyContextInfo("IsWaitingForMission"))
 	Out("Exiting Outpost")
-	If Not Leveler_SendEnterMission($l_i_StartMap) Then Return False
-	If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
-		Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", " & Leveler_InstanceTypeName() & ")")
-		Return False
+	; Native Factions character. GwAu3 Ui_EnterChallenge inits the load flag and waits.
+	Ui_EnterChallenge(False, True)
+	If Not Leveler_InMissionInstance($a_i_MapID) Then
+		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
+			Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
+			Return False
+		EndIf
 	EndIf
 	Sleep(2000)
 	Out("[Step] Mission instance loaded on map " & Map_GetMapID())
