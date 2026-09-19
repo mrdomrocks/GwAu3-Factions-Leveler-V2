@@ -408,3 +408,5 @@ Global $g_b_MoxUnlocked = False
 Global $g_b_SecondaryProfsTalked = False
 ; Sticky after OwVAIcdP8BogGwBFhAA is applied. Do not SKILLBAR_LOAD again next to Enter.
 Global $g_b_ZenTemplateApplied = False
+; Set when a Zen enter hangs in type-2. Do not click again on this client.
+Global $g_b_ZenNeedGwRestart = False
