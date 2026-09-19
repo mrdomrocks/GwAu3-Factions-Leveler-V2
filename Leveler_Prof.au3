@@ -136,8 +136,15 @@ EndFunc
 Func Leveler_LoadZenSkillBar()
 	$g_b_UAIReady = False
 	If Not Map_GetInstanceInfo("IsOutpost") Then Return True
+	; Attribute_LoadSkillTemplate ends in Skill_LoadSkillBar (SKILLBAR_LOAD).
+	; That packet next to Enter Challenge disconnects. Apply once, then settle.
+	If $g_b_ZenTemplateApplied Then
+		Out("[Party] Zen skill template already applied; not sending SKILLBAR_LOAD again")
+		Return True
+	EndIf
 	Out("[Party] Loading skill template " & $LEVELER_TEMPLATE_ZEN)
 	Attribute_LoadSkillTemplate($LEVELER_TEMPLATE_ZEN)
-	Sleep(800)
+	$g_b_ZenTemplateApplied = True
+	Sleep(2500)
 	Return True
 EndFunc
