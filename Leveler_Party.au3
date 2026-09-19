@@ -442,12 +442,22 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 			$l_i_LastType = $l_i_Type
 		EndIf
 
+		If $l_i_Map <= 0 Then
+			If $l_h_Drop = 0 Then $l_h_Drop = TimerInit()
+			If TimerDiff($l_h_Drop) >= 2000 Then
+				Out("[Step] Mission enter dumped to character select (map " & $l_i_Map & ")")
+				Return False
+			EndIf
+			Sleep(250)
+			ContinueLoop
+		EndIf
+
 		If Map_GetInstanceInfo("IsLoading") Or $l_i_Type = 2 Then
 			$l_b_SawLoading = True
 			$l_h_Ready = 0
 			$l_h_OutpostAfterLoad = 0
 			$l_h_Drop = 0
-			; arena_id=1 hung type-2 for 180s on character select. Fail the enter instead.
+			; CommandEnterMission dword 1 hung type-2 / char select. Abort instead of 180s.
 			If TimerDiff($l_h_Timer) > 75000 Then
 				Out("[Step] Mission still loading after 75s (map " & $l_i_Map & "). Treating as a failed enter, not waiting 180s")
 				Return False
@@ -514,31 +524,51 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 	Return Leveler_InMissionInstance($a_i_MapID) And Leveler_ClientIsReady()
 EndFunc
 
-; Enqueue Party Formation EnterMission without Map_InitMapIsLoaded / Map_WaitMapIsLoaded.
-; Ui_EnterChallenge always clears $g_p_MapIsLoaded first. On Zen (same map ID 213)
-; WaitMapIsLoaded then burns 30s and can clear the flag mid-load.
-Func Leveler_EnqueueEnterMission($a_i_ArenaId)
-	If Not IsDeclared("g_d_EnterMission") Or Not IsDeclared("g_p_EnterMission") Then
-		Out("[Step] g_d_EnterMission missing; cannot enqueue without the load-flag wait")
+; GwAu3 CommandUIMsg: push 0; push struct+8; push msgid; call UIMessage.
+; That is Py4GW UIManager.SendUIMessage(kSendEnterMission, [arena_id]), not
+; CommandEnterMission / Ui_EnterChallenge. Keep the DllStruct alive; a Local
+; one is freed before the engine queue drains.
+Func Leveler_EnsureUIEnterStruct()
+	If $g_p_LevelerUIEnter <> 0 Then Return True
+	If Not IsDeclared("g_d_MoveMap") Then
+		Out("[Step] g_d_MoveMap missing; no CommandUIMsg pointer")
 		Return False
 	EndIf
-	If $g_p_EnterMission = 0 Then
-		Out("[Step] g_p_EnterMission is 0; cannot enqueue EnterMission")
+	Local $l_p_UIMsg = DllStructGetData($g_d_MoveMap, 1)
+	If $l_p_UIMsg = 0 Then
+		Out("[Step] CommandUIMsg pointer is 0")
 		Return False
 	EndIf
-	DllStructSetData($g_d_EnterMission, 2, $a_i_ArenaId)
-	Out("[Step] Enqueue EnterMission arena_id=" & $a_i_ArenaId & " (no Map_InitMapIsLoaded, no wait)")
-	Core_Enqueue($g_p_EnterMission, 8)
+	$g_d_LevelerUIEnter = DllStructCreate("ptr;dword;dword")
+	If @error Or $g_d_LevelerUIEnter = 0 Then
+		Out("[Step] Could not create persistent kSendEnterMission struct")
+		Return False
+	EndIf
+	$g_p_LevelerUIEnter = DllStructGetPtr($g_d_LevelerUIEnter)
+	DllStructSetData($g_d_LevelerUIEnter, 1, $l_p_UIMsg)
+	Return $g_p_LevelerUIEnter <> 0
+EndFunc
+
+; Wine live: both CommandEnterMission dwords fail on Zen 213.
+; dword 1 (PR #18 enqueue, Ui_EnterChallenge False) -> type-2 hang / char select
+; dword 0 (Ui_EnterChallenge True) -> load then drop to outpost
+; Py4GW Map.EnterChallenge is kSendEnterMission 0x30000002 arena_id=0.
+Func Leveler_SendUIEnterMission($a_i_ArenaId = 0)
+	If Not Leveler_EnsureUIEnterStruct() Then Return False
+	DllStructSetData($g_d_LevelerUIEnter, 2, $LEVELER_UIMSG_SEND_ENTER_MISSION)
+	DllStructSetData($g_d_LevelerUIEnter, 3, $a_i_ArenaId)
+	Out("[Step] CommandUIMsg kSendEnterMission 0x30000002 arena_id=" & $a_i_ArenaId & " (Py4GW Map.EnterChallenge; not CommandEnterMission, not 0xA5, not pixels)")
+	Core_Enqueue($g_p_LevelerUIEnter, 12)
 	Return True
 EndFunc
 
 ; Cho: Wine-proven CommandEnterMission dword 0, no wait.
-; Zen: same native dword 1 path as Ui_EnterChallenge(False), but do not touch the load flag.
+; Zen: UI message path. Do not enqueue CommandEnterMission again.
 Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
 	If Leveler_MissionEnterStarted() Then Return True
 	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
 	If $a_i_OutpostMap = $MAP_ZEN_OP Then
-		Return Leveler_EnqueueEnterMission(1)
+		Return Leveler_SendUIEnterMission(0)
 	EndIf
 	Out("[Step] CommandEnterMission arena_id=0 (Ui_EnterChallenge(True, False); Cho; not 0xA5, not pixels)")
 	Ui_EnterChallenge(True, False)
