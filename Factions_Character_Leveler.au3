@@ -99,6 +99,7 @@ Out("Factions Character Leveler")
 Out("Port of the Py4GW Factions bot through remaining secondary professions.")
 Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
+Out("File log: " & @ScriptDir & "\leveler.log  and  Z:\tmp\leveler-kestrel.log")
 Out("")
 
 Core_AutoStart()
@@ -280,6 +281,7 @@ Func GuiButtonHandler()
 EndFunc
 
 Func Out($a_s_Text)
+	Leveler_FileLog($a_s_Text)
 	If $g_h_EditText = 0 Then Return
 	Local $l_i_TextLen = StringLen($a_s_Text)
 	Local $l_i_ConsoleLen = _GUICtrlEdit_GetTextLen($g_h_EditText)
@@ -289,6 +291,29 @@ Func Out($a_s_Text)
 	_GUICtrlRichEdit_SetCharColor($g_h_EditText, $COLOR_BLACK)
 	_GUICtrlEdit_AppendText($g_h_EditText, @CRLF & $a_s_Text)
 	_GUICtrlEdit_Scroll($g_h_EditText, $SB_BOTTOM)
+EndFunc
+
+; Tee console lines to disk so a hidden AutoIt overlay still leaves coords.
+; C:\GW\leveler.log when the script is installed there; Z:\tmp for the Wine host.
+Func Leveler_FileLog($a_s_Text)
+	If $g_h_LevelerLogGw = 0 Then
+		$g_h_LevelerLogGw = FileOpen(@ScriptDir & "\leveler.log", 1)
+		If $g_h_LevelerLogGw = -1 Then $g_h_LevelerLogGw = -2
+	EndIf
+	If $g_h_LevelerLogTmp = 0 Then
+		$g_h_LevelerLogTmp = FileOpen("Z:\tmp\leveler-kestrel.log", 1)
+		If $g_h_LevelerLogTmp = -1 Then $g_h_LevelerLogTmp = FileOpen("Z:\tmp\leveler-kestrel.log", 9)
+		If $g_h_LevelerLogTmp = -1 Then $g_h_LevelerLogTmp = -2
+	EndIf
+	Local $l_s_Line = @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC & " " & $a_s_Text & @CRLF
+	If $g_h_LevelerLogGw > 0 Then
+		FileWrite($g_h_LevelerLogGw, $l_s_Line)
+		FileFlush($g_h_LevelerLogGw)
+	EndIf
+	If $g_h_LevelerLogTmp > 0 Then
+		FileWrite($g_h_LevelerLogTmp, $l_s_Line)
+		FileFlush($g_h_LevelerLogTmp)
+	EndIf
 EndFunc
 
 Func GetChecked($a_h_Ctrl)

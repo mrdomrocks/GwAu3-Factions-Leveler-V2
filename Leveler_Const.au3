@@ -357,6 +357,25 @@ Global Const $MODEL_CLAIRVOYANT_STAFF = 11647
 ; Paid from the Choose Your Secondary Profession (#317) complete reward, not storage.
 Global Const $XUNLAI_GOLD_COST = 50
 Global Const $WEAPON_GOLD_COST = 100
+; Er Ming [Merchant] in Shing Jea Monastery. Bag and Belt Pouch each cost 100g.
+Global Const $BAG_GOLD_COST = 100
+Global Const $BAG_MERCHANT_X = -11866
+Global Const $BAG_MERCHANT_Y = 11444
+; Never buy more than one pouch and two bags for the three equipment slots.
+Global Const $BAG_MAX_POUCH_BUYS = 1
+Global Const $BAG_MAX_BAG_BUYS = 2
+; Backpack grid is 20 cells. Do not trust BagInfo "Slots" if it reads 2.
+; Slot 1 is still visible to Item_GetItemBySlot even when Slots is stale.
+Global Const $BAG_BACKPACK_SCAN_SLOTS = 20
+; A Bag/Belt Pouch is TYPE_BAG (3) AND model 16/34. Model 34 alone is not a pouch.
+; Belt Pouch item id is a runtime id (not a GwAu3 MODELID const). Read it with
+; Item_GetItemBySlot then Item_GetItemInfoByPtr(..., "ItemID") / Item_ItemID.
+; Equipped pouch: Item_GetBagInfo($GC_I_INVENTORY_BELT_POUCH, "ContainerItem").
+; Wine cannot install bag containers. Ruled out on Kestrel: Item_EquipItem 0x30
+; (paperdoll no-op, pouch id 1640 stayed in cell 1), HEADER_EQUIP_BAG 0x6B (crash),
+; Item_UseItem 0x7E, kMoveItem 0x100001AF (crash), mouse-drag (reseated into backpack).
+; Complete Extend Inventory once a TYPE_BAG is owned; do not retry those APIs.
+Global Const $LEVELER_SKIP_BAG_EQUIP = True
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000
@@ -379,6 +398,8 @@ Global Enum $LEVELER_Q_FORMING, $LEVELER_Q_SECONDARY, $LEVELER_Q_FORMAL, $LEVELE
 Global $g_ab_QuestDone[$LEVELER_Q_COUNT]
 
 ; Shared runtime state
+Global $g_h_LevelerLogGw = 0
+Global $g_h_LevelerLogTmp = 0
 Global $g_i_Step = $LEVELER_STEP_OVERLOOK
 Global $g_b_NeedStatusCheck = False
 Global $g_b_LevelerPaused = False
@@ -406,3 +427,5 @@ Global $g_b_OliasUnlocked = False
 Global $g_b_MoxUnlocked = False
 ; Sticky after GToB trainer dialogs.
 Global $g_b_SecondaryProfsTalked = False
+; Sticky after Extend Inventory skips Wine-unsafe bag-slot install.
+Global $g_b_BagsStepSkipped = False

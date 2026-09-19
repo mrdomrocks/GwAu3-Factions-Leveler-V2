@@ -496,7 +496,7 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_WEAPON] = (Leveler_HasCraftedWeapon() And Leveler_IsModelEquipped($MODEL_CLAIRVOYANT_STAFF)) Or $l_b_PastMonArmor
 	$g_ab_StepDone[$LEVELER_STEP_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMonasteryPieces()) Or $l_b_PastMonArmor
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY] = (Not Leveler_HasStarterArmor() And (Leveler_HasMonasteryArmor() Or $l_b_SeitungArmor)) Or $l_b_PastMonArmor
-	$g_ab_StepDone[$LEVELER_STEP_BAGS] = Leveler_HasExtendedBags()
+	$g_ab_StepDone[$LEVELER_STEP_BAGS] = Leveler_BagsStepComplete() Or Leveler_ZhaoDiSkillsUnlocked() Or Leveler_HasLaterQuest()
 	$g_ab_StepDone[$LEVELER_STEP_SKILLS] = Leveler_ZhaoDiSkillsUnlocked() Or Leveler_QuestProgress($QUEST_LOST_TREASURE) Or Leveler_HasLaterQuest()
 	$g_ab_StepDone[$LEVELER_STEP_TO_CHO] = $l_b_RanMusu Or $l_b_Seitung Or ($l_b_Cho And Not Leveler_HasIncompleteQuest($QUEST_FORMAL_INTRO) And Leveler_FormalIntroductionTurnedIn())
 	$g_ab_StepDone[$LEVELER_STEP_CHO_MISSION] = $l_b_RanMusu Or $l_b_Seitung Or $l_b_TsumeiPath
