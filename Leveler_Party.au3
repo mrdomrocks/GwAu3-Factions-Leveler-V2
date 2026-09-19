@@ -530,128 +530,8 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 	Return Leveler_InMissionInstance($a_i_MapID) And Leveler_ClientIsReady()
 EndFunc
 
-; Keep Leveler_WindowClass and Leveler_GwPid in this file. A partial merge
-; that drops them while still calling them hard-errors (Wine: Unknown function).
-Func Leveler_WindowClass($a_h_Wnd)
-	If $a_h_Wnd = 0 Then Return ""
-	Local $l_a_Name = DllCall("user32.dll", "int", "GetClassNameA", "hwnd", $a_h_Wnd, "str", "", "int", 256)
-	If IsArray($l_a_Name) Then Return $l_a_Name[2]
-	Return ""
-EndFunc
-
-Func Leveler_GwPid()
-	Local $l_i_Pid = 0
-	If IsDeclared("g_i_GWProcessId") Then $l_i_Pid = Number($g_i_GWProcessId)
-	If $l_i_Pid = 0 And IsDeclared("g_i_ProcessID") Then $l_i_Pid = Number($g_i_ProcessID)
-	Return $l_i_Pid
-EndFunc
-
-; Inlined fallbacks so a dropped helper cannot crash the enter Out.
-Func Leveler_SafeWindowClass($a_h_Wnd)
-	If $a_h_Wnd = 0 Then Return ""
-	If IsFunc("Leveler_WindowClass") Then Return Leveler_WindowClass($a_h_Wnd)
-	Local $l_a_Name = DllCall("user32.dll", "int", "GetClassNameA", "hwnd", $a_h_Wnd, "str", "", "int", 256)
-	If IsArray($l_a_Name) Then Return $l_a_Name[2]
-	Return ""
-EndFunc
-
-Func Leveler_SafeGwPid()
-	If IsFunc("Leveler_GwPid") Then Return Leveler_GwPid()
-	Local $l_i_Pid = 0
-	If IsDeclared("g_i_GWProcessId") Then $l_i_Pid = Number($g_i_GWProcessId)
-	If $l_i_Pid = 0 And IsDeclared("g_i_ProcessID") Then $l_i_Pid = Number($g_i_ProcessID)
-	Return $l_i_Pid
-EndFunc
-
-; Prefer the hwnd Core already has. Do not WinList() the whole desktop — that
-; hung this Wine box for 10+ minutes with no log after "Exiting Outpost".
-Func Leveler_GwClientHwnd()
-	If IsDeclared("g_h_GWWindow") And $g_h_GWWindow <> 0 Then Return $g_h_GWWindow
-	Out("[Step] Zen enter: no g_h_GWWindow, asking Scanner_GetWindowHandle")
-	Local $l_h_Scan = Scanner_GetWindowHandle()
-	If $l_h_Scan <> 0 Then Return $l_h_Scan
-	Out("[Step] Zen enter: Scanner hwnd=0, class WinList ArenaNet_Dx_Window_Class")
-	Local $l_s_Class = "ArenaNet_Dx_Window_Class"
-	Local $l_i_Pid = Leveler_SafeGwPid()
-	Local $l_a_Class = WinList("[CLASS:" & $l_s_Class & "]")
-	If IsArray($l_a_Class) Then
-		Local $i
-		For $i = 1 To $l_a_Class[0][0]
-			If $l_i_Pid > 0 And WinGetProcess($l_a_Class[$i][1]) <> $l_i_Pid Then ContinueLoop
-			Return $l_a_Class[$i][1]
-		Next
-	EndIf
-	Return 0
-EndFunc
-
-; Walk GetParent only. Unfiltered WinList() is the Wine hang.
-Func Leveler_GwFrameHwnd($a_h_Wnd)
-	If $a_h_Wnd = 0 Then Return 0
-	Local $l_h_Cur = $a_h_Wnd
-	Local $l_i_N = 0
-	While $l_h_Cur <> 0 And $l_i_N < 6
-		If StringInStr(WinGetTitle($l_h_Cur), "Guild Wars") Then Return $l_h_Cur
-		Local $l_a_Par = DllCall("user32.dll", "hwnd", "GetParent", "hwnd", $l_h_Cur)
-		If Not IsArray($l_a_Par) Or $l_a_Par[0] = 0 Then ExitLoop
-		$l_h_Cur = $l_a_Par[0]
-		$l_i_N += 1
-	WEnd
-	Return $a_h_Wnd
-EndFunc
-
-Func Leveler_OverlayHold()
-	If Not IsDeclared("g_h_MainGui") Then Return
-	If $g_h_MainGui = 0 Then Return
-	; Do not WinSetOnTop here. Wine can block on that.
-	WinSetState($g_h_MainGui, "", @SW_HIDE)
-EndFunc
-
-Func Leveler_OverlayRestore()
-	If Not IsDeclared("g_h_MainGui") Then Return
-	If $g_h_MainGui = 0 Then Return
-	WinSetState($g_h_MainGui, "", @SW_SHOW)
-EndFunc
-
-; Any sign the enter is in flight. Poll this often; do not click again if true.
-Func Leveler_ZenEnterInFlight()
-	If Leveler_MissionEnterStarted() Then Return True
-	If Map_GetInstanceInfo("IsLoading") Then Return True
-	If Map_GetInstanceInfo("Type") = 2 Then Return True
-	If Number(Map_GetCharacterInfo("CurrentMapType")) = 2 Then Return True
-	Return False
-EndFunc
-
-Func Leveler_WaitZenLoadHint($a_i_Timeout)
-	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If Leveler_ZenEnterInFlight() Then Return True
-		Sleep(100)
-	WEnd
-	Return Leveler_ZenEnterInFlight()
-EndFunc
-
-; 02:49 success: FocusGwFrame then window MouseClick + {ENTER}.
-; WinWaitActive is capped at 2s. Do not WinList() the desktop (10 min hang).
-; Do not WinSetOnTop (can block). Do not SendKeepActive.
-Func Leveler_FocusGwFrame($a_h_Wnd)
-	If $a_h_Wnd = 0 Then Return
-	Out("[Step] Zen enter: overlay held, focusing frame")
-	Opt("WinWaitDelay", 0)
-	WinActivate($a_h_Wnd)
-	WinWaitActive($a_h_Wnd, "", 2)
-	DllCall("user32.dll", "bool", "SetForegroundWindow", "hwnd", $a_h_Wnd)
-	Out("[Step] Zen enter: frame focused")
-EndFunc
-
-Func Leveler_MouseClickWindow($a_h_Wnd, $a_i_X, $a_i_Y)
-	If $a_h_Wnd = 0 Then Return
-	Local $l_i_Mode = Opt("MouseCoordMode", 0)
-	MouseClick("left", $a_i_X, $a_i_Y, 1, 0)
-	Opt("MouseCoordMode", $l_i_Mode)
-EndFunc
-
-; Hung type-2 does not become explorable. Resign if we can; otherwise the
-; next enter on this Gw.exe will Code-007. Restart Gw after a hung load.
+; Hung type-2 does not become explorable. Resign if we can. Do not fall
+; back to MouseClick. If still loading or char select, restart Gw.exe.
 Func Leveler_AbortStuckZenLoad()
 	$g_b_ZenNeedGwRestart = True
 	Out("[Step] Resigning after stuck Zen type-2. If the client stays loading or dumps to character select, restart Gw.exe before the next enter")
@@ -678,91 +558,37 @@ Func Leveler_AbortStuckZenLoad()
 	Return False
 EndFunc
 
-; Wine 1280x800 reports client==window; Y=36 is the district title bar
-; (10:05: three misses, pill still visible). Loads that completed started
-; after a click in 44-60. Primary hit is 52 (under the chrome). If that
-; misses, probe 48 then 60 with >=1.2s idle — never click while in flight,
-; never Y=36, never a 3s 36-60 spam.
-Func Leveler_ZenClickOnce($a_h_Wnd, $a_i_X, $a_i_Y, $a_b_Enter, $a_i_Wait)
-	If Leveler_ZenEnterInFlight() Then Return True
-	Out("[Step] Zen enter: MouseClick window " & $a_i_X & "," & $a_i_Y)
-	Leveler_MouseClickWindow($a_h_Wnd, $a_i_X, $a_i_Y)
-	Sleep(400)
-	If Leveler_ZenEnterInFlight() Then
-		Out("[Step] Zen enter: load started after window MouseClick; no further input")
-		Return True
-	EndIf
-	If $a_b_Enter Then
-		Send("{ENTER}")
-		Out("[Step] Zen enter: Send {ENTER} after pill click")
-	EndIf
-	If Leveler_WaitZenLoadHint($a_i_Wait) Then
-		Out("[Step] Zen enter: load started after window MouseClick; no further input")
-		Return True
-	EndIf
-	Return False
-EndFunc
-
+; Native Factions enter. GwAu3 Ui_EnterChallenge:
+;   DllStructSetData($g_d_EnterMission, 2, Not $a_b_Foreign)
+;   Map_InitMapIsLoaded()
+;   Core_Enqueue($g_p_EnterMission, 8)
+;   If $a_b_WaitMapIsLoaded Then Map_WaitMapIsLoaded()
+; False, False => arena_id=1 (native), no Map_WaitMapIsLoaded (that 30s wait
+; hung Wine type-2). Cho uses True, False => arena_id=0.
+; No MouseClick, ENTER, ControlClick, CommandUIMsg, or 0xA5.
 Func Leveler_SendZenEnterMission()
-	Out("[Step] Zen enter: begin (pill under title bar, no Y=36, no sweep)")
 	If $g_b_ZenNeedGwRestart Then
 		If Map_GetInstanceInfo("IsLoading") Or Map_GetInstanceInfo("Type") = 2 Or Map_GetMapID() <= 0 Then
-			Out("[Step] Last Zen enter hung type-2. Restart Gw.exe before clicking again")
+			Out("[Step] Last Zen enter hung type-2. Restart Gw.exe before calling Ui_EnterChallenge again")
 			Return False
 		EndIf
 		If Map_GetInstanceInfo("IsOutpost") Then $g_b_ZenNeedGwRestart = False
 	EndIf
-
-	Local $l_h_Cli = Leveler_GwClientHwnd()
-	Out("[Step] Zen enter: hwnd ready cli=" & $l_h_Cli & " frame=" & $l_h_Cli)
-	If $l_h_Cli = 0 Then
-		Out("[Step] No Gw window for window MouseClick")
-		Return False
-	EndIf
-
-	Leveler_OverlayHold()
-	Leveler_FocusGwFrame($l_h_Cli)
-
-	Local $l_i_Fw = 1280
-	Local $l_a_Cli = WinGetClientSize($l_h_Cli)
-	If IsArray($l_a_Cli) And Number($l_a_Cli[0]) > 0 Then $l_i_Fw = Number($l_a_Cli[0])
-	Local $l_i_Wx = Int($l_i_Fw / 2)
-	If $l_i_Wx < 1 Then $l_i_Wx = 640
-	Out("[Step] Zen enter: frame " & Leveler_SafeWindowClass($l_h_Cli) & " " & $l_i_Fw & "x800 client " & $l_i_Fw & "x800 dx=" & Leveler_SafeWindowClass($l_h_Cli) & " (MouseClick, not CommandEnterMission, not 0x30000002, not 0xA5)")
-
-	If Leveler_ZenEnterInFlight() Then
-		Out("[Step] Zen enter: load already started; not clicking")
-		Leveler_OverlayRestore()
-		Return True
-	EndIf
-
-	; First and intended hit: under the district bar, not Y=36 chrome.
-	If Leveler_ZenClickOnce($l_h_Cli, $l_i_Wx, 52, True, 3000) Then
-		Leveler_OverlayRestore()
-		Return True
-	EndIf
-	If Leveler_ZenClickOnce($l_h_Cli, $l_i_Wx, 48, False, 1500) Then
-		Leveler_OverlayRestore()
-		Return True
-	EndIf
-	If Leveler_ZenClickOnce($l_h_Cli, $l_i_Wx, 60, False, 1500) Then
-		Leveler_OverlayRestore()
-		Return True
-	EndIf
-
-	Leveler_OverlayRestore()
+	If Leveler_MissionEnterStarted() Then Return True
+	Out("[Step] Ui_EnterChallenge(False, False) native arena_id=1 (Zen; no Map_WaitMapIsLoaded, not MouseClick, not 0xA5)")
+	Ui_EnterChallenge(False, False)
 	Return True
 EndFunc
 
-; Cho: Wine-proven CommandEnterMission dword 0, no wait.
-; Zen: one click on the pill (Y=52), then no input once load starts.
+; Cho: Ui_EnterChallenge(True, False) — foreign/coop arena_id=0, no wait.
+; Zen: Ui_EnterChallenge(False, False) — native arena_id=1, no wait.
 Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
 	If Leveler_MissionEnterStarted() Then Return True
 	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
 	If $a_i_OutpostMap = $MAP_ZEN_OP Then
 		Return Leveler_SendZenEnterMission()
 	EndIf
-	Out("[Step] CommandEnterMission arena_id=0 (Ui_EnterChallenge(True, False); Cho; not 0xA5, not pixels)")
+	Out("[Step] Ui_EnterChallenge(True, False) arena_id=0 (Cho; not 0xA5, not MouseClick)")
 	Ui_EnterChallenge(True, False)
 	Return True
 EndFunc
