@@ -1046,9 +1046,109 @@ EndFunc
 
 Func Leveler_HasExtendedBags()
 	If Item_GetBagPtr($GC_I_INVENTORY_BELT_POUCH) <> 0 Then Return True
-	If Leveler_IsModelEquipped($MODEL_BELT_POUCH) Then Return True
 	If Item_GetBagPtr($GC_I_INVENTORY_BAG1) <> 0 And Item_GetBagPtr($GC_I_INVENTORY_BAG2) <> 0 Then Return True
 	Return False
+EndFunc
+
+; Inventory bags/pouches are equipped by using them, not Item_EquipItem.
+; Prefer bags-only lookup so merchant-window listings are not mistaken for owned items.
+Func Leveler_FindBagItemModel($a_i_Model)
+	If $a_i_Model = 0 Then Return 0
+	Local $l_i_Item = Item_GetBagsItembyModelID($a_i_Model)
+	If $l_i_Item <> 0 Then Return $l_i_Item
+	Return 0
+EndFunc
+
+Func Leveler_FindBeltPouchItem()
+	Local $l_i_Item = Leveler_FindBagItemModel($MODEL_BELT_POUCH)
+	If $l_i_Item <> 0 Then Return $l_i_Item
+	Return Leveler_FindBagItemModel($MODEL_BELT_POUCH_REWARD)
+EndFunc
+
+Func Leveler_WaitForBagSlot($a_i_Bag, $a_i_Timeout = 2500)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Item_GetBagPtr($a_i_Bag) <> 0 Then Return True
+		Sleep(125)
+	WEnd
+	Return Item_GetBagPtr($a_i_Bag) <> 0
+EndFunc
+
+Func Leveler_WaitForBagItemModel($a_i_Model, $a_i_Timeout = 4000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_FindBagItemModel($a_i_Model) <> 0 Then Return True
+		Sleep(150)
+	WEnd
+	Return Leveler_FindBagItemModel($a_i_Model) <> 0
+EndFunc
+
+Func Leveler_EquipInventoryBag($a_i_Model, $a_i_BagSlot, $a_i_Timeout = 2500)
+	If Item_GetBagPtr($a_i_BagSlot) <> 0 Then Return True
+
+	Local $l_i_Item = 0
+	If $a_i_BagSlot = $GC_I_INVENTORY_BELT_POUCH Then
+		$l_i_Item = Leveler_FindBeltPouchItem()
+	Else
+		$l_i_Item = Leveler_FindBagItemModel($a_i_Model)
+	EndIf
+	If $l_i_Item = 0 Then
+		Out("[Craft] Bag/pouch model " & $a_i_Model & " not in inventory bags")
+		Return False
+	EndIf
+
+	Out("[Craft] Equipping inventory bag item " & $l_i_Item & " (model " & $a_i_Model & ") into slot " & $a_i_BagSlot)
+	Item_UseItem($l_i_Item)
+	If Leveler_WaitForBagSlot($a_i_BagSlot, $a_i_Timeout) Then Return True
+
+	; Retry once — UseItem sometimes needs a second press after the buy settles.
+	$l_i_Item = 0
+	If $a_i_BagSlot = $GC_I_INVENTORY_BELT_POUCH Then
+		$l_i_Item = Leveler_FindBeltPouchItem()
+	Else
+		$l_i_Item = Leveler_FindBagItemModel($a_i_Model)
+	EndIf
+	If $l_i_Item = 0 Then Return Item_GetBagPtr($a_i_BagSlot) <> 0
+	Item_UseItem($l_i_Item)
+	If Leveler_WaitForBagSlot($a_i_BagSlot, $a_i_Timeout) Then Return True
+
+	Out("[Craft] Failed to equip bag/pouch model " & $a_i_Model & " into slot " & $a_i_BagSlot)
+	Return False
+EndFunc
+
+Func Leveler_BuyAndEquipBag($a_i_Model, $a_i_BagSlot)
+	If Item_GetBagPtr($a_i_BagSlot) <> 0 Then Return True
+
+	Local $l_i_Existing = 0
+	If $a_i_BagSlot = $GC_I_INVENTORY_BELT_POUCH Then
+		$l_i_Existing = Leveler_FindBeltPouchItem()
+	Else
+		$l_i_Existing = Leveler_FindBagItemModel($a_i_Model)
+	EndIf
+
+	If $l_i_Existing = 0 Then
+		Out("[Craft] Buying bag/pouch model " & $a_i_Model)
+		If Not Merchant_BuyItem($a_i_Model, 1, False) Then
+			Out("[Craft] Merchant_BuyItem failed for model " & $a_i_Model)
+			Return False
+		EndIf
+		If Not Leveler_WaitForBagItemModel($a_i_Model, 4000) Then
+			; Quest/collector pouches use a different model id than merchant stock.
+			If $a_i_BagSlot = $GC_I_INVENTORY_BELT_POUCH Then
+				If Leveler_FindBeltPouchItem() = 0 Then
+					Out("[Craft] Belt Pouch did not appear in bags after buy")
+					Return False
+				EndIf
+			Else
+				Out("[Craft] Bag model " & $a_i_Model & " did not appear in bags after buy")
+				Return False
+			EndIf
+		EndIf
+	EndIf
+
+	Return Leveler_EquipInventoryBag($a_i_Model, $a_i_BagSlot)
 EndFunc
 
 Func Leveler_DestroyStarterArmorAndJunk()
@@ -1072,26 +1172,15 @@ Func Leveler_ExtendInventory()
 	EndIf
 	If Not Leveler_InteractNpcAt(-11866, 11444, False) Then Return False
 	Sleep(400)
-	If Item_GetBagPtr($GC_I_INVENTORY_BAG1) = 0 Then
-		Merchant_BuyItem($MODEL_BAG, 1, False)
-		Sleep(300)
-		Local $l_i_Bag = Item_FindItemByModelID($MODEL_BAG)
-		If $l_i_Bag <> 0 Then Item_EquipItem($l_i_Bag)
-		Sleep(250)
-	EndIf
-	If Item_GetBagPtr($GC_I_INVENTORY_BAG2) = 0 Then
-		Merchant_BuyItem($MODEL_BAG, 1, False)
-		Sleep(300)
-		Local $l_i_Bag2 = Item_FindItemByModelID($MODEL_BAG)
-		If $l_i_Bag2 <> 0 Then Item_EquipItem($l_i_Bag2)
-		Sleep(250)
-	EndIf
+
+	; Match Py4GW order: belt pouch first, then bag1/bag2.
+	If Not Leveler_BuyAndEquipBag($MODEL_BELT_POUCH, $GC_I_INVENTORY_BELT_POUCH) Then Return False
+	If Not Leveler_BuyAndEquipBag($MODEL_BAG, $GC_I_INVENTORY_BAG1) Then Return False
+	If Not Leveler_BuyAndEquipBag($MODEL_BAG, $GC_I_INVENTORY_BAG2) Then Return False
+
 	If Item_GetBagPtr($GC_I_INVENTORY_BELT_POUCH) = 0 Then
-		Merchant_BuyItem($MODEL_BELT_POUCH, 1, False)
-		Sleep(300)
-		Local $l_i_Pouch = Item_FindItemByModelID($MODEL_BELT_POUCH)
-		If $l_i_Pouch <> 0 Then Item_EquipItem($l_i_Pouch)
-		Sleep(250)
+		Out("[Craft] Belt Pouch still missing after buy/equip")
+		Return False
 	EndIf
 	Out("[Craft] Inventory bags equipped")
 	Return True

@@ -338,9 +338,10 @@ Global Const $MODEL_MICHIKO = 3295
 Global Const $MICHIKO_KAINENG_X = -1661.91
 Global Const $MICHIKO_KAINENG_Y = -636.09
 
-; Merchant bags
-Global Const $MODEL_BAG = 16
+; Merchant bags (Py4GW ModelID: Bag=35, Belt_Pouch=34, quest/collector reward=33)
+Global Const $MODEL_BAG = 35
 Global Const $MODEL_BELT_POUCH = 34
+Global Const $MODEL_BELT_POUCH_REWARD = 33
 
 ; Zhao Di (Shing Jea Monastery) Mesmer skills. Cry of Frustration is NOT here.
 Global Const $SKILL_ENERGY_BURN = 42
