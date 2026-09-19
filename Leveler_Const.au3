@@ -353,9 +353,16 @@ Global Const $SKILL_BACKFIRE = 54
 Global Const $SKILL_SPIRIT_RIFT = 910
 
 ; Weapon / armor gold
+; Hiroyuki Domination staff. This leveler runs Mesmer secondary, including Assassin.
 Global Const $MODEL_CLAIRVOYANT_STAFF = 11647
 ; Paid from the Choose Your Secondary Profession (#317) complete reward, not storage.
 Global Const $XUNLAI_GOLD_COST = 50
+Global Const $XUNLAI_X = -3825.09
+Global Const $XUNLAI_Y = 10386.81
+; Common-mat trader lots plus Hiroyuki's 100g staff fee. Withdraw this much (or all storage).
+Global Const $WEAPON_WITHDRAW_GOLD = 5000
+; Quoted 10-unit lots cost far more than the 100g staff fee. Do not walk to Yimou at 60g.
+Global Const $WEAPON_TRADER_MIN_GOLD = 500
 Global Const $WEAPON_GOLD_COST = 100
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
