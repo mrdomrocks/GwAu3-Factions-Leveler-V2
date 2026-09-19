@@ -1339,6 +1339,7 @@ Func Leveler_Step_ZenDaijunMission()
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_InMissionInstance($MAP_ZEN_EXP) Then
 		Out("[Step] Already inside Zen Daijun")
+		$g_b_ZenTemplateApplied = True
 	Else
 		If Map_GetMapID() <> $MAP_ZEN_OP Or Not Map_GetInstanceInfo("IsOutpost") Then
 			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False

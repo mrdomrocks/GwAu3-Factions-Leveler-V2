@@ -615,35 +615,19 @@ Func Leveler_WaitZenLoadHint($a_i_Timeout)
 	Return Leveler_MissionEnterStarted()
 EndFunc
 
-; Desktop click. No WinActivate / WinSetOnTop / SendKeepActive (Wine hangs).
-Func Leveler_MouseClickScreen($a_i_X, $a_i_Y)
-	Local $l_i_Mode = Opt("MouseCoordMode", 1)
+; Wine-proven path (02:49 UTC): MouseCoordMode 0 on the DX hwnd, Y 36-60.
+; Do not convert to screen coords — pos 0,0 screen clicks started a type-2 hang.
+; No WinActivate / WinSetOnTop / SendKeepActive (those hung after Exiting Outpost).
+Func Leveler_MouseClickWindow($a_h_Wnd, $a_i_X, $a_i_Y)
+	If $a_h_Wnd = 0 Then Return
+	Local $l_i_Mode = Opt("MouseCoordMode", 0)
 	MouseClick("left", $a_i_X, $a_i_Y, 1, 0)
 	Opt("MouseCoordMode", $l_i_Mode)
 EndFunc
 
-; Window (x,y) including title bar -> desktop via WinGetPos, not ClientToScreen.
-Func Leveler_WindowToScreen($a_h_Frame, $a_i_X, $a_i_Y)
-	Local $l_ai_Out[2] = [0, 0]
-	If $a_h_Frame = 0 Then
-		$l_ai_Out[0] = $a_i_X
-		$l_ai_Out[1] = $a_i_Y
-		Return $l_ai_Out
-	EndIf
-	Local $l_a_Pos = WinGetPos($a_h_Frame)
-	If Not IsArray($l_a_Pos) Then
-		$l_ai_Out[0] = $a_i_X
-		$l_ai_Out[1] = $a_i_Y
-		Return $l_ai_Out
-	EndIf
-	$l_ai_Out[0] = Number($l_a_Pos[0]) + $a_i_X
-	$l_ai_Out[1] = Number($l_a_Pos[1]) + $a_i_Y
-	Return $l_ai_Out
-EndFunc
-
-; Wine live: WinList() + WinActivate + missing WindowClass hung / hard-errored
-; after "Exiting Outpost". Click the pill in screenshot space (title + Y 36-80)
-; with a real MouseClick and no blocking focus calls. Cho stays native. No 0xA5.
+; Wine A: window MouseClick 640,36-60 completed explorable 213.
+; Wine B (52fff17): screen 640,36-60 + {ENTER} started type-2 then hung 75s.
+; Restore A. Stop input the instant type-2 starts. No WinList-all, no WinActivate.
 Func Leveler_SendZenEnterMission()
 	Out("[Step] Zen enter: begin (no WinList-all, no WinActivate)")
 
@@ -652,47 +636,47 @@ Func Leveler_SendZenEnterMission()
 	Local $l_h_Frame = Leveler_GwFrameHwnd($l_h_Cli)
 	If $l_h_Frame = 0 Then $l_h_Frame = $l_h_Cli
 	Out("[Step] Zen enter: frame hwnd=" & $l_h_Frame & " class=" & Leveler_SafeWindowClass($l_h_Frame))
-	If $l_h_Frame = 0 Then
-		Out("[Step] No Gw window; MouseClick screen 640,40 on 1280x800 box")
+	If $l_h_Cli = 0 Then
+		Out("[Step] No Gw window for window MouseClick")
+		Return False
 	EndIf
 
 	Out("[Step] Zen enter: hiding overlay")
 	Leveler_OverlayHold()
 	Out("[Step] Zen enter: overlay hidden")
+	DllCall("user32.dll", "bool", "SetForegroundWindow", "hwnd", $l_h_Cli)
 
-	Local $l_i_L = 0, $l_i_T = 0, $l_i_Fw = 1280, $l_i_Fh = 800
-	If $l_h_Frame <> 0 Then
-		Local $l_a_Pos = WinGetPos($l_h_Frame)
-		If IsArray($l_a_Pos) Then
-			$l_i_L = Number($l_a_Pos[0])
-			$l_i_T = Number($l_a_Pos[1])
-			$l_i_Fw = Number($l_a_Pos[2])
-			$l_i_Fh = Number($l_a_Pos[3])
-		EndIf
-	EndIf
+	Local $l_i_Fw = 1280
+	Local $l_a_Cli = WinGetClientSize($l_h_Cli)
+	If IsArray($l_a_Cli) And Number($l_a_Cli[0]) > 0 Then $l_i_Fw = Number($l_a_Cli[0])
 	Local $l_i_Wx = Int($l_i_Fw / 2)
 	If $l_i_Wx < 1 Then $l_i_Wx = 640
-	Out("[Step] Zen enter: frame " & Leveler_SafeWindowClass($l_h_Frame) & " pos " & $l_i_L & "," & $l_i_T & " " & $l_i_Fw & "x" & $l_i_Fh & " (MouseClick, not CommandEnterMission, not 0x30000002, not 0xA5)")
+	Out("[Step] Zen enter: frame " & Leveler_SafeWindowClass($l_h_Cli) & " " & $l_i_Fw & "x800 client " & $l_i_Fw & "x800")
 
 	If Leveler_MissionEnterStarted() Then
+		Out("[Step] Zen enter: load already started; not clicking")
 		Leveler_OverlayRestore()
 		Return True
 	EndIf
 
-	; Screenshot: Enter Mission just under the title bar, center X.
-	Local $l_ai_WinY[6] = [36, 44, 52, 60, 68, 80]
+	; A completed on Y 36-60. No {ENTER}. No extra Y after type-2.
+	Local $l_ai_WinY[4] = [36, 44, 52, 60]
 	Local $i
-	For $i = 0 To 5
-		If Leveler_MissionEnterStarted() Then ExitLoop
-		Local $l_ai_Scr = Leveler_WindowToScreen($l_h_Frame, $l_i_Wx, $l_ai_WinY[$i])
-		Out("[Step] Zen enter: MouseClick screen " & $l_ai_Scr[0] & "," & $l_ai_Scr[1] & " (window " & $l_i_Wx & "," & $l_ai_WinY[$i] & ")")
-		Leveler_MouseClickScreen($l_ai_Scr[0], $l_ai_Scr[1])
-		If $i = 0 Then
-			Send("{ENTER}")
-			Out("[Step] Zen enter: Send {ENTER} after first pill click")
+	For $i = 0 To 3
+		If Leveler_MissionEnterStarted() Then
+			Out("[Step] Zen enter: load started after window MouseClick")
+			Leveler_OverlayRestore()
+			Return True
 		EndIf
-		If Leveler_WaitZenLoadHint(900) Then
-			Out("[Step] Zen enter: load started after MouseClick")
+		Out("[Step] Zen enter: MouseClick window " & $l_i_Wx & "," & $l_ai_WinY[$i])
+		Leveler_MouseClickWindow($l_h_Cli, $l_i_Wx, $l_ai_WinY[$i])
+		If Leveler_MissionEnterStarted() Then
+			Out("[Step] Zen enter: load started after window MouseClick")
+			Leveler_OverlayRestore()
+			Return True
+		EndIf
+		If Leveler_WaitZenLoadHint(400) Then
+			Out("[Step] Zen enter: load started after window MouseClick")
 			Leveler_OverlayRestore()
 			Return True
 		EndIf
@@ -703,7 +687,7 @@ Func Leveler_SendZenEnterMission()
 EndFunc
 
 ; Cho: Wine-proven CommandEnterMission dword 0, no wait.
-; Zen: screenshot-space MouseClick on the visible Enter Mission pill.
+; Zen: window-relative MouseClick on the Enter Mission pill (Wine A).
 Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
 	If Leveler_MissionEnterStarted() Then Return True
 	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
