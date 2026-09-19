@@ -392,6 +392,8 @@ Global $g_s_CurrentHeader = ""
 Global $g_b_UAIReady = False
 Global $g_i_LastUAIMap = 0
 Global $g_b_ConnectionLost = False
+; TimerInit() after native Ui_EnterChallenge. Blocks a second enter / travel while Wine is still flipping type.
+Global $g_h_MissionEnterSent = 0
 ; One-time recovery after a completed Lost Treasure restart: path Cho -> Ran Musu -> Tengu.
 Global $g_b_LostTreasureToTenguOnce = False
 ; Set on Start only. Stay in an explorable after a client/script restart; do not block the next quest.

@@ -277,6 +277,10 @@ EndFunc
 ; $a_b_Rezone True = leave and re-enter the outpost so we spawn at the portal
 ; instead of pathing across town from the last NPC (bag merchant, crafter, ...).
 Func Leveler_Travel($a_i_MapID, $a_b_Rezone = False)
+	If Leveler_InstanceIsLoading() Or Leveler_MissionEnterInFlight() Then
+		Out("[Move] Refusing travel to " & $a_i_MapID & " while a map load / mission enter is in flight")
+		Return False
+	EndIf
 	If Map_GetMapID() = $a_i_MapID And Map_GetInstanceInfo("IsOutpost") Then
 		If Not $a_b_Rezone Then Return True
 		Out("[Move] Rezoning map " & $a_i_MapID & " to reset position")
@@ -430,7 +434,11 @@ EndFunc
 ; Map-travel to the step outpost. Stay in the explorable if the step's quest is already in the log.
 Func Leveler_EnsureStepOutpost($a_i_Step)
 	If $a_i_Step = $LEVELER_STEP_DONE Then Return True
-	If Map_GetInstanceInfo("IsLoading") Then Return Leveler_WaitUntilMapReady()
+	If Leveler_InstanceIsLoading() Then
+		Out("[Move] Map is loading; waiting instead of traveling for '" & $g_as_StepNames[$a_i_Step] & "'")
+		Leveler_WaitUntilMapReady(180000)
+		Return False
+	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
 	Local $l_i_Map = Map_GetMapID()
 	Local $l_i_Outpost = Leveler_StepOutpost($a_i_Step)
@@ -1466,6 +1474,10 @@ EndFunc
 
 Func Leveler_RecoverWipe()
 	$g_b_SpiritRiftWatch = False
+	If Leveler_InstanceIsLoading() Or Leveler_MissionEnterInFlight() Then
+		Out("[Recover] Refusing resign / return-to-outpost while a map load is in flight")
+		Return False
+	EndIf
 	If $g_b_FarmMode Then
 		Out("[Recover] Wiped during Punch-Out farm. Returning to Gunnar's Hold.")
 		Sleep(2000)

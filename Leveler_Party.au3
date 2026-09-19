@@ -402,9 +402,27 @@ Func Leveler_InstanceTypeName($a_i_Type = -1)
 	Return "type " & $a_i_Type
 EndFunc
 
+; Type 2 and IsLoading are the same dword. Also treat a just-sent enter as in-flight.
+Func Leveler_InstanceIsLoading()
+	If Map_GetInstanceInfo("IsLoading") Then Return True
+	If Map_GetInstanceInfo("Type") = 2 Then Return True
+	Return False
+EndFunc
+
+; True after native enter is queued and Wine has not finished flipping instance type.
+Func Leveler_MissionEnterInFlight()
+	If Leveler_InstanceIsLoading() Then Return True
+	If Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
+	If $g_h_MissionEnterSent = 0 Then Return False
+	If Map_GetInstanceInfo("IsExplorable") Then Return False
+	If Map_GetInstanceInfo("IsOutpost") And Leveler_ClientIsReady() And TimerDiff($g_h_MissionEnterSent) > 60000 Then Return False
+	Return TimerDiff($g_h_MissionEnterSent) < 60000
+EndFunc
+
 ; Do not use Map_WaitMapLoading for mission enter. That helper:
 ; - treats type 2 (loading) as a miss and times out after 30s + 45s
 ; - sends Cinematic_Skip (0x63) whenever IsCinematic is set, including while loading
+; 0x63 during a live load logs the client out to the load / character-select screen.
 Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180000)
 	Local $l_h_Timer = TimerInit()
 	Local $l_i_LastType = -1
@@ -422,13 +440,9 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 			$l_i_LastType = $l_i_Type
 		EndIf
 
-		If Map_GetInstanceInfo("IsLoading") Or $l_i_Type = 2 Then
+		; Stay silent during type-2. Do not abort, travel, skip, or re-enter.
+		If Leveler_InstanceIsLoading() Then
 			$l_b_SawLoading = True
-			; arena_id=1 hung type-2 for 180s while Gw sat on character select.
-			If TimerDiff($l_h_Timer) > 75000 Then
-				Out("[Step] Mission still loading after 75s (map " & $l_i_Map & "). Treating as a failed enter, not waiting 180s")
-				Return False
-			EndIf
 			Sleep(250)
 			ContinueLoop
 		EndIf
@@ -438,6 +452,12 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 				Out("[Step] Mission instance is explorable on map " & $l_i_Map)
 				$l_b_LoggedReady = True
 			EndIf
+			; Never Cinematic_Skip until the player agent is in-world. 0x63 on the
+			; load screen is what logs Gw out to character select.
+			If Not Leveler_ClientIsReady() Then
+				Sleep(250)
+				ContinueLoop
+			EndIf
 			If Game_GetGameInfo("IsCinematic") Then
 				If $l_i_CinematicSkips < 3 Then
 					Cinematic_SkipCinematic()
@@ -446,15 +466,22 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 				Sleep(800)
 				ContinueLoop
 			EndIf
-			If Leveler_ClientIsReady() Then Return True
+			$g_h_MissionEnterSent = 0
+			Return True
 		EndIf
 
-		If Not $l_b_SawLoading And Map_GetInstanceInfo("IsOutpost") And TimerDiff($l_h_Timer) > 15000 Then
-			Out("[Step] Enter Challenge did not start loading (still outpost after 15s)")
+		; Wine can sit on outpost type for a long time after EnterMission is queued.
+		; 15s was re-sending enter (and travel) while the first load was in flight.
+		If Not $l_b_SawLoading And Map_GetInstanceInfo("IsOutpost") And TimerDiff($l_h_Timer) > 45000 Then
+			If Leveler_MissionEnterInFlight() Then
+				Sleep(250)
+				ContinueLoop
+			EndIf
+			Out("[Step] Enter Challenge did not start loading (still outpost after 45s)")
 			Return False
 		EndIf
 
-		If Leveler_ClientDisconnected() And Not Map_GetInstanceInfo("IsLoading") Then
+		If Leveler_ClientDisconnected() And Not Leveler_InstanceIsLoading() Then
 			Out("[Step] Client dropped during mission enter (map " & $l_i_Map & ", " & Leveler_InstanceTypeName($l_i_Type) & ")")
 			Return False
 		EndIf
@@ -462,8 +489,8 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 		Sleep(250)
 	WEnd
 
-	If Map_GetInstanceInfo("IsLoading") Then
-		Out("[Step] Mission still loading after " & $a_i_Timeout & " ms")
+	If Leveler_InstanceIsLoading() Then
+		Out("[Step] Mission still loading after " & $a_i_Timeout & " ms; not traveling or re-entering")
 	ElseIf Not $l_b_SawLoading Then
 		Out("[Step] Enter Challenge never started a map load")
 	EndIf
@@ -471,13 +498,14 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 EndFunc
 
 ; Quiet period after skillbar / hench invite packets.
+; Do not Agent_CancelAction here. ACTION_CANCEL next to EnterMission is the same
+; class of CtoS as SKILLBAR_LOAD 0x005D and can drop the client into the load screen.
 Func Leveler_WaitMissionEnterReady()
-	If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
-	Agent_CancelAction()
+	If Leveler_MissionEnterStarted() Then Return True
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < 4000
 		If $g_b_LevelerPaused Then Return False
-		If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
+		If Leveler_MissionEnterStarted() Then Return True
 		If Not Map_GetInstanceInfo("IsOutpost") Then Return True
 		Sleep(250)
 	WEnd
@@ -486,10 +514,10 @@ Func Leveler_WaitMissionEnterReady()
 EndFunc
 
 Func Leveler_MissionEnterStarted()
-	If Map_GetInstanceInfo("IsLoading") Then Return True
-	If Map_GetInstanceInfo("Type") = 2 Then Return True
+	If Leveler_InstanceIsLoading() Then Return True
 	If Party_GetPartyContextInfo("IsWaitingForMission") Then Return True
 	If Map_GetInstanceInfo("IsExplorable") Then Return True
+	If Leveler_MissionEnterInFlight() Then Return True
 	Return False
 EndFunc
 
@@ -501,6 +529,7 @@ Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
 	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
 	Out("[Step] Ui_EnterChallenge(False, False) native character on map " & $a_i_OutpostMap & " (not foreign True, not 0xA5, not pixels)")
 	Ui_EnterChallenge(False, False)
+	$g_h_MissionEnterSent = TimerInit()
 	Return True
 EndFunc
 
