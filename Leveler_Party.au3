@@ -524,8 +524,22 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 	Return Leveler_InMissionInstance($a_i_MapID) And Leveler_ClientIsReady()
 EndFunc
 
-; ArenaNet DX client hwnd. Prefer that over the frame so PostMessage / ControlClick
-; land on the game, not the Wine chrome. Do not trust ClientToScreen on this prefix.
+Func Leveler_WindowClass($a_h_Wnd)
+	If $a_h_Wnd = 0 Then Return ""
+	Local $l_a_Name = DllCall("user32.dll", "int", "GetClassNameA", "hwnd", $a_h_Wnd, "str", "", "int", 256)
+	If IsArray($l_a_Name) Then Return $l_a_Name[2]
+	Return ""
+EndFunc
+
+Func Leveler_GwPid()
+	Local $l_i_Pid = 0
+	If IsDeclared("g_i_GWProcessId") Then $l_i_Pid = Number($g_i_GWProcessId)
+	If $l_i_Pid = 0 And IsDeclared("g_i_ProcessID") Then $l_i_Pid = Number($g_i_ProcessID)
+	Return $l_i_Pid
+EndFunc
+
+; ArenaNet DX client hwnd. PostMessage to this class is a proven no-op on this
+; Wine box; keep it only as a secondary target for ControlClick.
 Func Leveler_GwClientHwnd()
 	Local $l_s_Class = "ArenaNet_Dx_Window_Class"
 	Local $l_h_Wnd = 0
@@ -534,8 +548,7 @@ Func Leveler_GwClientHwnd()
 
 	Local $l_i_Pid = 0
 	If $l_h_Wnd <> 0 Then $l_i_Pid = Number(WinGetProcess($l_h_Wnd))
-	If $l_i_Pid = 0 And IsDeclared("g_i_GWProcessId") Then $l_i_Pid = Number($g_i_GWProcessId)
-	If $l_i_Pid = 0 And IsDeclared("g_i_ProcessID") Then $l_i_Pid = Number($g_i_ProcessID)
+	If $l_i_Pid = 0 Then $l_i_Pid = Leveler_GwPid()
 
 	Local $aClass = WinList("[CLASS:" & $l_s_Class & "]")
 	If IsArray($aClass) Then
@@ -546,6 +559,34 @@ Func Leveler_GwClientHwnd()
 		Next
 	EndIf
 	Return $l_h_Wnd
+EndFunc
+
+; Outer "Guild Wars" frame. DX child WinGetPos can sit higher than the frame
+; (historical: child Y~30, frame Y=59), so child-based screen Y lands in chrome.
+Func Leveler_GwFrameHwnd($a_h_Wnd)
+	Local $l_i_Pid = 0
+	If $a_h_Wnd <> 0 Then $l_i_Pid = Number(WinGetProcess($a_h_Wnd))
+	If $l_i_Pid <= 0 Then $l_i_Pid = Leveler_GwPid()
+	Local $l_a_Wins = WinList()
+	If IsArray($l_a_Wins) Then
+		Local $i
+		For $i = 1 To $l_a_Wins[0][0]
+			If $l_a_Wins[$i][0] = "" Then ContinueLoop
+			If Not StringInStr($l_a_Wins[$i][0], "Guild Wars") Then ContinueLoop
+			If $l_i_Pid > 0 And Number(WinGetProcess($l_a_Wins[$i][1])) <> $l_i_Pid Then ContinueLoop
+			Return $l_a_Wins[$i][1]
+		Next
+	EndIf
+	Local $l_h_Cur = $a_h_Wnd
+	Local $l_i_N = 0
+	While $l_h_Cur <> 0 And $l_i_N < 6
+		If StringInStr(WinGetTitle($l_h_Cur), "Guild Wars") Then Return $l_h_Cur
+		Local $l_a_Par = DllCall("user32.dll", "hwnd", "GetParent", "hwnd", $l_h_Cur)
+		If Not IsArray($l_a_Par) Or $l_a_Par[0] = 0 Then ExitLoop
+		$l_h_Cur = $l_a_Par[0]
+		$l_i_N += 1
+	WEnd
+	Return $a_h_Wnd
 EndFunc
 
 Func Leveler_OverlayHold()
@@ -564,16 +605,46 @@ Func Leveler_OverlayRestore()
 	EndIf
 EndFunc
 
-; Post WM_MOUSEMOVE / LBUTTON* plus ControlClick on the DX hwnd.
-; Wine ClientToScreen(636,22) previously mapped above the Gw frame.
-Func Leveler_PostClientClick($a_h_Wnd, $a_i_X, $a_i_Y)
-	If $a_h_Wnd = 0 Then Return
-	Local $l_i_Lp = BitOR(BitAND($a_i_X, 0xFFFF), BitShift(BitAND($a_i_Y, 0xFFFF), -16))
-	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0200, "wparam", 0, "lparam", $l_i_Lp)
-	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0201, "wparam", 1, "lparam", $l_i_Lp)
-	Sleep(40)
-	DllCall("user32.dll", "bool", "PostMessage", "hwnd", $a_h_Wnd, "uint", 0x0202, "wparam", 0, "lparam", $l_i_Lp)
-	ControlClick($a_h_Wnd, "", "", "left", 1, $a_i_X, $a_i_Y)
+; Map client (x,y) onto the frame's desktop rect. Do not trust ClientToScreen
+; (636,22 -> 636,52 was above the Gw frame on this prefix).
+; Wine often reports client size == window size even though a title bar is
+; drawn (1280x800 screenshot still shows "Asia - japanese" chrome). In that
+; case Y=22 is the title bar, not the pill.
+Func Leveler_ClientToScreenSafe($a_h_Frame, $a_i_X, $a_i_Y)
+	Local $l_ai_Out[2] = [0, 0]
+	If $a_h_Frame = 0 Then Return $l_ai_Out
+	Local $l_a_Pos = WinGetPos($a_h_Frame)
+	Local $l_a_Cli = WinGetClientSize($a_h_Frame)
+	Local $l_i_L = 0, $l_i_T = 0, $l_i_W = 0, $l_i_H = 0
+	If IsArray($l_a_Pos) Then
+		$l_i_L = Number($l_a_Pos[0])
+		$l_i_T = Number($l_a_Pos[1])
+		$l_i_W = Number($l_a_Pos[2])
+		$l_i_H = Number($l_a_Pos[3])
+	EndIf
+	Local $l_i_Cw = $l_i_W
+	Local $l_i_Ch = $l_i_H
+	If IsArray($l_a_Cli) Then
+		$l_i_Cw = Number($l_a_Cli[0])
+		$l_i_Ch = Number($l_a_Cli[1])
+	EndIf
+	Local $l_i_Border = 0
+	Local $l_i_Title = 0
+	If $l_i_W > $l_i_Cw And $l_i_H > $l_i_Ch Then
+		$l_i_Border = Int(($l_i_W - $l_i_Cw) / 2)
+		$l_i_Title = $l_i_H - $l_i_Ch - $l_i_Border
+		If $l_i_Title < 0 Then $l_i_Title = 0
+	EndIf
+	If $l_i_Title < 8 Then $l_i_Title = 24
+	Local $l_i_Sx = $l_i_L + $l_i_Border + $a_i_X
+	Local $l_i_Sy = $l_i_T + $l_i_Title + $a_i_Y
+	If $l_i_W > 0 And ($l_i_Sx < $l_i_L Or $l_i_Sx >= $l_i_L + $l_i_W Or $l_i_Sy < $l_i_T Or $l_i_Sy >= $l_i_T + $l_i_H) Then
+		Out("[Step] Zen enter: mapped " & $l_i_Sx & "," & $l_i_Sy & " outside frame " & $l_i_L & "," & $l_i_T & " " & $l_i_W & "x" & $l_i_H)
+		Return $l_ai_Out
+	EndIf
+	$l_ai_Out[0] = $l_i_Sx
+	$l_ai_Out[1] = $l_i_Sy
+	Return $l_ai_Out
 EndFunc
 
 Func Leveler_WaitZenLoadHint($a_i_Timeout)
@@ -585,69 +656,126 @@ Func Leveler_WaitZenLoadHint($a_i_Timeout)
 	Return Leveler_MissionEnterStarted()
 EndFunc
 
-; Wine live: CommandEnterMission dwords fail on Zen 213 (drop or type-2 hang).
-; CommandUIMsg 0x30000002 is a Py4GW/GWCA send-range id (UI_enums.py), not a
-; game UIMessage. GwAu3 Const_Ui only lists 0x10000xxx ids; CommandUIMsg calls
-; the game UIMessage (push 0; push struct+8; push msgid). That path no-op'd:
-; stayed outpost, Enter Mission still visible. Official enter-via-UIMessage
-; call sites are Ui_MoveMap / Ui_EquipItem / Ui_Xunlai — none enter a mission.
-;
-; This repo's Wine_EnterChallenge previously started a 213 instance by hiding
-; the On-Top overlay and pressing the visible pill ({ENTER}, then top-center
-; client clicks). Stop input as soon as type-2 starts; more clicks during the
-; DX reset crashed Gw. Cho stays CommandEnterMission. No 0xA5.
+Func Leveler_FocusGwFrame($a_h_Frame)
+	If $a_h_Frame = 0 Then Return
+	WinSetOnTop($a_h_Frame, "", 1)
+	WinActivate($a_h_Frame)
+	WinWaitActive($a_h_Frame, "", 2)
+	DllCall("user32.dll", "bool", "SetForegroundWindow", "hwnd", $a_h_Frame)
+	DllCall("user32.dll", "bool", "BringWindowToTop", "hwnd", $a_h_Frame)
+	Sleep(200)
+EndFunc
+
+; Real cursor click. PostMessage/ControlClick on the DX hwnd never started a
+; load on this Wine box (log: 640,22-48, still outpost).
+Func Leveler_MouseClickScreen($a_i_X, $a_i_Y)
+	Local $l_i_Mode = Opt("MouseCoordMode", 1)
+	MouseClick("left", $a_i_X, $a_i_Y, 1, 0)
+	Opt("MouseCoordMode", $l_i_Mode)
+EndFunc
+
+; Window-relative click (includes the title bar). Matches the 1280x800
+; screenshot where Enter Mission sits just under "Asia - japanese".
+Func Leveler_MouseClickWindow($a_h_Frame, $a_i_X, $a_i_Y)
+	If $a_h_Frame = 0 Then Return
+	Leveler_FocusGwFrame($a_h_Frame)
+	Local $l_i_Mode = Opt("MouseCoordMode", 0)
+	MouseClick("left", $a_i_X, $a_i_Y, 1, 0)
+	Opt("MouseCoordMode", $l_i_Mode)
+EndFunc
+
+; Wine live: CommandEnterMission dwords fail; CommandUIMsg 0x30000002 no-op;
+; PostMessage/ControlClick Y 22-48 no-op (still outpost, pill still visible).
+; Fail screenshot is the full 1280x800 frame with a title bar and Enter Mission
+; just below it (~window Y 36-60, center X). Wine reported client width 1280
+; so Y=22 was chrome. Use a real MouseClick on screenshot-space Y and stop
+; as soon as type-2 starts. Cho stays CommandEnterMission. No 0xA5.
 Func Leveler_SendZenEnterMission()
-	Local $l_h_Wnd = Leveler_GwClientHwnd()
-	If $l_h_Wnd = 0 Then
+	Local $l_h_Cli = Leveler_GwClientHwnd()
+	Local $l_h_Frame = Leveler_GwFrameHwnd($l_h_Cli)
+	If $l_h_Frame = 0 Then $l_h_Frame = $l_h_Cli
+	If $l_h_Frame = 0 Then
 		Out("[Step] No Gw window for Zen Enter Mission")
 		Return False
 	EndIf
 
 	Leveler_OverlayHold()
-	WinActivate($l_h_Wnd)
-	WinWaitActive($l_h_Wnd, "", 2)
-	DllCall("user32.dll", "bool", "SetForegroundWindow", "hwnd", $l_h_Wnd)
-	DllCall("user32.dll", "bool", "BringWindowToTop", "hwnd", $l_h_Wnd)
-	Sleep(400)
+	Leveler_FocusGwFrame($l_h_Frame)
+
+	Local $l_a_Pos = WinGetPos($l_h_Frame)
+	Local $l_a_Cli = WinGetClientSize($l_h_Frame)
+	Local $l_i_Fw = 1280, $l_i_Fh = 800
+	If IsArray($l_a_Pos) Then
+		$l_i_Fw = Number($l_a_Pos[2])
+		$l_i_Fh = Number($l_a_Pos[3])
+	EndIf
+	Local $l_i_Cw = $l_i_Fw, $l_i_Ch = $l_i_Fh
+	If IsArray($l_a_Cli) Then
+		$l_i_Cw = Number($l_a_Cli[0])
+		$l_i_Ch = Number($l_a_Cli[1])
+	EndIf
+	Local $l_i_Wx = Int($l_i_Fw / 2)
+	If $l_i_Wx < 1 Then $l_i_Wx = 640
+	Out("[Step] Zen enter: frame " & Leveler_WindowClass($l_h_Frame) & " " & $l_i_Fw & "x" & $l_i_Fh & " client " & $l_i_Cw & "x" & $l_i_Ch & " dx=" & Leveler_WindowClass($l_h_Cli) & " (MouseClick, not CommandEnterMission, not 0x30000002, not 0xA5)")
 
 	If Leveler_MissionEnterStarted() Then
 		Leveler_OverlayRestore()
 		Return True
 	EndIf
 
-	Out("[Step] Zen enter: hide overlay, {ENTER} on visible Enter Mission (not CommandEnterMission, not 0x30000002, not 0xA5)")
-	ControlSend($l_h_Wnd, "", "", "{ENTER}")
-	If Leveler_WaitZenLoadHint(2500) Then
-		Out("[Step] Zen enter: load started after {ENTER}")
-		Leveler_OverlayRestore()
-		Return True
-	EndIf
-
-	Local $l_i_Cx = 636
-	Local $l_a_Cli = WinGetClientSize($l_h_Wnd)
-	If IsArray($l_a_Cli) And Number($l_a_Cli[0]) > 0 Then $l_i_Cx = Int(Number($l_a_Cli[0]) / 2)
-	; Screenshot: Enter Mission pill sits at the top-center of the DX client.
-	; Historical Wine Y sweep was 22-80; stay on the pill and stop on load.
-	Local $l_ai_Y[4] = [22, 32, 42, 48]
+	; Screenshot space: title bar then Enter Mission at top-center.
+	Local $l_ai_WinY[6] = [36, 44, 52, 60, 68, 80]
 	Local $i
-	For $i = 0 To 3
+	For $i = 0 To 5
 		If Leveler_MissionEnterStarted() Then ExitLoop
-		Out("[Step] Zen enter: click Enter Mission pill " & $l_i_Cx & "," & $l_ai_Y[$i])
-		Leveler_PostClientClick($l_h_Wnd, $l_i_Cx, $l_ai_Y[$i])
-		If Leveler_WaitZenLoadHint(1200) Then
-			Out("[Step] Zen enter: load started after pill click")
+		Out("[Step] Zen enter: MouseClick window " & $l_i_Wx & "," & $l_ai_WinY[$i])
+		Leveler_MouseClickWindow($l_h_Frame, $l_i_Wx, $l_ai_WinY[$i])
+		If $i = 0 Then
+			SendKeepActive($l_h_Frame)
+			Send("{ENTER}")
+			SendKeepActive("")
+			Out("[Step] Zen enter: Send {ENTER} after first pill click")
+		EndIf
+		If Leveler_WaitZenLoadHint(900) Then
+			Out("[Step] Zen enter: load started after window MouseClick")
+			WinSetOnTop($l_h_Frame, "", 0)
 			Leveler_OverlayRestore()
 			Return True
 		EndIf
 	Next
 
+	If Leveler_MissionEnterStarted() Then
+		WinSetOnTop($l_h_Frame, "", 0)
+		Leveler_OverlayRestore()
+		Return True
+	EndIf
+
+	; Client-space fallback with a 24px title fudge when Wine hides chrome.
+	Local $l_i_Cx = Int($l_i_Cw / 2)
+	If $l_i_Cx < 1 Then $l_i_Cx = 640
+	Local $l_ai_CliY[5] = [18, 28, 38, 48, 58]
+	Local $j
+	For $j = 0 To 4
+		If Leveler_MissionEnterStarted() Then ExitLoop
+		Local $l_ai_Scr = Leveler_ClientToScreenSafe($l_h_Frame, $l_i_Cx, $l_ai_CliY[$j])
+		If $l_ai_Scr[0] = 0 And $l_ai_Scr[1] = 0 Then ContinueLoop
+		Out("[Step] Zen enter: MouseClick screen " & $l_ai_Scr[0] & "," & $l_ai_Scr[1] & " (client " & $l_i_Cx & "," & $l_ai_CliY[$j] & ")")
+		Leveler_MouseClickScreen($l_ai_Scr[0], $l_ai_Scr[1])
+		If Leveler_WaitZenLoadHint(900) Then
+			Out("[Step] Zen enter: load started after screen MouseClick")
+			WinSetOnTop($l_h_Frame, "", 0)
+			Leveler_OverlayRestore()
+			Return True
+		EndIf
+	Next
+
+	WinSetOnTop($l_h_Frame, "", 0)
 	Leveler_OverlayRestore()
 	Return True
 EndFunc
 
 ; Cho: Wine-proven CommandEnterMission dword 0, no wait.
-; Zen: overlay-hidden {ENTER} / pill click. Do not enqueue CommandEnterMission
-; or CommandUIMsg 0x30000002 again.
+; Zen: screenshot-space MouseClick on the visible Enter Mission pill.
 Func Leveler_SendEnterMission($a_i_OutpostMap = 0)
 	If Leveler_MissionEnterStarted() Then Return True
 	If $a_i_OutpostMap = 0 Then $a_i_OutpostMap = Map_GetMapID()
