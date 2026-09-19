@@ -524,6 +524,8 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 180
 	Return Leveler_InMissionInstance($a_i_MapID) And Leveler_ClientIsReady()
 EndFunc
 
+; Keep Leveler_WindowClass and Leveler_GwPid in this file. A partial merge
+; that drops them while still calling them hard-errors (Wine: Unknown function).
 Func Leveler_WindowClass($a_h_Wnd)
 	If $a_h_Wnd = 0 Then Return ""
 	Local $l_a_Name = DllCall("user32.dll", "int", "GetClassNameA", "hwnd", $a_h_Wnd, "str", "", "int", 256)
@@ -538,45 +540,47 @@ Func Leveler_GwPid()
 	Return $l_i_Pid
 EndFunc
 
-; ArenaNet DX client hwnd. PostMessage to this class is a proven no-op on this
-; Wine box; keep it only as a secondary target for ControlClick.
-Func Leveler_GwClientHwnd()
-	Local $l_s_Class = "ArenaNet_Dx_Window_Class"
-	Local $l_h_Wnd = 0
-	If IsDeclared("g_h_GWWindow") Then $l_h_Wnd = $g_h_GWWindow
-	If $l_h_Wnd = 0 Then $l_h_Wnd = Scanner_GetWindowHandle()
-
-	Local $l_i_Pid = 0
-	If $l_h_Wnd <> 0 Then $l_i_Pid = Number(WinGetProcess($l_h_Wnd))
-	If $l_i_Pid = 0 Then $l_i_Pid = Leveler_GwPid()
-
-	Local $aClass = WinList("[CLASS:" & $l_s_Class & "]")
-	If IsArray($aClass) Then
-		Local $i
-		For $i = 1 To $aClass[0][0]
-			If $l_i_Pid > 0 And WinGetProcess($aClass[$i][1]) <> $l_i_Pid Then ContinueLoop
-			Return $aClass[$i][1]
-		Next
-	EndIf
-	Return $l_h_Wnd
+; Inlined fallbacks so a dropped helper cannot crash the enter Out.
+Func Leveler_SafeWindowClass($a_h_Wnd)
+	If $a_h_Wnd = 0 Then Return ""
+	If IsFunc("Leveler_WindowClass") Then Return Leveler_WindowClass($a_h_Wnd)
+	Local $l_a_Name = DllCall("user32.dll", "int", "GetClassNameA", "hwnd", $a_h_Wnd, "str", "", "int", 256)
+	If IsArray($l_a_Name) Then Return $l_a_Name[2]
+	Return ""
 EndFunc
 
-; Outer "Guild Wars" frame. DX child WinGetPos can sit higher than the frame
-; (historical: child Y~30, frame Y=59), so child-based screen Y lands in chrome.
-Func Leveler_GwFrameHwnd($a_h_Wnd)
+Func Leveler_SafeGwPid()
+	If IsFunc("Leveler_GwPid") Then Return Leveler_GwPid()
 	Local $l_i_Pid = 0
-	If $a_h_Wnd <> 0 Then $l_i_Pid = Number(WinGetProcess($a_h_Wnd))
-	If $l_i_Pid <= 0 Then $l_i_Pid = Leveler_GwPid()
-	Local $l_a_Wins = WinList()
-	If IsArray($l_a_Wins) Then
+	If IsDeclared("g_i_GWProcessId") Then $l_i_Pid = Number($g_i_GWProcessId)
+	If $l_i_Pid = 0 And IsDeclared("g_i_ProcessID") Then $l_i_Pid = Number($g_i_ProcessID)
+	Return $l_i_Pid
+EndFunc
+
+; Prefer the hwnd Core already has. Do not WinList() the whole desktop — that
+; hung this Wine box for 10+ minutes with no log after "Exiting Outpost".
+Func Leveler_GwClientHwnd()
+	If IsDeclared("g_h_GWWindow") And $g_h_GWWindow <> 0 Then Return $g_h_GWWindow
+	Out("[Step] Zen enter: no g_h_GWWindow, asking Scanner_GetWindowHandle")
+	Local $l_h_Scan = Scanner_GetWindowHandle()
+	If $l_h_Scan <> 0 Then Return $l_h_Scan
+	Out("[Step] Zen enter: Scanner hwnd=0, class WinList ArenaNet_Dx_Window_Class")
+	Local $l_s_Class = "ArenaNet_Dx_Window_Class"
+	Local $l_i_Pid = Leveler_SafeGwPid()
+	Local $l_a_Class = WinList("[CLASS:" & $l_s_Class & "]")
+	If IsArray($l_a_Class) Then
 		Local $i
-		For $i = 1 To $l_a_Wins[0][0]
-			If $l_a_Wins[$i][0] = "" Then ContinueLoop
-			If Not StringInStr($l_a_Wins[$i][0], "Guild Wars") Then ContinueLoop
-			If $l_i_Pid > 0 And Number(WinGetProcess($l_a_Wins[$i][1])) <> $l_i_Pid Then ContinueLoop
-			Return $l_a_Wins[$i][1]
+		For $i = 1 To $l_a_Class[0][0]
+			If $l_i_Pid > 0 And WinGetProcess($l_a_Class[$i][1]) <> $l_i_Pid Then ContinueLoop
+			Return $l_a_Class[$i][1]
 		Next
 	EndIf
+	Return 0
+EndFunc
+
+; Walk GetParent only. Unfiltered WinList() is the Wine hang.
+Func Leveler_GwFrameHwnd($a_h_Wnd)
+	If $a_h_Wnd = 0 Then Return 0
 	Local $l_h_Cur = $a_h_Wnd
 	Local $l_i_N = 0
 	While $l_h_Cur <> 0 And $l_i_N < 6
@@ -592,7 +596,7 @@ EndFunc
 Func Leveler_OverlayHold()
 	If Not IsDeclared("g_h_MainGui") Then Return
 	If $g_h_MainGui = 0 Then Return
-	WinSetOnTop($g_h_MainGui, "", 0)
+	; Do not WinSetOnTop here. Wine can block on that.
 	WinSetState($g_h_MainGui, "", @SW_HIDE)
 EndFunc
 
@@ -600,51 +604,6 @@ Func Leveler_OverlayRestore()
 	If Not IsDeclared("g_h_MainGui") Then Return
 	If $g_h_MainGui = 0 Then Return
 	WinSetState($g_h_MainGui, "", @SW_SHOW)
-	If IsDeclared("g_h_OnTopCheckbox") And BitAND(GUICtrlRead($g_h_OnTopCheckbox), $GUI_CHECKED) Then
-		WinSetOnTop($g_h_MainGui, "", 1)
-	EndIf
-EndFunc
-
-; Map client (x,y) onto the frame's desktop rect. Do not trust ClientToScreen
-; (636,22 -> 636,52 was above the Gw frame on this prefix).
-; Wine often reports client size == window size even though a title bar is
-; drawn (1280x800 screenshot still shows "Asia - japanese" chrome). In that
-; case Y=22 is the title bar, not the pill.
-Func Leveler_ClientToScreenSafe($a_h_Frame, $a_i_X, $a_i_Y)
-	Local $l_ai_Out[2] = [0, 0]
-	If $a_h_Frame = 0 Then Return $l_ai_Out
-	Local $l_a_Pos = WinGetPos($a_h_Frame)
-	Local $l_a_Cli = WinGetClientSize($a_h_Frame)
-	Local $l_i_L = 0, $l_i_T = 0, $l_i_W = 0, $l_i_H = 0
-	If IsArray($l_a_Pos) Then
-		$l_i_L = Number($l_a_Pos[0])
-		$l_i_T = Number($l_a_Pos[1])
-		$l_i_W = Number($l_a_Pos[2])
-		$l_i_H = Number($l_a_Pos[3])
-	EndIf
-	Local $l_i_Cw = $l_i_W
-	Local $l_i_Ch = $l_i_H
-	If IsArray($l_a_Cli) Then
-		$l_i_Cw = Number($l_a_Cli[0])
-		$l_i_Ch = Number($l_a_Cli[1])
-	EndIf
-	Local $l_i_Border = 0
-	Local $l_i_Title = 0
-	If $l_i_W > $l_i_Cw And $l_i_H > $l_i_Ch Then
-		$l_i_Border = Int(($l_i_W - $l_i_Cw) / 2)
-		$l_i_Title = $l_i_H - $l_i_Ch - $l_i_Border
-		If $l_i_Title < 0 Then $l_i_Title = 0
-	EndIf
-	If $l_i_Title < 8 Then $l_i_Title = 24
-	Local $l_i_Sx = $l_i_L + $l_i_Border + $a_i_X
-	Local $l_i_Sy = $l_i_T + $l_i_Title + $a_i_Y
-	If $l_i_W > 0 And ($l_i_Sx < $l_i_L Or $l_i_Sx >= $l_i_L + $l_i_W Or $l_i_Sy < $l_i_T Or $l_i_Sy >= $l_i_T + $l_i_H) Then
-		Out("[Step] Zen enter: mapped " & $l_i_Sx & "," & $l_i_Sy & " outside frame " & $l_i_L & "," & $l_i_T & " " & $l_i_W & "x" & $l_i_H)
-		Return $l_ai_Out
-	EndIf
-	$l_ai_Out[0] = $l_i_Sx
-	$l_ai_Out[1] = $l_i_Sy
-	Return $l_ai_Out
 EndFunc
 
 Func Leveler_WaitZenLoadHint($a_i_Timeout)
@@ -656,120 +615,89 @@ Func Leveler_WaitZenLoadHint($a_i_Timeout)
 	Return Leveler_MissionEnterStarted()
 EndFunc
 
-Func Leveler_FocusGwFrame($a_h_Frame)
-	If $a_h_Frame = 0 Then Return
-	WinSetOnTop($a_h_Frame, "", 1)
-	WinActivate($a_h_Frame)
-	WinWaitActive($a_h_Frame, "", 2)
-	DllCall("user32.dll", "bool", "SetForegroundWindow", "hwnd", $a_h_Frame)
-	DllCall("user32.dll", "bool", "BringWindowToTop", "hwnd", $a_h_Frame)
-	Sleep(200)
-EndFunc
-
-; Real cursor click. PostMessage/ControlClick on the DX hwnd never started a
-; load on this Wine box (log: 640,22-48, still outpost).
+; Desktop click. No WinActivate / WinSetOnTop / SendKeepActive (Wine hangs).
 Func Leveler_MouseClickScreen($a_i_X, $a_i_Y)
 	Local $l_i_Mode = Opt("MouseCoordMode", 1)
 	MouseClick("left", $a_i_X, $a_i_Y, 1, 0)
 	Opt("MouseCoordMode", $l_i_Mode)
 EndFunc
 
-; Window-relative click (includes the title bar). Matches the 1280x800
-; screenshot where Enter Mission sits just under "Asia - japanese".
-Func Leveler_MouseClickWindow($a_h_Frame, $a_i_X, $a_i_Y)
-	If $a_h_Frame = 0 Then Return
-	Leveler_FocusGwFrame($a_h_Frame)
-	Local $l_i_Mode = Opt("MouseCoordMode", 0)
-	MouseClick("left", $a_i_X, $a_i_Y, 1, 0)
-	Opt("MouseCoordMode", $l_i_Mode)
+; Window (x,y) including title bar -> desktop via WinGetPos, not ClientToScreen.
+Func Leveler_WindowToScreen($a_h_Frame, $a_i_X, $a_i_Y)
+	Local $l_ai_Out[2] = [0, 0]
+	If $a_h_Frame = 0 Then
+		$l_ai_Out[0] = $a_i_X
+		$l_ai_Out[1] = $a_i_Y
+		Return $l_ai_Out
+	EndIf
+	Local $l_a_Pos = WinGetPos($a_h_Frame)
+	If Not IsArray($l_a_Pos) Then
+		$l_ai_Out[0] = $a_i_X
+		$l_ai_Out[1] = $a_i_Y
+		Return $l_ai_Out
+	EndIf
+	$l_ai_Out[0] = Number($l_a_Pos[0]) + $a_i_X
+	$l_ai_Out[1] = Number($l_a_Pos[1]) + $a_i_Y
+	Return $l_ai_Out
 EndFunc
 
-; Wine live: CommandEnterMission dwords fail; CommandUIMsg 0x30000002 no-op;
-; PostMessage/ControlClick Y 22-48 no-op (still outpost, pill still visible).
-; Fail screenshot is the full 1280x800 frame with a title bar and Enter Mission
-; just below it (~window Y 36-60, center X). Wine reported client width 1280
-; so Y=22 was chrome. Use a real MouseClick on screenshot-space Y and stop
-; as soon as type-2 starts. Cho stays CommandEnterMission. No 0xA5.
+; Wine live: WinList() + WinActivate + missing WindowClass hung / hard-errored
+; after "Exiting Outpost". Click the pill in screenshot space (title + Y 36-80)
+; with a real MouseClick and no blocking focus calls. Cho stays native. No 0xA5.
 Func Leveler_SendZenEnterMission()
+	Out("[Step] Zen enter: begin (no WinList-all, no WinActivate)")
+
 	Local $l_h_Cli = Leveler_GwClientHwnd()
+	Out("[Step] Zen enter: dx hwnd=" & $l_h_Cli & " class=" & Leveler_SafeWindowClass($l_h_Cli))
 	Local $l_h_Frame = Leveler_GwFrameHwnd($l_h_Cli)
 	If $l_h_Frame = 0 Then $l_h_Frame = $l_h_Cli
+	Out("[Step] Zen enter: frame hwnd=" & $l_h_Frame & " class=" & Leveler_SafeWindowClass($l_h_Frame))
 	If $l_h_Frame = 0 Then
-		Out("[Step] No Gw window for Zen Enter Mission")
-		Return False
+		Out("[Step] No Gw window; MouseClick screen 640,40 on 1280x800 box")
 	EndIf
 
+	Out("[Step] Zen enter: hiding overlay")
 	Leveler_OverlayHold()
-	Leveler_FocusGwFrame($l_h_Frame)
+	Out("[Step] Zen enter: overlay hidden")
 
-	Local $l_a_Pos = WinGetPos($l_h_Frame)
-	Local $l_a_Cli = WinGetClientSize($l_h_Frame)
-	Local $l_i_Fw = 1280, $l_i_Fh = 800
-	If IsArray($l_a_Pos) Then
-		$l_i_Fw = Number($l_a_Pos[2])
-		$l_i_Fh = Number($l_a_Pos[3])
-	EndIf
-	Local $l_i_Cw = $l_i_Fw, $l_i_Ch = $l_i_Fh
-	If IsArray($l_a_Cli) Then
-		$l_i_Cw = Number($l_a_Cli[0])
-		$l_i_Ch = Number($l_a_Cli[1])
+	Local $l_i_L = 0, $l_i_T = 0, $l_i_Fw = 1280, $l_i_Fh = 800
+	If $l_h_Frame <> 0 Then
+		Local $l_a_Pos = WinGetPos($l_h_Frame)
+		If IsArray($l_a_Pos) Then
+			$l_i_L = Number($l_a_Pos[0])
+			$l_i_T = Number($l_a_Pos[1])
+			$l_i_Fw = Number($l_a_Pos[2])
+			$l_i_Fh = Number($l_a_Pos[3])
+		EndIf
 	EndIf
 	Local $l_i_Wx = Int($l_i_Fw / 2)
 	If $l_i_Wx < 1 Then $l_i_Wx = 640
-	Out("[Step] Zen enter: frame " & Leveler_WindowClass($l_h_Frame) & " " & $l_i_Fw & "x" & $l_i_Fh & " client " & $l_i_Cw & "x" & $l_i_Ch & " dx=" & Leveler_WindowClass($l_h_Cli) & " (MouseClick, not CommandEnterMission, not 0x30000002, not 0xA5)")
+	Out("[Step] Zen enter: frame " & Leveler_SafeWindowClass($l_h_Frame) & " pos " & $l_i_L & "," & $l_i_T & " " & $l_i_Fw & "x" & $l_i_Fh & " (MouseClick, not CommandEnterMission, not 0x30000002, not 0xA5)")
 
 	If Leveler_MissionEnterStarted() Then
 		Leveler_OverlayRestore()
 		Return True
 	EndIf
 
-	; Screenshot space: title bar then Enter Mission at top-center.
+	; Screenshot: Enter Mission just under the title bar, center X.
 	Local $l_ai_WinY[6] = [36, 44, 52, 60, 68, 80]
 	Local $i
 	For $i = 0 To 5
 		If Leveler_MissionEnterStarted() Then ExitLoop
-		Out("[Step] Zen enter: MouseClick window " & $l_i_Wx & "," & $l_ai_WinY[$i])
-		Leveler_MouseClickWindow($l_h_Frame, $l_i_Wx, $l_ai_WinY[$i])
+		Local $l_ai_Scr = Leveler_WindowToScreen($l_h_Frame, $l_i_Wx, $l_ai_WinY[$i])
+		Out("[Step] Zen enter: MouseClick screen " & $l_ai_Scr[0] & "," & $l_ai_Scr[1] & " (window " & $l_i_Wx & "," & $l_ai_WinY[$i] & ")")
+		Leveler_MouseClickScreen($l_ai_Scr[0], $l_ai_Scr[1])
 		If $i = 0 Then
-			SendKeepActive($l_h_Frame)
 			Send("{ENTER}")
-			SendKeepActive("")
 			Out("[Step] Zen enter: Send {ENTER} after first pill click")
 		EndIf
 		If Leveler_WaitZenLoadHint(900) Then
-			Out("[Step] Zen enter: load started after window MouseClick")
-			WinSetOnTop($l_h_Frame, "", 0)
+			Out("[Step] Zen enter: load started after MouseClick")
 			Leveler_OverlayRestore()
 			Return True
 		EndIf
 	Next
 
-	If Leveler_MissionEnterStarted() Then
-		WinSetOnTop($l_h_Frame, "", 0)
-		Leveler_OverlayRestore()
-		Return True
-	EndIf
-
-	; Client-space fallback with a 24px title fudge when Wine hides chrome.
-	Local $l_i_Cx = Int($l_i_Cw / 2)
-	If $l_i_Cx < 1 Then $l_i_Cx = 640
-	Local $l_ai_CliY[5] = [18, 28, 38, 48, 58]
-	Local $j
-	For $j = 0 To 4
-		If Leveler_MissionEnterStarted() Then ExitLoop
-		Local $l_ai_Scr = Leveler_ClientToScreenSafe($l_h_Frame, $l_i_Cx, $l_ai_CliY[$j])
-		If $l_ai_Scr[0] = 0 And $l_ai_Scr[1] = 0 Then ContinueLoop
-		Out("[Step] Zen enter: MouseClick screen " & $l_ai_Scr[0] & "," & $l_ai_Scr[1] & " (client " & $l_i_Cx & "," & $l_ai_CliY[$j] & ")")
-		Leveler_MouseClickScreen($l_ai_Scr[0], $l_ai_Scr[1])
-		If Leveler_WaitZenLoadHint(900) Then
-			Out("[Step] Zen enter: load started after screen MouseClick")
-			WinSetOnTop($l_h_Frame, "", 0)
-			Leveler_OverlayRestore()
-			Return True
-		EndIf
-	Next
-
-	WinSetOnTop($l_h_Frame, "", 0)
 	Leveler_OverlayRestore()
 	Return True
 EndFunc
