@@ -50,6 +50,8 @@ Func Leveler_QuestFinished($a_i_QuestID)
 	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
 	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
 	If $a_i_QuestID = $QUEST_ROAD_LESS Then Return Leveler_RoadLessTraveledDone()
+	If $a_i_QuestID = $QUEST_SEARCH_CURE Then Return Leveler_SearchCureDone()
+	If $a_i_QuestID = $QUEST_MASTERS_BURDEN Then Return Leveler_MastersBurdenDone()
 	If Leveler_QuestNeedsHandIn($a_i_QuestID) Then Return False
 	If Quest_GetQuestInfo($a_i_QuestID, "IsCompleted") Then Return True
 	If Leveler_IsQuestDone($a_i_QuestID) Then Return True
@@ -224,13 +226,11 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 	If Leveler_QuestProgress($QUEST_ROAD_LESS) Then
 		Leveler_MarkQuestDone($QUEST_JOURNEY_MASTER)
 	EndIf
-	If Leveler_QuestProgress($QUEST_BROTHER_TOSAI) Or Leveler_HasQuest($QUEST_MASTERS_BURDEN) Or Leveler_QuestFinished($QUEST_MASTERS_BURDEN) Then
+	If Leveler_HasIncompleteQuest($QUEST_BROTHER_TOSAI) Or Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 	EndIf
-	If Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
-		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
-	EndIf
-	If Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
+	If Leveler_SearchCureDone() Then Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
+	If Leveler_MastersBurdenDone() Then
 		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
 		Leveler_MarkQuestDone($QUEST_BROTHER_TOSAI)
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
@@ -270,16 +270,22 @@ Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
 	Return True
 EndFunc
 
-; Search for a Cure (#336) is one-and-done. Once it has left the log it cannot be taken again.
+; Search for a Cure (#336). Empty log is "not started" until Mox or Olias can join.
 Func Leveler_SearchCureDone()
 	If Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then Return False
-	Return True
+	If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_BROTHER_TOSAI) Then Return True
+	If Leveler_MoxOrOliasAvailable() Then Return True
+	If $g_ab_QuestDone[$LEVELER_Q_CURE] Then Return True
+	Return False
 EndFunc
 
-; A Master's Burden (#349) is one-and-done. Out of the log means it was already handed in.
+; A Master's Burden (#349). Empty log is "not started" until Mox or Olias can join.
 Func Leveler_MastersBurdenDone()
 	If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then Return False
-	Return True
+	If Leveler_MoxOrOliasAvailable() Then Return True
+	If $g_ab_QuestDone[$LEVELER_Q_BURDEN] Then Return True
+	Return False
 EndFunc
 
 ; Punch the Clown (#858) is finished once it has left the log and this character has reached Gunnar's Hold.
@@ -377,14 +383,20 @@ Func Leveler_HasStorageAccess()
 	Return False
 EndFunc
 
-; Chest already opened, or this character already used storage for later monastery crafts.
+; Character-specific Xunlai unlock. Storage bag pointers are ACCOUNT-wide once any
+; character on the account has paid; they must not skip this step on a fresh char.
 Func Leveler_XunlaiUnlocked()
-	If Leveler_HasStorageAccess() Then Return True
+	If $g_b_XunlaiUnlocked Then Return True
+	; Past monastery crafts / later quests means this character already paid.
 	If Leveler_HasCraftedWeapon() Then Return True
 	If Leveler_HasMonasteryArmor() Then Return True
 	If Leveler_HasSeitungArmor() Then Return True
 	If Leveler_HasPostXunlaiProgress() Then Return True
 	Return False
+EndFunc
+
+Func Leveler_MarkXunlaiUnlocked()
+	$g_b_XunlaiUnlocked = True
 EndFunc
 
 ; Zhao Di in Shing Jea. Energy Burn is optional if a skill point was already spent.
@@ -487,7 +499,9 @@ Func Leveler_StatusCheck()
 	; Monastery tutorial is character-specific. Account map unlocks, storage
 	; pointers, and account skill unlocks must not skip Secondary / Xunlai / craft.
 	$g_ab_StepDone[$LEVELER_STEP_OVERLOOK] = $l_b_ShingJea And Not Leveler_OnOverlook()
-	$g_ab_StepDone[$LEVELER_STEP_PARTY] = (Not Leveler_QuestLogActive($QUEST_FORMING_A_PARTY)) And (Leveler_QuestLogCompleted($QUEST_FORMING_A_PARTY) Or Leveler_HasSecondaryProfession() Or Leveler_HasQuest($QUEST_SECONDARY) Or Leveler_HasQuest($QUEST_FORMAL_INTRO))
+	; Do not treat reward-ready (#440 still in the log) as done. QuestLogCompleted is CanReward,
+	; which skipped Forming A Party and jumped to Secondary on a fresh character mid-hand-in.
+	$g_ab_StepDone[$LEVELER_STEP_PARTY] = (Not Leveler_QuestNeedsHandIn($QUEST_FORMING_A_PARTY)) And (Leveler_IsQuestDone($QUEST_FORMING_A_PARTY) Or Leveler_QuestFinished($QUEST_FORMING_A_PARTY) Or Leveler_HasSecondaryProfession() Or Leveler_HasQuest($QUEST_SECONDARY) Or Leveler_HasQuest($QUEST_FORMAL_INTRO))
 	$g_ab_StepDone[$LEVELER_STEP_SECONDARY] = Leveler_SecondaryStepReadyToLeave()
 	Out("[Status] Profession " & Leveler_PrimaryProfession() & "/" & Leveler_SecondaryProfession() & "  Gold " & Leveler_CharacterGold() & "  Secondary step done=" & $g_ab_StepDone[$LEVELER_STEP_SECONDARY])
 	$g_ab_StepDone[$LEVELER_STEP_XUNLAI] = Leveler_XunlaiUnlocked()

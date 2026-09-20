@@ -7,6 +7,8 @@ Func Leveler_QuestLoop($a_i_QuestID, $a_f_X, $a_f_Y, $a_i_Dialog, $a_s_Mode = "a
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $l_f_X = $a_f_X
 	Local $l_f_Y = $a_f_Y
+	; For complete: distinguish "never started" from "just handed in and left the log".
+	Local $l_b_HadQuest = Leveler_HasQuest($a_i_QuestID) Or Leveler_QuestReadyForReward($a_i_QuestID)
 
 	If Leveler_QuestAlreadyDone($a_i_QuestID, $a_s_Mode) Then
 		If $a_s_Mode = "accept" And $a_i_QuestID <> 0 Then Ui_ActiveQuest($a_i_QuestID)
@@ -34,8 +36,8 @@ Func Leveler_QuestLoop($a_i_QuestID, $a_f_X, $a_f_Y, $a_i_Dialog, $a_s_Mode = "a
 		If Leveler_IsWiped() Then Return False
 		; Step dialogs must actually be sent. "No marker on the nearest NPC" is not success
 		; before we have walked to the quest NPC.
-		If $a_s_Mode <> "step" And Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap) Then ExitLoop
-		If $a_s_Mode = "step" And $l_i_Attempt > 1 And Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap) Then ExitLoop
+		If $a_s_Mode <> "step" And Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap, $l_b_HadQuest) Then ExitLoop
+		If $a_s_Mode = "step" And $l_i_Attempt > 1 And Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap, $l_b_HadQuest) Then ExitLoop
 		If $a_s_Mode = "step" And $a_i_QuestID <> 0 And Quest_GetQuestInfo($a_i_QuestID, "CanReward") Then ExitLoop
 
 		Leveler_ResolveQuestXY($a_i_NpcModel, $l_f_X, $l_f_Y)
@@ -48,10 +50,10 @@ Func Leveler_QuestLoop($a_i_QuestID, $a_f_X, $a_f_Y, $a_i_Dialog, $a_s_Mode = "a
 		EndIf
 
 		If $a_i_QuestID <> 0 Then Quest_RequestInfos($a_i_QuestID)
-		If Leveler_WaitQuestResult($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap, 4000) Then ExitLoop
+		If Leveler_WaitQuestResult($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap, 4000, $l_b_HadQuest) Then ExitLoop
 	Next
 
-	If Not Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap) Then
+	If Not Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap, $l_b_HadQuest) Then
 		Out("[Quest] Failed to " & $a_s_Mode & " #" & $a_i_QuestID)
 		Return False
 	EndIf
@@ -151,15 +153,15 @@ Func Leveler_ResolveQuestXY($a_i_NpcModel, ByRef $a_f_X, ByRef $a_f_Y)
 	$a_f_Y = Agent_GetAgentInfo($l_i_Npc, "Y")
 EndFunc
 
-Func Leveler_WaitQuestResult($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap, $a_i_Timeout = 4000)
+Func Leveler_WaitQuestResult($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap, $a_i_Timeout = 4000, $a_b_HadQuest = True)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
 		If $g_b_LevelerPaused Then Return False
 		If Leveler_IsWiped() Then Return False
-		If Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap) Then Return True
+		If Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap, $a_b_HadQuest) Then Return True
 		Sleep(200)
 	WEnd
-	Return Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap)
+	Return Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap, $a_b_HadQuest)
 EndFunc
 
 Func Leveler_QuestAlreadyDone($a_i_QuestID, $a_s_Mode)
@@ -173,13 +175,16 @@ Func Leveler_QuestAlreadyDone($a_i_QuestID, $a_s_Mode)
 			If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
 			If $a_i_QuestID = 0 Then Return False
 			If Leveler_QuestNeedsHandIn($a_i_QuestID) Then Return False
-			Return True
+			; Never-started must not look "already done" (NeedsHandIn is also false then).
+			If Leveler_IsQuestDone($a_i_QuestID) Then Return True
+			If Leveler_QuestFinished($a_i_QuestID) Then Return True
+			Return False
 		Case Else
 			Return False
 	EndSwitch
 EndFunc
 
-Func Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap)
+Func Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap, $a_b_HadQuest = True)
 	Switch $a_s_Mode
 		Case "accept"
 			Return Leveler_HasQuest($a_i_QuestID) Or Leveler_QuestFinished($a_i_QuestID)
@@ -187,7 +192,9 @@ Func Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_S
 			If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
 			If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
 			If Leveler_QuestNeedsHandIn($a_i_QuestID) Then Return False
-			Return True
+			If Leveler_IsQuestDone($a_i_QuestID) Or Leveler_QuestFinished($a_i_QuestID) Then Return True
+			; Hand-in removed it from the log during this QuestLoop.
+			Return $a_b_HadQuest
 		Case "step", "skip"
 			If Map_GetMapID() <> $a_i_StartMap Then Return True
 			If $a_s_Mode = "step" And $a_i_QuestID <> 0 And Quest_GetQuestInfo($a_i_QuestID, "CanReward") Then Return True

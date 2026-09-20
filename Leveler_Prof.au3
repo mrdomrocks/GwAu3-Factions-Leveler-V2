@@ -1,8 +1,7 @@
 #include-once
 
-; Profession tables from the Py4GW Factions Character Leveler.
 ; Mid and level-20 bars assume Mesmer secondary (Domination / Inspiration).
-; Equipment piece IDs live in Leveler_Craft.au3 and already match that file.
+; Equipment piece IDs live in Leveler_Craft.au3.
 
 Global Const $LEVELER_BAR_STARTER = 0
 Global Const $LEVELER_BAR_INTERRUPT = 1
@@ -52,9 +51,6 @@ Func Leveler_ProfessionSkillBar($a_i_Kind, $a_i_Prof = 0)
 				Case $GC_I_PROFESSION_RITUALIST
 					Return "OAWBIskDcdG0DaAKUECA"
 				Case $GC_I_PROFESSION_ASSASSIN
-					; Python copies the Ritualist mid code (OAWB...). That fails
-					; primary-profession validation. OwVB is the Assassin mid form
-					; of the same Domination-12 bar (matches OwVC at level 20).
 					Return "OwVBIskDcdG0DaAKUECA"
 			EndSwitch
 			Return "OQUBIskDcdG0DaAKUECA"
@@ -136,8 +132,15 @@ EndFunc
 Func Leveler_LoadZenSkillBar()
 	$g_b_UAIReady = False
 	If Not Map_GetInstanceInfo("IsOutpost") Then Return True
+	Local $l_i_Map = Map_GetMapID()
+	; Skip reload if the template is already on this map.
+	If $g_i_ZenBarLoadedMap = $l_i_Map And Skill_GetSkillbarInfo(1, "SkillID") <> 0 Then
+		Out("[Party] Zen skill template already loaded on map " & $l_i_Map)
+		Return True
+	EndIf
 	Out("[Party] Loading skill template " & $LEVELER_TEMPLATE_ZEN)
 	Attribute_LoadSkillTemplate($LEVELER_TEMPLATE_ZEN)
+	$g_i_ZenBarLoadedMap = $l_i_Map
 	Sleep(800)
 	Return True
 EndFunc

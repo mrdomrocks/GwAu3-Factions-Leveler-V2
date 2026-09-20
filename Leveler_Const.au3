@@ -158,7 +158,7 @@ Global Const $QUEST_CHAOS_KRYTA = 479
 Global Const $QUEST_SUNSPEARS_CANTHA = 724
 Global Const $QUEST_OLIAS = 782
 
-; Dialogs (GW Reforged values from the Python bot)
+; Dialogs
 Global Const $DIALOG_EXIT_OVERLOOK = 0x85
 Global Const $DIALOG_GENERIC_TALK = 0x84
 Global Const $DIALOG_FORMING_ACCEPT = 0x81B801
@@ -190,7 +190,7 @@ Global Const $DIALOG_LOST_TREASURE_COMPLETE = 0x17
 Global Const $DIALOG_TENGU_ACCEPT = 0x815301
 Global Const $DIALOG_TENGU_STEP = 0x815304
 Global Const $DIALOG_TENGU_COMPLETE = 0x815307
-; Python Attribute_Points_Quest_1 / Warning the Tengu waypoints
+; Warning the Tengu waypoints
 Global Const $LOST_TOWN_APPROACH_X = 16184.75
 Global Const $LOST_TOWN_APPROACH_Y = 19001.78
 Global Const $LOST_TOWN_PATH1_X = 13713.27
@@ -338,9 +338,10 @@ Global Const $MODEL_MICHIKO = 3295
 Global Const $MICHIKO_KAINENG_X = -1661.91
 Global Const $MICHIKO_KAINENG_Y = -636.09
 
-; Merchant bags
-Global Const $MODEL_BAG = 16
+; Merchant bags (Py4GW ModelID.Bag = 35, Belt_Pouch = 34; reward pouch = 33)
+Global Const $MODEL_BAG = 35
 Global Const $MODEL_BELT_POUCH = 34
+Global Const $MODEL_BELT_POUCH_REWARD = 33
 
 ; Zhao Di (Shing Jea Monastery) Mesmer skills. Cry of Frustration is NOT here.
 Global Const $SKILL_ENERGY_BURN = 42
@@ -356,6 +357,10 @@ Global Const $SKILL_SPIRIT_RIFT = 910
 Global Const $MODEL_CLAIRVOYANT_STAFF = 11647
 ; Paid from the Choose Your Secondary Profession (#317) complete reward, not storage.
 Global Const $XUNLAI_GOLD_COST = 50
+Global Const $XUNLAI_X = -3825.09
+Global Const $XUNLAI_Y = 10386.81
+; Common-mat trader lots plus Hiroyuki's 100g staff fee. Withdraw this much (or all storage).
+Global Const $WEAPON_WITHDRAW_GOLD = 5000
 Global Const $WEAPON_GOLD_COST = 100
 Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
@@ -392,6 +397,10 @@ Global $g_s_CurrentHeader = ""
 Global $g_b_UAIReady = False
 Global $g_i_LastUAIMap = 0
 Global $g_b_ConnectionLost = False
+; Last outpost we queued Enter Challenge on. Do not send it twice.
+Global $g_i_EnterMissionMap = 0
+; Map ID where the Zen template was already applied this run.
+Global $g_i_ZenBarLoadedMap = 0
 ; One-time recovery after a completed Lost Treasure restart: path Cho -> Ran Musu -> Tengu.
 Global $g_b_LostTreasureToTenguOnce = False
 ; Set on Start only. Stay in an explorable after a client/script restart; do not block the next quest.
@@ -404,5 +413,7 @@ Global $g_b_OliasFenDone = False
 Global $g_b_OliasUnlocked = False
 ; Sticky after the Bukdek dialog actually puts Mox on the hero list.
 Global $g_b_MoxUnlocked = False
+; Sticky after this character pays the Xunlai agent. Not the same as account Storage1Ptr.
+Global $g_b_XunlaiUnlocked = False
 ; Sticky after GToB trainer dialogs.
 Global $g_b_SecondaryProfsTalked = False

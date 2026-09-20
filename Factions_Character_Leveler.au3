@@ -96,7 +96,7 @@ GUISetState(@SW_SHOW)
 #EndRegion GUI
 
 Out("Factions Character Leveler")
-Out("Port of the Py4GW Factions bot through remaining secondary professions.")
+Out("Factions leveler through remaining secondary professions.")
 Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
 Out("")

@@ -325,6 +325,8 @@ Func Leveler_StepOutpost($a_i_Step)
 			Return $MAP_ZEN_OP
 		Case $LEVELER_STEP_TO_MARKET
 			If Map_IsMapUnlocked($MAP_MARKETPLACE) Then Return $MAP_MARKETPLACE
+			If Map_GetMapID() = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") Then Return $MAP_SEITUNG
+			If Map_GetMapID() = $MAP_KAINENG_DOCKS Then Return $MAP_KAINENG_DOCKS
 			Return $MAP_ZEN_OP
 		Case $LEVELER_STEP_TO_KC
 			If Map_IsMapUnlocked($MAP_KAINENG) Then Return $MAP_KAINENG
@@ -395,6 +397,8 @@ Func Leveler_StepAllowsMap($a_i_Step, $a_i_Map)
 		Case $LEVELER_STEP_TO_KC
 			If Map_IsMapUnlocked($MAP_KAINENG) Then Return $a_i_Map = $MAP_KAINENG
 			Return $a_i_Map = $MAP_BUKDEK Or $a_i_Map = $MAP_WAJJUN
+		Case $LEVELER_STEP_CURE, $LEVELER_STEP_BURDEN
+			Return $a_i_Map = $MAP_WAJJUN Or $a_i_Map = $MAP_KAINENG_DOCKS Or $a_i_Map = $MAP_MARKETPLACE Or $a_i_Map = $MAP_KAINENG
 		Case $LEVELER_STEP_UNLOCK_MOX, $LEVELER_STEP_TO_BOREAL
 			Return $a_i_Map = $MAP_TUNNELS
 		Case $LEVELER_STEP_TO_EOTN
@@ -1040,6 +1044,64 @@ EndFunc
 
 Func Leveler_SkipCinematic($a_i_StartTimeout = 8000, $a_i_PlayTimeout = 240000)
 	Return Leveler_WaitCinematic($a_i_StartTimeout, $a_i_PlayTimeout)
+EndFunc
+
+; After a mission ends: skip the cinematic, then wait for whatever outpost the
+; game loads. Do not travel and do not require a specific map ID.
+Func Leveler_WaitMissionOutpost($a_i_Timeout = 60000)
+	Local $l_i_StartMap = Map_GetMapID()
+	If Map_GetInstanceInfo("IsOutpost") And Not Map_GetInstanceInfo("IsLoading") And Not Game_GetGameInfo("IsCinematic") Then
+		If Not Leveler_InMissionInstance() Then Return True
+	EndIf
+
+	Local $l_h_Timer = TimerInit()
+	Local $l_b_Skipped = False
+	While TimerDiff($l_h_Timer) < 20000
+		If $g_b_LevelerPaused Then Return False
+		If Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic() Then ExitLoop
+		If Map_GetInstanceInfo("IsLoading") Then ExitLoop
+		If Map_GetInstanceInfo("IsOutpost") And Map_GetMapID() <> $l_i_StartMap Then
+			Out("[Step] Next outpost loaded: map " & Map_GetMapID())
+			Return True
+		EndIf
+		Sleep(200)
+	WEnd
+
+	If (Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic()) And Not Map_GetInstanceInfo("IsLoading") Then
+		Other_PingSleep(1500)
+		Local $l_h_Skip = TimerInit()
+		While (Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic()) And Not Map_GetInstanceInfo("IsLoading") And TimerDiff($l_h_Skip) < 8000
+			Cinematic_SkipCinematic()
+			$l_b_Skipped = True
+			Sleep(250)
+		WEnd
+		If $l_b_Skipped Then Out("[Step] Skipped mission cinematic")
+	EndIf
+
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If (Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic()) And Not Map_GetInstanceInfo("IsLoading") Then
+			Cinematic_SkipCinematic()
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		If Map_GetInstanceInfo("IsLoading") Then
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		If Map_GetInstanceInfo("IsOutpost") And Leveler_ClientIsReady() Then
+			Out("[Step] Next outpost loaded: map " & Map_GetMapID())
+			Return True
+		EndIf
+		Sleep(250)
+	WEnd
+
+	If Map_GetInstanceInfo("IsOutpost") And Not Map_GetInstanceInfo("IsLoading") Then
+		Out("[Step] Next outpost loaded: map " & Map_GetMapID())
+		Return True
+	EndIf
+	Out("[Step] Next outpost did not load (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
+	Return False
 EndFunc
 
 ; Model 5959 may be living or gadget. Do not match ExtraType (garbage on other agents).

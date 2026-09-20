@@ -160,6 +160,32 @@ Func Leveler_ConfirmMoxInHeroList()
 	Return False
 EndFunc
 
+; Cure / Burden stay open until Mox or Olias can actually join the party.
+Func Leveler_MoxOrOliasAvailable()
+	If Leveler_PartyHasHero($GC_I_HERO_ID_MOX) Then
+		$g_b_MoxUnlocked = True
+		Return True
+	EndIf
+	If Leveler_PartyHasHero($GC_I_HERO_ID_OLIAS) Then
+		$g_b_OliasUnlocked = True
+		Return True
+	EndIf
+	If Not Leveler_IsOutpost() Then Return False
+	Party_AddHero($GC_I_HERO_ID_MOX)
+	Sleep(800)
+	If Leveler_PartyHasHero($GC_I_HERO_ID_MOX) Then
+		$g_b_MoxUnlocked = True
+		Return True
+	EndIf
+	Party_AddHero($GC_I_HERO_ID_OLIAS)
+	Sleep(800)
+	If Leveler_PartyHasHero($GC_I_HERO_ID_OLIAS) Then
+		$g_b_OliasUnlocked = True
+		Return True
+	EndIf
+	Return False
+EndFunc
+
 ; True if Olias is already in the party or can be added in this outpost.
 Func Leveler_HasOliasUnlocked()
 	If $g_b_OliasUnlocked Then Return True
@@ -276,14 +302,24 @@ EndFunc
 
 Func Leveler_EnsureFormingPartyHenchmen()
 	If Leveler_HasFormingPartyHenchmen() Then
-		Out("[Party] Forming A Party henchmen are already in the party")
+		Out("[Party] Forming A Party henchmen are already in the party (" & Leveler_HenchmanCount() & ")")
 		Return True
 	EndIf
 	Local $l_ai_Hench = Leveler_FormingPartyHenchIDs()
+	Party_LeaveGroup(True)
+	Sleep(500)
 	Leveler_AddHenchmanList($l_ai_Hench)
-	If Leveler_HasFormingPartyHenchmen() Then Return True
-	Out("[Party] Invited henchmen 2, 5, 1 (count " & Leveler_HenchmanCount() & "). Continuing to Linnok.")
-	Return True
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 5000
+		If Leveler_HasFormingPartyHenchmen() Then ExitLoop
+		Sleep(250)
+	WEnd
+	If Leveler_HasFormingPartyHenchmen() Then
+		Out("[Party] Forming A Party henchmen ready (" & Leveler_HenchmanCount() & ")")
+		Return True
+	EndIf
+	Out("[Party] Forming A Party needs 3 henchmen (2, 5, 1); have " & Leveler_HenchmanCount() & ". Retrying.")
+	Return False
 EndFunc
 
 Func Leveler_AddHeroTeam($a_b_Olias = False)
@@ -328,6 +364,9 @@ Func Leveler_PrepareHeroTeam($a_ai_Hench = 0, $a_b_Olias = False)
 	Return True
 EndFunc
 
+; Match Python PrepareForBattle: always LeaveParty, then AddHenchmen for this map.
+; Skipping Leave when HenchmanCount looks full left new characters without henchmen
+; when the count API was stale, which breaks Forming A Party.
 Func Leveler_PrepareForBattle()
 	$g_b_CombatMode = True
 	$g_b_UAIReady = False
@@ -335,15 +374,10 @@ Func Leveler_PrepareForBattle()
 	Ui_SetDifficulty(False)
 
 	Local $l_ai_Want = Leveler_HenchmenForMap()
-	If Leveler_HenchmanCount() >= UBound($l_ai_Want) Then
-		Out("[Party] Henchmen already in the party")
-	Else
-		If Leveler_HenchmanCount() > 0 Or Leveler_HeroCount() > 0 Then
-			Party_LeaveGroup(True)
-			Sleep(800)
-		EndIf
-		Leveler_AddHenchmanList($l_ai_Want)
-	EndIf
+	Party_LeaveGroup(True)
+	Sleep(800)
+	Leveler_AddHenchmanList($l_ai_Want)
+	Out("[Party] Henchmen in party: " & Leveler_HenchmanCount() & "/" & UBound($l_ai_Want))
 
 	Leveler_PrepareCombatAI()
 	Return True
@@ -365,7 +399,6 @@ Func Leveler_PrepareMissionParty()
 	Else
 		Out("[Party] Mission henchmen already in the party")
 	EndIf
-	Sleep(1500)
 	Return True
 EndFunc
 
@@ -385,18 +418,36 @@ Func Leveler_InMissionInstance($a_i_MapID = 0)
 	Return False
 EndFunc
 
-Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 45000)
-	If Map_WaitMapLoading($a_i_StartMap, 1, $a_i_Timeout) Then Return True
-	If Map_GetInstanceInfo("IsExplorable") Then
-		Local $l_i_Map = Map_GetMapID()
-		If $l_i_Map = $a_i_StartMap Or $l_i_Map = $a_i_MapID Then Return True
-	EndIf
-	Return False
+; Poll until the mission instance is explorable. Stay silent while loading.
+; Do not use Map_WaitMapLoading: it skips cinematics during the load.
+Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 90000)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Map_GetInstanceInfo("IsLoading") Then
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		If Leveler_InMissionInstance($a_i_MapID) Then
+			$g_i_EnterMissionMap = 0
+			Return True
+		EndIf
+		If Map_GetInstanceInfo("IsExplorable") Then
+			Local $l_i_Map = Map_GetMapID()
+			If $l_i_Map = $a_i_StartMap Or $l_i_Map = $a_i_MapID Then
+				$g_i_EnterMissionMap = 0
+				Return True
+			EndIf
+		EndIf
+		Sleep(250)
+	WEnd
+	Return Leveler_InMissionInstance($a_i_MapID)
 EndFunc
 
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Local $l_i_StartMap = Map_GetMapID()
 	If Leveler_InMissionInstance($a_i_MapID) Then
+		$g_i_EnterMissionMap = 0
 		Out("[Step] Already inside " & $a_s_Name & " (map " & $l_i_StartMap & ")")
 		Return True
 	EndIf
@@ -409,6 +460,13 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 		Return True
 	EndIf
 
+	If $g_i_EnterMissionMap = $l_i_StartMap Then
+		Out("[Step] Enter Challenge already sent on this outpost. Waiting for the instance.")
+		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
+		Sleep(2000)
+		Return True
+	EndIf
+
 	If Not Map_GetInstanceInfo("IsOutpost") Then
 		Out("[Step] Cannot enter " & $a_s_Name & " from map " & $l_i_StartMap & " type " & Map_GetInstanceInfo("Type"))
 		Return False
@@ -416,13 +474,19 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 
 	Out("Let's do " & $a_s_Name)
 	Out("Exiting Outpost")
-	; Native Factions character. Ui_EnterChallenge inits the load flag and waits.
-	Ui_EnterChallenge(False, True)
-	If Not Leveler_InMissionInstance($a_i_MapID) Then
-		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
-			Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
+	; Ui_EnterChallenge(False) writes EnterMission(1) and instant-DCs here.
+	; Map_EnterChallenge hardcodes that same 1. Arborstone-safe call is True -> 0.
+	; Second arg False: wait ourselves so a timeout cannot resend Enter on the next loop.
+	Ui_EnterChallenge(True, False)
+	$g_i_EnterMissionMap = $l_i_StartMap
+	Sleep(1500)
+	If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
+		If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
+			Out("[Step] Mission is still loading. Not sending Enter Challenge again.")
 			Return False
 		EndIf
+		Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
+		Return False
 	EndIf
 	Sleep(2000)
 	Out("[Step] Mission instance loaded on map " & Map_GetMapID())

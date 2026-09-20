@@ -192,6 +192,9 @@ Func Leveler_Step_ExitOverlook()
 	Return Map_WaitMapLoading($MAP_SHING_JEA)
 EndFunc
 
+; Match Python Forming_A_Party: Travel Shing Jea → PrepareForBattle (leave + hench 2/5/1)
+; → accept #440 at Instructor Ng coords → exit Sunqua Vale → complete #440.
+; Do not pass TogoModel; the accept NPC is not Master Togo.
 Func Leveler_Step_FormingAParty()
 	$g_s_CurrentHeader = "Quest: Forming A Party"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -199,15 +202,26 @@ Func Leveler_Step_FormingAParty()
 	If Leveler_ShouldResumeExplorable($QUEST_FORMING_A_PARTY) Then
 		Out("[Step] Forming A Party is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")
 		If Map_GetMapID() = $MAP_SUNQUA_VALE Then
-			If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, 19673.00, -6982.00, $DIALOG_FORMING_COMPLETE, "complete") Then Return False
-			Return True
+			; Henchmen can only be invited in outposts. If the party is already full, hand in;
+			; otherwise return to Shing Jea, form the party, and re-enter Sunqua.
+			If Leveler_HasFormingPartyHenchmen() Then
+				If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, 19673.00, -6982.00, $DIALOG_FORMING_COMPLETE, "complete") Then Return False
+				Return True
+			EndIf
+			Out("[Step] Party is incomplete in Sunqua. Returning to Shing Jea to invite henchmen 2, 5, 1.")
+			If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
+		Else
+			; Wrong explorable with #440 in the log: get back to Shing Jea and run the full path.
+			If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 		EndIf
 	Else
 		If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	EndIf
+	; Python always LeaveParty + AddHenchmen before accept. Forming A Party requires a full party of 4.
 	Leveler_PrepareForBattle()
+	If Not Leveler_EnsureFormingPartyHenchmen() Then Return False
 	If Not Leveler_HasQuest($QUEST_FORMING_A_PARTY) Then
-		If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, -14063.00, 10044.00, $DIALOG_FORMING_ACCEPT, "accept", Leveler_TogoModel()) Then Return False
+		If Not Leveler_QuestLoop($QUEST_FORMING_A_PARTY, -14063.00, 10044.00, $DIALOG_FORMING_ACCEPT, "accept") Then Return False
 	Else
 		Out("[Step] Forming A Party already in the log")
 	EndIf
@@ -276,8 +290,12 @@ Func Leveler_Step_UnlockXunlai()
 	$g_s_CurrentHeader = "Unlock Xunlai Storage"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_XunlaiUnlocked() Then
-		Out("[Step] Xunlai storage already unlocked")
+		Out("[Step] Xunlai storage already unlocked on this character")
 		Return True
+	EndIf
+	; Account storage pointers stay populated from other characters. Log them; do not skip.
+	If Leveler_HasStorageAccess() Then
+		Out("[Step] Account storage bags are present (Storage1Ptr set). Still need this character's 50g unlock.")
 	EndIf
 	Local $l_i_Gold = Leveler_CharacterGold()
 	If Not Leveler_SecondaryStepReadyToLeave() Then
@@ -299,7 +317,7 @@ Func Leveler_Step_UnlockXunlai()
 	If Not Leveler_MoveTo(-5465, 9727, False) Then Return False
 	If Not Leveler_MoveTo(-4791, 10140, False) Then Return False
 	If Not Leveler_MoveTo(-3945, 10328, False) Then Return False
-	If Not Leveler_MoveAndDialog(-3825.09, 10386.81, $DIALOG_GENERIC_TALK, False, $MODEL_XUNLAI) Then Return False
+	If Not Leveler_MoveAndDialog($XUNLAI_X, $XUNLAI_Y, $DIALOG_GENERIC_TALK, False, $MODEL_XUNLAI) Then Return False
 	Local $l_i_Xunlai = Leveler_GetAgentByModel($MODEL_XUNLAI)
 	If $l_i_Xunlai <> 0 Then Agent_GoNPC($l_i_Xunlai)
 	Sleep(600)
@@ -307,16 +325,14 @@ Func Leveler_Step_UnlockXunlai()
 	Sleep(800)
 	Ui_Dialog($DIALOG_XUNLAI_2)
 	Sleep(800)
-	If Leveler_XunlaiUnlocked() Then
-		Out("[Step] Xunlai storage unlocked")
-		Return True
-	EndIf
+	; Proof this character paid: gold must drop by ~50. Do not trust Storage1Ptr.
 	Local $l_i_GoldAfter = Item_GetInventoryInfo("GoldCharacter")
 	If $l_i_GoldAfter > $l_i_Gold - $XUNLAI_GOLD_COST + 5 Then
 		Out("[Step] Xunlai unlock did not take " & $XUNLAI_GOLD_COST & " gold (now " & $l_i_GoldAfter & "). Not advancing.")
 		Return False
 	EndIf
-	Out("[Step] Xunlai storage unlocked")
+	Leveler_MarkXunlaiUnlocked()
+	Out("[Step] Xunlai storage unlocked (gold " & $l_i_Gold & " -> " & $l_i_GoldAfter & ")")
 	Return True
 EndFunc
 
@@ -329,8 +345,7 @@ Func Leveler_Step_CraftWeapon()
 	EndIf
 	If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	Leveler_SetPacifist()
-	Item_WithdrawGold(5000)
-	Sleep(400)
+	If Not Leveler_PrepareCraftWeaponFunds() Then Return False
 	If Not Leveler_MoveTo(-10896.94, 10807.54, False) Then Return False
 	If Not Leveler_MoveTo(-10942.73, 10783.19, False) Then Return False
 	If Not Leveler_InteractNpcAt(-10614.00, 10996.00, False) Then Return False
@@ -568,8 +583,8 @@ Func Leveler_HandInFormalAtKayao($a_b_LoadSkills = True)
 	Leveler_MarkQuestDone($QUEST_FORMAL_INTRO)
 	Out("[Step] Formal Introduction handed in at Guardsman Kayao")
 	If $a_b_LoadSkills Then Return Leveler_ReapplyZhaoDiSkillBar()
-	Agent_CancelAction()
-	Sleep(400)
+	; No Agent_CancelAction here. ACTION_CANCEL just before Enter Challenge disconnects.
+	Sleep(800)
 	Return True
 EndFunc
 
@@ -637,8 +652,8 @@ Func Leveler_Step_ChosMission()
 		If Not Leveler_FormalIntroductionTurnedIn() Then
 			Out("[Step] Formal Introduction must be handed in at Kayao before the mission")
 			If Not Leveler_HandInFormalAtKayao(False) Then Return False
-			Agent_CancelAction()
-			Sleep(800)
+			; Do not Agent_CancelAction here. ACTION_CANCEL next to Enter Mission disconnects.
+			Sleep(1200)
 		EndIf
 		Out("[Step] Load skill bar, then henchmen, then enter")
 		If Not Leveler_EquipTrainerSkills(False) Then Return False
@@ -1463,12 +1478,10 @@ Func Leveler_Step_ZenDaijunMission()
 		Return False
 	EndIf
 	Leveler_MoveTo(-7688.63, -1538.34, True)
-	If Not Map_WaitMapLoading($MAP_SEITUNG) Then
-		$g_b_SpiritRiftWatch = False
-		Return False
-	EndIf
 	$g_b_SpiritRiftWatch = False
-	Out("[Step] Zen Daijun complete. Arrived in Seitung Harbor.")
+	Out("[Step] Zen Daijun complete. Skipping cinematic and waiting for the next outpost")
+	If Not Leveler_WaitMissionOutpost() Then Return False
+	Out("[Step] Zen Daijun complete. Arrived on map " & Map_GetMapID())
 	Return True
 EndFunc
 
@@ -1582,11 +1595,36 @@ Func Leveler_Step_SearchForACure()
 	$g_s_CurrentHeader = "Quest: The Search For A Cure"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	Leveler_LogQuestState($QUEST_SEARCH_CURE, "The Search For A Cure")
-	; One-and-done. Not in the log means it was already handed in. Do not re-accept or replay Wajjun.
-	If Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
-		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
-		Out("[Step] The Search For A Cure is not in the log. Skipping; it cannot be taken again.")
+	If Leveler_SearchCureDone() Then
+		Out("[Step] The Search For A Cure already completed")
 		Return True
+	EndIf
+
+	; Mox unlock is after A Master's Burden. If Mox can join, Cure is past / unavailable.
+	If Leveler_MoxOrOliasAvailable() Then
+		Out("[Step] Mox/Olias available — ignoring The Search For A Cure pickup")
+		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
+		$g_ab_StepDone[$LEVELER_STEP_CURE] = True
+		Return True
+	EndIf
+
+	If Not Leveler_HasQuest($QUEST_SEARCH_CURE) Then
+		If Not Leveler_Travel($MAP_KAINENG) Then Return False
+		; Re-check in outpost: AddHero only works here.
+		If Leveler_MoxOrOliasAvailable() Then
+			Out("[Step] Mox/Olias available — ignoring The Search For A Cure pickup")
+			Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
+			$g_ab_StepDone[$LEVELER_STEP_CURE] = True
+			Return True
+		EndIf
+		Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_ACCEPT, "accept")
+		; Already completed / unavailable: quest never enters the log — finish this step and continue.
+		If Not Leveler_HasQuest($QUEST_SEARCH_CURE) Then
+			Out("[Step] The Search For A Cure was not picked up — marking step complete and moving on")
+			Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
+			$g_ab_StepDone[$LEVELER_STEP_CURE] = True
+			Return True
+		EndIf
 	EndIf
 
 	If Leveler_ShouldResumeExplorable($QUEST_SEARCH_CURE) Then
@@ -1644,18 +1682,17 @@ Func Leveler_Step_AMastersBurden()
 	$g_s_CurrentHeader = "Quest: A Master's Burden"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	Leveler_LogQuestState($QUEST_MASTERS_BURDEN, "A Master's Burden")
-	; One-and-done. Not in the log means it was already handed in. Do not replay Wajjun / Docks.
-	If Not Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
-		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
-		Leveler_MarkQuestDone($QUEST_BROTHER_TOSAI)
-		Out("[Step] A Master's Burden is not in the log. Skipping; it cannot be taken again.")
+	If Leveler_MastersBurdenDone() Then
+		Out("[Step] A Master's Burden already completed")
 		Return True
 	EndIf
-	If Leveler_ShouldResumeExplorable($QUEST_MASTERS_BURDEN) Then
-		Out("[Step] A Master's Burden is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")
-	Else
-		If Not Leveler_Travel($MAP_KAINENG) Then Return False
+
+	; To Marketplace normally accepts #349 in Seitung. Recover here if that was skipped.
+	If Not Leveler_HasQuest($QUEST_MASTERS_BURDEN) Then
+		If Not Leveler_Travel($MAP_SEITUNG) Then Return False
+		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 16927, 9004, $DIALOG_BURDEN_ACCEPT, "accept") Then Return False
 	EndIf
+
 	If Leveler_QuestReadyForReward($QUEST_MASTERS_BURDEN) Then
 		If Map_GetMapID() <> $MAP_KAINENG_DOCKS Then
 			If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
@@ -1664,6 +1701,12 @@ Func Leveler_Step_AMastersBurden()
 			If Not Map_WaitMapLoading($MAP_KAINENG_DOCKS) Then Return False
 		EndIf
 		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 9950.00, 20033.00, $DIALOG_BURDEN_COMPLETE, "complete") Then Return False
+		If Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
+			Ui_ActiveQuest($QUEST_BROTHER_TOSAI)
+			Sleep(200)
+			Quest_AbandonQuest($QUEST_BROTHER_TOSAI)
+			Sleep(300)
+		EndIf
 		If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
 			Out("[Step] A Master's Burden is still in the log after the complete dialog")
 			Return False
@@ -1671,16 +1714,33 @@ Func Leveler_Step_AMastersBurden()
 		Out("[Step] A Master's Burden complete")
 		Return True
 	EndIf
-	If Not Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
-		Leveler_MoveAndDialog(1784.00, 991.00, $DIALOG_TOSAI_ACCEPT, False)
+
+	; Python: Travel Kaineng → QuestLoop accept #337 Tosai → SetActive #349 → Marketplace → Wajjun.
+	; Skip the Kaineng dialog when #349 is already in the log and #337 does not need accepting.
+	If Leveler_HasQuest($QUEST_MASTERS_BURDEN) And Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
+		Out("[Step] A Master's Burden already in the log — skipping Kaineng dialog")
+	ElseIf Not Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
+		If Not Leveler_Travel($MAP_KAINENG) Then Return False
+		If Not Leveler_QuestLoop($QUEST_BROTHER_TOSAI, 1784.00, 991.00, $DIALOG_TOSAI_ACCEPT, "accept") Then Return False
+	ElseIf Leveler_ShouldResumeExplorable($QUEST_MASTERS_BURDEN) Then
+		Out("[Step] A Master's Burden is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")
 	EndIf
 	If Leveler_HasQuest($QUEST_MASTERS_BURDEN) Then Ui_ActiveQuest($QUEST_MASTERS_BURDEN)
 	Sleep(300)
 
-	If Map_GetMapID() <> $MAP_KAINENG_DOCKS Then
-		If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
+	If Map_GetMapID() <> $MAP_WAJJUN Then
+		If Leveler_ShouldResumeExplorable($QUEST_MASTERS_BURDEN) Then
+			Out("[Step] Staying on map " & Map_GetMapID() & " to finish A Master's Burden")
+		Else
+			If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
+			Leveler_PrepareForBattle()
+			If Not Leveler_MoveAndExit(11430.00, 15200.00, $MAP_WAJJUN, True) Then Return False
+		EndIf
+	Else
 		Leveler_PrepareForBattle()
-		If Not Leveler_MoveAndExit(11430.00, 15200.00, $MAP_WAJJUN, True) Then Return False
+	EndIf
+
+	If Map_GetMapID() = $MAP_WAJJUN Or Not Leveler_IsOutpost() Then
 		If Not Leveler_MoveTo(10033.88, 13838.59, True) Then Return False
 		If Not Leveler_MoveTo(11637.23, 11837.92, True) Then Return False
 		If Not Leveler_MoveTo(10007.72, 10951.80, True) Then Return False
@@ -1695,6 +1755,7 @@ Func Leveler_Step_AMastersBurden()
 		If Not Leveler_MoveTo(4401.08, 618.24, True) Then Return False
 		If Not Leveler_MoveTo(5802.95, -2295.56, True) Then Return False
 		If Not Leveler_MoveTo(4671.93, -5007.46, True) Then Return False
+		If Not Leveler_MoveTo(10774.00, -6636.00, True) Then Return False
 		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 10774.00, -6636.00, $DIALOG_BURDEN_STEP2, "step", $MODEL_BURDEN_NPC) Then Return False
 	EndIf
 
@@ -2534,7 +2595,6 @@ Func Leveler_Step_UnlockOlias()
 		If Leveler_ConfirmOliasInHeroList() Then Return True
 	EndIf
 
-	; Python Unlock_Olias: after Fen, wait for Lion's Arch then Map.Travel(449) and complete 0x830E07.
 	If Leveler_OliasReadyToTurnIn() Or Map_GetMapID() = $MAP_KAMADAN Then
 		Return Leveler_OliasReturnToKamadan()
 	EndIf
