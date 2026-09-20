@@ -13,7 +13,7 @@ GwAu3 AutoIt3 Factions character leveler. Covers Shing Jea through the post-20 u
 | `Leveler_Prof.au3` | Skill templates and trainer-bar load |
 | `Leveler_Henchman.au3` | Hench invite lists and party prep |
 | `Leveler_Party.au3` | Profession flags, heroes, UtilityAI cache |
-| `Leveler_Mission.au3` | Native `Ui_EnterChallenge` and post-mission outpost wait |
+| `Leveler_Mission.au3` | `Map_EnterChallenge` and post-mission outpost wait |
 | `Leveler_Craft.au3` | Gold, Xunlai, weapons, armor, bags |
 | `Leveler_Status.au3` | Progress flags and the GUI status check |
 | `Leveler_Steps.au3` | Step dispatcher and campaign runners |

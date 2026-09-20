@@ -1,6 +1,6 @@
 #include-once
 
-; Native Enter Challenge for Cho / Zen, and the wait for the next outpost after a mission.
+; Map_EnterChallenge for Cho / Zen, and the wait for the next outpost after a mission.
 
 #Region Mission
 
@@ -60,8 +60,8 @@ Func Leveler_WaitMissionEnterQuiet($a_i_QuietMs = 4500)
 	Return True
 EndFunc
 
-; Henchmen (caller), then native Ui_EnterChallenge. $a_b_Foreign = False is a Canthan character.
-; $a_b_WaitMapIsLoaded = False so a timed-out internal wait cannot send Enter again.
+; Henchmen (caller), then Map_EnterChallenge.
+; $a_WaitToLoad = False so a timed-out internal wait cannot send Enter again.
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Local $l_i_StartMap = Map_GetMapID()
 	If Leveler_InMissionInstance($a_i_MapID) Then
@@ -103,8 +103,8 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 
 	Out("Let's do " & $a_s_Name)
 	Out("Exiting Outpost")
-	; Native Canthan character. Do not use Map_EnterChallenge or Foreign = True.
-	Ui_EnterChallenge(False, False)
+	; PARTY_ENTER_CHALLENGE packet. Wait ourselves so Enter is not resent.
+	Map_EnterChallenge(False)
 	$g_i_EnterMissionMap = $l_i_StartMap
 	$g_h_MissionPrepQuiet = 0
 	Sleep(1500)

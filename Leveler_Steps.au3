@@ -671,7 +671,7 @@ Func Leveler_Step_ChosMission()
 		; Stage 1: henchmen. Skill bar is already set — do not reload it.
 		Out("[Step] Add henchmen, then enter")
 		If Not Leveler_EnsureFormingPartyHenchmen(False) Then Return False
-		; Stage 2: native Enter Challenge.
+		; Stage 2: Map_EnterChallenge.
 		If Not Leveler_EnterMission("Minister Cho's Estate", $MAP_CHO_OUTPOST) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
@@ -1442,7 +1442,7 @@ Func Leveler_Step_ZenDaijunMission()
 		; Stage 1: henchmen. Skill bar is already set — do not reload it.
 		Out("[Step] Add henchmen, then enter")
 		If Not Leveler_PrepareMissionParty() Then Return False
-		; Stage 2: native Enter Challenge.
+		; Stage 2: Map_EnterChallenge.
 		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_OP) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
