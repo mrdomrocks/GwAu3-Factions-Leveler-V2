@@ -1,5 +1,8 @@
 #include-once
 
+; Step dispatcher and per-step runners, grouped by campaign.
+
+#Region Dispatcher
 Func Leveler_ExecuteStep($a_i_Step)
 	If $g_b_LevelerPaused Then Return False
 	If Not Leveler_WaitUntilMapReady() Then Return False
@@ -179,6 +182,11 @@ Func Leveler_ExecuteStep($a_i_Step)
 	EndIf
 	Return False
 EndFunc
+
+#EndRegion Dispatcher
+
+#Region Shing Jea Monastery
+; Overlook through Zhao Di skills.
 
 Func Leveler_Step_ExitOverlook()
 	$g_s_CurrentHeader = "Exit Monastery Overlook"
@@ -598,6 +606,11 @@ Func Leveler_ReapplyZhaoDiSkillBar()
 	EndIf
 	Return True
 EndFunc
+
+#EndRegion Shing Jea Monastery
+
+#Region Shing Jea Island
+; Formal Introduction through Zen Daijun.
 
 Func Leveler_Step_ToChosEstate()
 	$g_s_CurrentHeader = "To Minister Cho's Estate"
@@ -1415,27 +1428,6 @@ Func Leveler_Step_ToZenDaijun()
 	Return True
 EndFunc
 
-Func Leveler_Step_CompleteSkillsTraining()
-	$g_s_CurrentHeader = "Complete Skills Training"
-	Out("=== " & $g_s_CurrentHeader & " ===")
-	If Leveler_Skills2Unlocked() Then
-		Out("[Step] Cry of Frustration and Power Drain already acquired")
-		Return Leveler_EquipTrainerSkills()
-	EndIf
-	If Map_GetMapID() <> $MAP_KAINENG Or Not Map_GetInstanceInfo("IsOutpost") Then
-		If Not Leveler_Travel($MAP_KAINENG) Then Return False
-	EndIf
-	Leveler_SetPacifist()
-	If Not Leveler_BuyKainengInterrupts() Then Return False
-	Out("[Step] Learnt Cry=" & World_IsSkillLearnt($SKILL_CRY_OF_FRUSTRATION) & " Drain=" & World_IsSkillLearnt($SKILL_POWER_DRAIN))
-	If Not Leveler_Skills2Unlocked() Then
-		Out("[Step] Michiko skills were not all learnt. Staying on the trainer.")
-		Return False
-	EndIf
-	Out("[Step] Cry of Frustration and Power Drain learnt from Michiko")
-	Return True
-EndFunc
-
 Func Leveler_Step_ZenDaijunMission()
 	$g_s_CurrentHeader = "Zen Daijun Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1576,6 +1568,11 @@ Func Leveler_Step_ZenDaijunMission()
 	Return True
 EndFunc
 
+#EndRegion Shing Jea Island
+
+#Region Kaineng
+; Marketplace through Mox.
+
 Func Leveler_Step_ToMarketplace()
 	$g_s_CurrentHeader = "To Marketplace"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1627,6 +1624,27 @@ Func Leveler_Step_ToKainengCenter()
 	If Not Leveler_MoveTo(-6857.17, 19098.28, True) Then Return False
 	If Not Leveler_MoveAndExit(-6706, 20388, $MAP_KAINENG, True) Then Return False
 	Out("[Step] Arrived in Kaineng Center")
+	Return True
+EndFunc
+
+Func Leveler_Step_CompleteSkillsTraining()
+	$g_s_CurrentHeader = "Complete Skills Training"
+	Out("=== " & $g_s_CurrentHeader & " ===")
+	If Leveler_Skills2Unlocked() Then
+		Out("[Step] Cry of Frustration and Power Drain already acquired")
+		Return Leveler_EquipTrainerSkills()
+	EndIf
+	If Map_GetMapID() <> $MAP_KAINENG Or Not Map_GetInstanceInfo("IsOutpost") Then
+		If Not Leveler_Travel($MAP_KAINENG) Then Return False
+	EndIf
+	Leveler_SetPacifist()
+	If Not Leveler_BuyKainengInterrupts() Then Return False
+	Out("[Step] Learnt Cry=" & World_IsSkillLearnt($SKILL_CRY_OF_FRUSTRATION) & " Drain=" & World_IsSkillLearnt($SKILL_POWER_DRAIN))
+	If Not Leveler_Skills2Unlocked() Then
+		Out("[Step] Michiko skills were not all learnt. Staying on the trainer.")
+		Return False
+	EndIf
+	Out("[Step] Cry of Frustration and Power Drain learnt from Michiko")
 	Return True
 EndFunc
 
@@ -1892,6 +1910,11 @@ Func Leveler_Step_UnlockMox()
 	Out("[Step] Mox unlocked and verified in the hero list")
 	Return True
 EndFunc
+
+#EndRegion Kaineng
+
+#Region Eye Of The North
+; Boreal Station through the Auspicious Beginnings farm.
 
 Func Leveler_Step_ToBorealStation()
 	$g_s_CurrentHeader = "To Boreal Station"
@@ -2228,6 +2251,11 @@ Func Leveler_RunFronisInstance()
 	Return True
 EndFunc
 
+#EndRegion Eye Of The North
+
+#Region Post 20
+; An Unwelcome Guest through remaining secondaries.
+
 Func Leveler_SeitungZunraaPath()
 	Local $l_af_Path[5][2] = [ _
 			[16602.23, 11612.10], _
@@ -2242,7 +2270,7 @@ Func Leveler_SeitungZunraaPath()
 EndFunc
 
 Func Leveler_Step_AnUnwelcomeGuest()
-	$g_s_CurrentHeader = "Attribute points quest n. 2"
+	$g_s_CurrentHeader = "Quest: An Unwelcome Guest"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	$g_b_FarmMode = False
 	$g_b_KilroyMode = False
@@ -2768,7 +2796,7 @@ Func Leveler_UnlockTrainerDialogs()
 EndFunc
 
 Func Leveler_Step_UnlockSecondaryProfs()
-	$g_s_CurrentHeader = "Unlock remaining secondary professions"
+	$g_s_CurrentHeader = "Unlock Remaining Secondary Professions"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	If Leveler_RemainingSecondariesUnlocked() Then
 		Out("[Step] All professions are already available to select")
@@ -2789,3 +2817,5 @@ Func Leveler_Step_UnlockSecondaryProfs()
 	EndIf
 	Return True
 EndFunc
+
+#EndRegion Post 20

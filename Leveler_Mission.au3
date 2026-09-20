@@ -1,5 +1,7 @@
 #include-once
 
+; Native Enter Challenge for Cho / Zen, and the wait for the next outpost after a mission.
+
 #Region Mission
 
 Func Leveler_InMissionInstance($a_i_MapID = 0)
@@ -57,4 +59,63 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Out("[Step] Mission instance loaded on map " & Map_GetMapID())
 	Return True
 EndFunc
+
+; After a mission ends: skip the cinematic, then wait for whatever outpost the
+; game loads. Do not travel and do not require a specific map ID.
+Func Leveler_WaitMissionOutpost($a_i_Timeout = 60000)
+	Local $l_i_StartMap = Map_GetMapID()
+	If Map_GetInstanceInfo("IsOutpost") And Not Map_GetInstanceInfo("IsLoading") And Not Game_GetGameInfo("IsCinematic") Then
+		If Not Leveler_InMissionInstance() Then Return True
+	EndIf
+
+	Local $l_h_Timer = TimerInit()
+	Local $l_b_Skipped = False
+	While TimerDiff($l_h_Timer) < 20000
+		If $g_b_LevelerPaused Then Return False
+		If Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic() Then ExitLoop
+		If Map_GetInstanceInfo("IsLoading") Then ExitLoop
+		If Map_GetInstanceInfo("IsOutpost") And Map_GetMapID() <> $l_i_StartMap Then
+			Out("[Step] Next outpost loaded: map " & Map_GetMapID())
+			Return True
+		EndIf
+		Sleep(200)
+	WEnd
+
+	If (Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic()) And Not Map_GetInstanceInfo("IsLoading") Then
+		Other_PingSleep(1500)
+		Local $l_h_Skip = TimerInit()
+		While (Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic()) And Not Map_GetInstanceInfo("IsLoading") And TimerDiff($l_h_Skip) < 8000
+			Cinematic_SkipCinematic()
+			$l_b_Skipped = True
+			Sleep(250)
+		WEnd
+		If $l_b_Skipped Then Out("[Step] Skipped mission cinematic")
+	EndIf
+
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If (Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic()) And Not Map_GetInstanceInfo("IsLoading") Then
+			Cinematic_SkipCinematic()
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		If Map_GetInstanceInfo("IsLoading") Then
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		If Map_GetInstanceInfo("IsOutpost") And Leveler_ClientIsReady() Then
+			Out("[Step] Next outpost loaded: map " & Map_GetMapID())
+			Return True
+		EndIf
+		Sleep(250)
+	WEnd
+
+	If Map_GetInstanceInfo("IsOutpost") And Not Map_GetInstanceInfo("IsLoading") Then
+		Out("[Step] Next outpost loaded: map " & Map_GetMapID())
+		Return True
+	EndIf
+	Out("[Step] Next outpost did not load (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
+	Return False
+EndFunc
+
 #EndRegion Mission

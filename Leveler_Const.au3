@@ -1,6 +1,9 @@
 #include-once
 
-; Phase 1-5 step indices (Overlook through remaining secondary professions)
+; Step indices, maps, quests, dialogs, models, and runtime state for the Factions leveler.
+
+#Region Steps
+; GUI / dispatcher order from Monastery Overlook through remaining secondaries.
 Global Const $LEVELER_STEP_OVERLOOK = 0
 Global Const $LEVELER_STEP_PARTY = 1
 Global Const $LEVELER_STEP_SECONDARY = 2
@@ -86,8 +89,10 @@ Global $g_as_StepNames[$LEVELER_STEP_COUNT] = [ _
 		"Done" _
 		]
 Global $g_ab_StepDone[$LEVELER_STEP_COUNT]
+#EndRegion Steps
 
-; Maps used in Phase 1-5
+#Region Maps
+; Outposts and explorables this run travels.
 Global Const $MAP_MONASTERY_OVERLOOK = 212
 Global Const $MAP_SHING_JEA = 242
 Global Const $MAP_SUNQUA_VALE = 238
@@ -130,10 +135,11 @@ Global Const $MAP_DOCKS = 493
 Global Const $MAP_BLOODSTONE_FEN = 471
 Global Const $MAP_GTOB = 248
 Global Const $MAP_LONGEYE = 650
-Global Const $MAP_BJORA = 482
-Global Const $MAP_JAGA = 546
 
-; Quests
+#EndRegion Maps
+
+#Region Quests
+; Story and unlock quest IDs.
 Global Const $QUEST_FORMING_A_PARTY = 440
 Global Const $QUEST_SECONDARY = 317
 Global Const $QUEST_FORMAL_INTRO = 318
@@ -158,7 +164,10 @@ Global Const $QUEST_CHAOS_KRYTA = 479
 Global Const $QUEST_SUNSPEARS_CANTHA = 724
 Global Const $QUEST_OLIAS = 782
 
-; Dialogs
+#EndRegion Quests
+
+#Region Dialogs
+; Ui_Dialog values for accept / update / reward.
 Global Const $DIALOG_EXIT_OVERLOOK = 0x85
 Global Const $DIALOG_GENERIC_TALK = 0x84
 Global Const $DIALOG_FORMING_ACCEPT = 0x81B801
@@ -190,7 +199,10 @@ Global Const $DIALOG_LOST_TREASURE_COMPLETE = 0x17
 Global Const $DIALOG_TENGU_ACCEPT = 0x815301
 Global Const $DIALOG_TENGU_STEP = 0x815304
 Global Const $DIALOG_TENGU_COMPLETE = 0x815307
-; Warning the Tengu waypoints
+#EndRegion Dialogs
+
+#Region Waypoints
+; Lost Treasure path in Ran Musu and Cho explorable.
 Global Const $LOST_TOWN_APPROACH_X = 16184.75
 Global Const $LOST_TOWN_APPROACH_Y = 19001.78
 Global Const $LOST_TOWN_PATH1_X = 13713.27
@@ -206,6 +218,7 @@ Global Const $LOST_CHO_START_Y = -493.08
 Global Const $LOST_CHO_END_X = 20660.90
 Global Const $LOST_CHO_END_Y = -9207.07
 Global Const $LOST_CHO_END_RANGE = 2500
+; Warning the Tengu.
 Global Const $TENGU_ANG_X = 15846
 Global Const $TENGU_ANG_Y = 19013
 Global Const $TENGU_PORTAL_X = 14730
@@ -216,12 +229,15 @@ Global Const $TENGU_SOAR_X = -1023
 Global Const $TENGU_SOAR_Y = 4844
 Global Const $TENGU_AFFLICTED_X = -5011
 Global Const $TENGU_AFFLICTED_Y = 732
+#EndRegion Waypoints
+
+#Region Unlocks
+; Threat Grows through GToB profession trainers.
 Global Const $DIALOG_THREAT_ACCEPT = 0x815401
 Global Const $DIALOG_THREAT_COMPLETE = 0x815407
 Global Const $DIALOG_JOURNEY_ACCEPT = 0x815501
 Global Const $DIALOG_JOURNEY_COMPLETE = 0x815507
 Global Const $DIALOG_ROAD_ACCEPT = 0x815601
-Global Const $DIALOG_ROAD_STEP1 = 0x80000B
 Global Const $DIALOG_ROAD_TSUKARO_TALK = 0x815604
 Global Const $DIALOG_ROAD_TSUKARO_GO = 0x800008
 Global Const $DIALOG_ROAD_TSUKARO_LETS_GO = 0x800009
@@ -241,18 +257,15 @@ Global Const $DIALOG_UNLOCK_MOX = 0x85
 Global Const $DIALOG_EARTH_ACCEPT = 0x833501
 Global Const $DIALOG_DESTROYERS_STEP1 = 0x839104
 Global Const $DIALOG_POOL_CINEMATIC = 0x800001
-Global Const $DIALOG_POOL_STEP3 = 0x63C
 ; Look deep into the pool.
 Global Const $DIALOG_POOL_LOOK_DEEP = 0x63D
 ; I'll keep my eyes open. I don't want to miss anything.
 Global Const $DIALOG_POOL_EYES_OPEN = 0x63F
-Global Const $DIALOG_POOL_SEND = 0xD
 Global Const $DIALOG_GWEN_TAPESTRY = 0x89
 Global Const $DIALOG_VANGUARD_STEP = 0x831904
 Global Const $DIALOG_KEIRAN_BOW = 0x8A
 Global Const $DIALOG_OGDEN_ALLIES = 0x838904
 Global Const $DIALOG_VEKK_ASURA = 0x839304
-Global Const $DIALOG_AB_OFFSET = 0xE
 Global Const $DIALOG_UNWELCOME_ACCEPT = 0x815C01
 Global Const $DIALOG_UNWELCOME_COMPLETE = 0x815C07
 Global Const $DIALOG_ZEN_SKIP = 0x80000B
@@ -292,7 +305,9 @@ Global Const $DIALOG_PROF_RIT = 0x884
 Global Const $DIALOG_PROF_PARA = 0x984
 Global Const $DIALOG_PROF_DERV = 0xA84
 
-; NPC models
+#EndRegion Unlocks
+
+#Region NPC Models
 Global Const $MODEL_TOGO_1 = 3078
 Global Const $MODEL_TOGO_2 = 3081
 Global Const $MODEL_TOGO_3 = 3120
@@ -343,6 +358,9 @@ Global Const $MODEL_BAG = 35
 Global Const $MODEL_BELT_POUCH = 34
 Global Const $MODEL_BELT_POUCH_REWARD = 33
 
+#EndRegion NPC Models
+
+#Region Skills And Items
 ; Zhao Di (Shing Jea Monastery) Mesmer skills. Cry of Frustration is NOT here.
 Global Const $SKILL_ENERGY_BURN = 42
 Global Const $SKILL_LEECH_SIGNET = 61
@@ -350,10 +368,9 @@ Global Const $SKILL_SIGNET_OF_DISRUPTION = 860
 ; Michiko in Kaineng: Cry of Frustration and Power Drain.
 Global Const $SKILL_CRY_OF_FRUSTRATION = 57
 Global Const $SKILL_POWER_DRAIN = 25
-Global Const $SKILL_BACKFIRE = 54
 Global Const $SKILL_SPIRIT_RIFT = 910
 
-; Weapon / armor gold
+; Weapon / armor gold.
 Global Const $MODEL_CLAIRVOYANT_STAFF = 11647
 ; Paid from the Choose Your Secondary Profession (#317) complete reward, not storage.
 Global Const $XUNLAI_GOLD_COST = 50
@@ -366,15 +383,20 @@ Global Const $MONASTERY_ARMOR_GOLD = 20
 Global Const $SEITUNG_ARMOR_GOLD = 200
 Global Const $MAX_ARMOR_GOLD = 1000
 
-; Movement
+#EndRegion Skills And Items
+
+#Region Movement
+; Arrive / aggro ranges used by pathing and combat.
 Global Const $LEVELER_ARRIVE_RANGE = 200
-Global Const $LEVELER_NPC_RANGE = 250
 Global Const $LEVELER_AGGRO = 1320
 Global Const $LEVELER_FIGHT_RANGE_OUT = 3500
 Global Const $LEVELER_AREA_RANGE = 322
 Global Const $LEVELER_SPIRIT_RANGE = 2500
 
-; Quest completion flag indices. Sticky during a run; rebuilt on Refresh.
+#EndRegion Movement
+
+#Region Quest Flags
+; Sticky during a run; rebuilt on Refresh.
 Global Enum $LEVELER_Q_FORMING, $LEVELER_Q_SECONDARY, $LEVELER_Q_FORMAL, $LEVELER_Q_LOST, _
 		$LEVELER_Q_TENGU, $LEVELER_Q_THREAT, $LEVELER_Q_JOURNEY, $LEVELER_Q_ROAD, _
 		$LEVELER_Q_CURE, $LEVELER_Q_TOSAI, $LEVELER_Q_BURDEN, $LEVELER_Q_EARTH, _
@@ -383,7 +405,9 @@ Global Enum $LEVELER_Q_FORMING, $LEVELER_Q_SECONDARY, $LEVELER_Q_FORMAL, $LEVELE
 		$LEVELER_Q_SUNSPEARS, $LEVELER_Q_OLIAS, $LEVELER_Q_COUNT
 Global $g_ab_QuestDone[$LEVELER_Q_COUNT]
 
-; Shared runtime state
+#EndRegion Quest Flags
+
+#Region Runtime State
 Global $g_i_Step = $LEVELER_STEP_OVERLOOK
 Global $g_b_NeedStatusCheck = False
 Global $g_b_LevelerPaused = False
@@ -415,3 +439,4 @@ Global $g_b_MoxUnlocked = False
 Global $g_b_XunlaiUnlocked = False
 ; Sticky after GToB trainer dialogs.
 Global $g_b_SecondaryProfsTalked = False
+#EndRegion Runtime State

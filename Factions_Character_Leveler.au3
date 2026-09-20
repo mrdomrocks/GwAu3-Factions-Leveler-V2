@@ -6,13 +6,14 @@ Opt("TrayAutoPause", 0)
 Opt("TrayMenuMode", 1)
 
 #include "../../API/_GwAu3.au3"
+#include "../../API/Plugins/Pathfinder/_Pathfinder.au3"
 #include "Leveler_Const.au3"
 #include "Leveler_Move.au3"
 #include "Leveler_Quest.au3"
 #include "Leveler_Prof.au3"
-#include "Leveler_Mission.au3"
 #include "Leveler_Henchman.au3"
 #include "Leveler_Party.au3"
+#include "Leveler_Mission.au3"
 #include "Leveler_Craft.au3"
 #include "Leveler_Status.au3"
 #include "Leveler_Steps.au3"
@@ -30,13 +31,14 @@ Global Const $GC_S_BOT_TITLE = "Factions Character Leveler"
 
 $g_b_AutoStart = False
 $g_s_MainCharName = ""
-#EndRegion Declaration
+#EndRegion Declarations
 
 For $i = 1 To $CmdLine[0]
 	If $CmdLine[$i] = "-character" And $i < $CmdLine[0] Then
 		$g_s_MainCharName = $CmdLine[$i + 1]
-		$g_b_AutoStart = True
+		; Core_AutoStart() reads $g_bAutoStart from GwAu3_Const_Core.au3.
 		$g_bAutoStart = True
+		$g_b_AutoStart = True
 		ExitLoop
 	EndIf
 Next
@@ -103,6 +105,7 @@ Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
 Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
 Out("")
 
+#Region Main Loop
 Core_AutoStart()
 
 While 1
@@ -122,7 +125,9 @@ While 1
 		EndIf
 	EndIf
 WEnd
+#EndRegion Main Loop
 
+#Region Bot
 Func StartBot()
 	Local $l_s_MainCharName = GUICtrlRead($g_h_NameCombo)
 	If $l_s_MainCharName = "" Then
@@ -188,6 +193,9 @@ Func TogglePause()
 	EndIf
 EndFunc
 
+#EndRegion Bot
+
+#Region GUI Helpers
 Func Leveler_GetSelectedStep()
 	Local $l_s_Idx = _GUICtrlListView_GetSelectedIndices($g_h_StepList)
 	If $l_s_Idx = "" Then Return 0
@@ -305,3 +313,5 @@ Func _Exit()
 	Pathfinder_Shutdown()
 	Exit
 EndFunc
+
+#EndRegion GUI Helpers

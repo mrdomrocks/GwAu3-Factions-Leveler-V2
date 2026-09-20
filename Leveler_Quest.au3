@@ -1,5 +1,8 @@
 #include-once
 
+; Walk to an NPC and send GwAu3 quest dialogs (accept / update / reward).
+
+#Region Quest Dialogs
 ; GwAu3 quest helper. Walk to the NPC, Agent_GoNPC, then send
 ; Ui_AcceptQuest / Ui_UpdateQuest / Ui_RewardQuest (or a custom Ui_Dialog).
 ; $a_s_Mode: "accept" | "complete" | "step" | "skip"
@@ -123,10 +126,9 @@ Func Leveler_SendQuestAction($a_i_QuestID, $a_s_Mode, $a_i_Dialog)
 	EndSwitch
 EndFunc
 
-Func Leveler_IsStandardQuestDialog($a_i_Dialog, $a_i_QuestID, $a_i_Suffix)
-	If $a_i_Dialog = 0 Or $a_i_QuestID = 0 Then Return False
-	Return $a_i_Dialog = Number("0x008" & Hex($a_i_QuestID, 3) & Hex($a_i_Suffix, 2))
-EndFunc
+#EndRegion Quest Dialogs
+
+#Region Quest State
 
 Func Leveler_FillQuestMarker($a_i_QuestID, ByRef $a_f_X, ByRef $a_f_Y)
 	If Not Leveler_HasQuest($a_i_QuestID) Then Return
@@ -343,6 +345,9 @@ Func Leveler_OliasReadyToTurnIn()
 	Return False
 EndFunc
 
+#EndRegion Quest State
+
+#Region Resume
 ; True in an explorable / mission. False in towns and while loading.
 Func Leveler_IsOutpost()
 	If Map_GetInstanceInfo("IsLoading") Then Return False
@@ -419,3 +424,5 @@ Func Leveler_FinishIfCompleteUnavailable($a_i_QuestID, $a_i_NpcModel = 0)
 	Out("[Quest] #" & $a_i_QuestID & " complete dialog is not available. Treating as already handed in.")
 	Return True
 EndFunc
+
+#EndRegion Resume

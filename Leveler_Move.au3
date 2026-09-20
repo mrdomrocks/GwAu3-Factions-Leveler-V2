@@ -1,4 +1,8 @@
 #include-once
+#Region Pathfinder
+; Load GWPathfinder.dll without blocking on maps.rar.
+
+; Pathfinder, travel, NPC talk, combat waits, punch-out, and wipe recover.
 
 ; Load the Pathfinder DLL only. Skip Pathfinder_Initialize() so we do not block
 ; on the GitHub maps.rar check / download during Start.
@@ -32,6 +36,10 @@ Func Leveler_EnsurePathfinder()
 	EndIf
 	Return True
 EndFunc
+#EndRegion Pathfinder
+
+#Region Movement
+; Pathfinder_MoveTo / Map_Move wrappers and portal exits.
 
 ; Fight in explorables and punch-out instances. Stay pacifist in outposts.
 Func Leveler_ShouldFightHere()
@@ -110,6 +118,10 @@ Func Leveler_MoveAndDialog($a_f_X, $a_f_Y, $a_i_Dialog, $a_b_Combat = False, $a_
 
 	Return Leveler_TalkAndDialog($l_i_Npc, $a_i_Dialog)
 EndFunc
+#EndRegion Movement
+
+#Region Eye Of The North
+; Jora on Ice Cliff and Hall of Monuments hero talk.
 
 Func Leveler_TalkHomHero($a_i_Model, $a_f_X, $a_f_Y, $a_i_Dialog, $a_s_Name)
 	Out("[Step] Talking to " & $a_s_Name)
@@ -217,6 +229,10 @@ Func Leveler_TalkJoraOnIceCliff()
 	Out("[Step] Tracking the Nornbear accepted from Jora")
 	Return True
 EndFunc
+#EndRegion Eye Of The North
+
+#Region Agents
+; NPC lookup, talk, Lost Treasure follow, gadgets, loot.
 
 ; Target the living NPC, walk into talk range, then send the dialog.
 Func Leveler_TalkAndDialog($a_i_Npc, $a_i_Dialog)
@@ -240,6 +256,11 @@ Func Leveler_TalkAndDialog($a_i_Npc, $a_i_Dialog)
 	Sleep(600)
 	Return True
 EndFunc
+
+#EndRegion Agents
+
+#Region Travel
+; Map_TravelTo, step outposts, and portal exits.
 
 Func Leveler_MoveAndExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
@@ -479,6 +500,11 @@ Func Leveler_EnsureStepOutpost($a_i_Step)
 	Return Leveler_WaitUntilMapReady()
 EndFunc
 
+#EndRegion Travel
+
+#Region Agents
+; Name / model lookup and talk helpers.
+
 Func Leveler_GetAgentByName($a_s_Name)
 	Local $l_i_Max = Agent_GetMaxAgents()
 	For $i = 1 To $l_i_Max - 1
@@ -701,6 +727,10 @@ Func Leveler_InteractNpcAt($a_f_X, $a_f_Y, $a_b_Combat = False)
 	Sleep(800)
 	Return True
 EndFunc
+#EndRegion Agents
+
+#Region Combat
+; Aggro waits, spirit-rift interrupt, and danger checks.
 
 Func Leveler_IsWiped()
 	If Leveler_IsPunchoutMap() Or $g_b_FarmMode Then Return False
@@ -788,6 +818,11 @@ Func Leveler_WaitOutOfCombat($a_i_Timeout = 120000)
 	Return Not Leveler_InDanger($LEVELER_AGGRO)
 EndFunc
 
+#EndRegion Combat
+
+#Region Lost Treasure
+; Follow Raitahn Nem through Cho explorable.
+
 Func Leveler_WaitUntilModelHasQuest($a_i_Model, $a_i_Timeout = 180000)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
@@ -859,6 +894,11 @@ Func Leveler_FollowLostTreasurePath($a_i_Timeout = 600000)
 	Out("[Path] Follow timed out. Moving to Raitahn Nem's final location.")
 	Return True
 EndFunc
+
+#EndRegion Lost Treasure
+
+#Region Gadgets
+; Mission gadgets and ground loot.
 
 Func Leveler_GetNearestGadget($a_f_Range = 400)
 	Return Leveler_GetNearestGadgetAt(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $a_f_Range)
@@ -934,6 +974,11 @@ Func Leveler_LootNearby($a_i_Model = 0, $a_f_Range = 2000, $a_i_Timeout = 10000)
 	Return True
 EndFunc
 
+#EndRegion Gadgets
+
+#Region Spirit Rifts
+; Zen Daijun rift interrupt while pathing.
+
 Func Leveler_InterruptSpiritRifts()
 	If Map_GetMapID() <> $MAP_ZEN_OP Then Return
 	If $g_h_RiftCooldown <> 0 And TimerDiff($g_h_RiftCooldown) < 1000 Then Return
@@ -971,6 +1016,10 @@ Func Leveler_TalkModel($a_i_Model, $a_i_Dialog)
 	Sleep(600)
 	Return True
 EndFunc
+#EndRegion Spirit Rifts
+
+#Region Cinematic
+; Skip known videos; wait out new ones.
 
 ; Wine can report a live cinematic pointer that is actually null. Do not treat that as a video.
 Func Leveler_InCinematic()
@@ -1026,64 +1075,10 @@ Func Leveler_WaitCinematic($a_i_StartTimeout = 8000, $a_i_PlayTimeout = 240000)
 	Sleep(500)
 	Return True
 EndFunc
+#EndRegion Cinematic
 
-; After a mission ends: skip the cinematic, then wait for whatever outpost the
-; game loads. Do not travel and do not require a specific map ID.
-Func Leveler_WaitMissionOutpost($a_i_Timeout = 60000)
-	Local $l_i_StartMap = Map_GetMapID()
-	If Map_GetInstanceInfo("IsOutpost") And Not Map_GetInstanceInfo("IsLoading") And Not Game_GetGameInfo("IsCinematic") Then
-		If Not Leveler_InMissionInstance() Then Return True
-	EndIf
-
-	Local $l_h_Timer = TimerInit()
-	Local $l_b_Skipped = False
-	While TimerDiff($l_h_Timer) < 20000
-		If $g_b_LevelerPaused Then Return False
-		If Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic() Then ExitLoop
-		If Map_GetInstanceInfo("IsLoading") Then ExitLoop
-		If Map_GetInstanceInfo("IsOutpost") And Map_GetMapID() <> $l_i_StartMap Then
-			Out("[Step] Next outpost loaded: map " & Map_GetMapID())
-			Return True
-		EndIf
-		Sleep(200)
-	WEnd
-
-	If (Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic()) And Not Map_GetInstanceInfo("IsLoading") Then
-		Other_PingSleep(1500)
-		Local $l_h_Skip = TimerInit()
-		While (Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic()) And Not Map_GetInstanceInfo("IsLoading") And TimerDiff($l_h_Skip) < 8000
-			Cinematic_SkipCinematic()
-			$l_b_Skipped = True
-			Sleep(250)
-		WEnd
-		If $l_b_Skipped Then Out("[Step] Skipped mission cinematic")
-	EndIf
-
-	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If $g_b_LevelerPaused Then Return False
-		If (Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic()) And Not Map_GetInstanceInfo("IsLoading") Then
-			Cinematic_SkipCinematic()
-			Sleep(250)
-			ContinueLoop
-		EndIf
-		If Map_GetInstanceInfo("IsLoading") Then
-			Sleep(250)
-			ContinueLoop
-		EndIf
-		If Map_GetInstanceInfo("IsOutpost") And Leveler_ClientIsReady() Then
-			Out("[Step] Next outpost loaded: map " & Map_GetMapID())
-			Return True
-		EndIf
-		Sleep(250)
-	WEnd
-
-	If Map_GetInstanceInfo("IsOutpost") And Not Map_GetInstanceInfo("IsLoading") Then
-		Out("[Step] Next outpost loaded: map " & Map_GetMapID())
-		Return True
-	EndIf
-	Out("[Step] Next outpost did not load (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
-	Return False
-EndFunc
+#Region Scrying Pool
+; Eye of the North pool gadget / living agent.
 
 ; Model 5959 may be living or gadget. Do not match ExtraType (garbage on other agents).
 Func Leveler_GetScryingPool()
@@ -1238,6 +1233,10 @@ Func Leveler_PlayerLevel()
 	If $l_i_Level = 0 Then $l_i_Level = Party_GetPartyProfessionInfo(-2, "Level")
 	Return $l_i_Level
 EndFunc
+#EndRegion Scrying Pool
+
+#Region Map Ready
+; Client load, disconnect, and outpost waits.
 
 Func Leveler_FollowCoords(ByRef $a_af_Path, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
@@ -1337,6 +1336,10 @@ Func Leveler_WaitUntilMapReady($a_i_Timeout = 45000)
 	EndIf
 	Return False
 EndFunc
+#EndRegion Map Ready
+
+#Region Punch Out
+; Kilroy / Fronis instance and brass knuckles.
 
 Func Leveler_IsPunchoutMap($a_i_Map = 0)
 	If $a_i_Map = 0 Then $a_i_Map = Map_GetMapID()
@@ -1470,6 +1473,10 @@ Func Leveler_HandleKilroyDeath()
 	Sleep(300)
 	Return True
 EndFunc
+#EndRegion Punch Out
+
+#Region Recovery
+; Resign, return to outpost, retry the current step.
 
 Func Leveler_RecoverWipe()
 	$g_b_SpiritRiftWatch = False
@@ -1542,3 +1549,4 @@ Func Leveler_ReturnFromDefeat()
 	If Map_GetInstanceInfo("IsOutpost") Then Return True
 	Return False
 EndFunc
+#EndRegion Recovery

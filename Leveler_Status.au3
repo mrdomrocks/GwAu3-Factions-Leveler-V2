@@ -1,5 +1,8 @@
 #include-once
 
+; Progress flags, skip rules, and the GUI status check that picks the next step.
+
+#Region Progress
 Func Leveler_CharacterGold()
 	Return Item_GetInventoryInfo("GoldCharacter")
 EndFunc
@@ -476,6 +479,9 @@ Func Leveler_WarningTheTenguDone()
 	Return False
 EndFunc
 
+#EndRegion Progress
+
+#Region Status Check
 ; Brief inventory / quest / map check. Greys finished steps and returns the first incomplete one.
 Func Leveler_StatusCheck()
 	Out("[Status] Checking character progress...")
@@ -645,7 +651,7 @@ Func Leveler_LogActiveQuests()
 			Leveler_LogQuestState($l_ai_Ids[$i], $l_as_Names[$i])
 		EndIf
 	Next
-	If Not $l_b_Any Then Out("[Status] No Phase 1 quests are in the log")
+	If Not $l_b_Any Then Out("[Status] No tracked quests are in the log")
 EndFunc
 
 Func Leveler_FirstIncompleteStep()
@@ -663,3 +669,5 @@ Func Leveler_MarkStepsThrough($a_i_LastDone)
 	Next
 	Leveler_RefreshStepList($g_i_Step)
 EndFunc
+
+#EndRegion Status Check

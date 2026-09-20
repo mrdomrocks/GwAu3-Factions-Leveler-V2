@@ -1,5 +1,8 @@
 #include-once
 
+; Inventory counts, Xunlai gold, and armor / weapon / bag crafting.
+
+#Region Inventory
 Func Leveler_CountModel($a_i_Model, $a_b_IncludeStorage = True)
 	Local $l_i_Count = 0
 	Local $l_av_Inv = Item_GetInventoryArray()
@@ -172,6 +175,9 @@ Func Leveler_WithdrawStorageModel($a_i_Model, $a_i_Need)
 EndFunc
 
 ; Open Xunlai, pull staff/armor mats into bags, then fund character gold for remaining trader buys.
+#EndRegion Inventory
+
+#Region Weapon
 Func Leveler_PrepareCraftWeaponFunds()
 	Leveler_LogGold("before Craft Weapon")
 	If Not Leveler_OpenXunlaiStorage() Then
@@ -394,6 +400,9 @@ Func Leveler_GetArmorBuyList(ByRef $a_ai_Models, ByRef $a_ai_Counts)
 EndFunc
 
 ; Returns 2D array [n][3] = itemID, matModel, qty
+#EndRegion Weapon
+
+#Region Monastery Armor
 Func Leveler_GetMonasteryPieces()
 	Local $l_i_Prof = Leveler_PrimaryProfession()
 	Local $l_ai_Pieces[5][3]
@@ -699,6 +708,9 @@ Func Leveler_HasMonasteryArmor()
 EndFunc
 
 ; Returns 2D array [n][3] = itemID, matModel, qty
+#EndRegion Monastery Armor
+
+#Region Seitung Armor
 Func Leveler_GetSeitungPieces()
 	Local $l_i_Prof = Leveler_PrimaryProfession()
 	Local $l_ai_Pieces[5][3]
@@ -1036,6 +1048,9 @@ Func Leveler_DestroySeitungArmor()
 EndFunc
 
 ; Returns [5][5] = itemID, mat1, qty1, mat2, qty2
+#EndRegion Seitung Armor
+
+#Region Max Armor
 Func Leveler_GetMaxArmorPieces()
 	Local $l_i_Prof = Leveler_PrimaryProfession()
 	Local $l_ai_Pieces[5][5]
@@ -1220,6 +1235,9 @@ Func Leveler_HasMaxArmor()
 	Return False
 EndFunc
 
+#EndRegion Max Armor
+
+#Region Bags
 Func Leveler_HasCraftedWeapon()
 	Return Leveler_OwnsModel($MODEL_CLAIRVOYANT_STAFF)
 EndFunc
@@ -1425,3 +1443,5 @@ Func Leveler_ExtendInventory()
 	Out("[Craft] Inventory bags equipped")
 	Return True
 EndFunc
+
+#EndRegion Bags

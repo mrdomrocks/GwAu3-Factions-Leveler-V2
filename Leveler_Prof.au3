@@ -1,7 +1,10 @@
 #include-once
 
+; Profession skill templates and trainer-bar load.
 ; Mid and level-20 bars assume Mesmer secondary (Domination / Inspiration).
 ; Equipment piece IDs live in Leveler_Craft.au3.
+
+#Region Templates
 
 Global Const $LEVELER_BAR_STARTER = 0
 Global Const $LEVELER_BAR_INTERRUPT = 1
@@ -81,6 +84,10 @@ Func Leveler_ProfessionSkillBar($a_i_Kind, $a_i_Prof = 0)
 	Return ""
 EndFunc
 
+#EndRegion Templates
+
+#Region Load
+
 ; Zen Daijun through the walk to Kaineng. Michiko changes the bar after this.
 Func Leveler_UsesZenSkillBar()
 	If Leveler_InterruptSkillsUnlocked() Then Return False
@@ -108,24 +115,24 @@ Func Leveler_LoadProfessionSkillBar($a_i_Kind = -1)
 	; Empty starter is Skill_LoadSkillBar(0,0,...). After Zhao Di that wipes the bar
 	; and the SKILLBAR_LOAD packet right before EnterChallenge can disconnect.
 	If $a_i_Kind = $LEVELER_BAR_STARTER And Leveler_ZhaoDiSkillsUnlocked() Then
-		Out("[Party] Skipping empty starter template; Zhao Di skills would be wiped")
+		Out("[Skills] Skipping empty starter template; Zhao Di skills would be wiped")
 		Return False
 	EndIf
 	If ($a_i_Kind = $LEVELER_BAR_INTERRUPT Or $a_i_Kind = $LEVELER_BAR_INSPIRE) And Not Leveler_InterruptSkillsUnlocked() Then
-		Out("[Party] Skipping interrupt template; Cry of Frustration / Power Drain are not learnt yet")
+		Out("[Skills] Skipping interrupt template; Cry of Frustration / Power Drain are not learnt yet")
 		Return False
 	EndIf
 	If Not Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Party] Skill template can only be loaded in an outpost")
+		Out("[Skills] Skill template can only be loaded in an outpost")
 		Return False
 	EndIf
 	Local $l_s_Bar = Leveler_ProfessionSkillBar($a_i_Kind)
 	If $l_s_Bar = "" Then Return False
-	Out("[Party] Loading profession " & Leveler_PrimaryProfession() & " bar kind " & $a_i_Kind)
+	Out("[Skills] Loading profession " & Leveler_PrimaryProfession() & " bar kind " & $a_i_Kind)
 	Local $l_b_Ok = Attribute_LoadSkillTemplate($l_s_Bar)
 	Sleep(800)
-	If $l_b_Ok Then Out("[Party] Profession skill template loaded")
-	If Not $l_b_Ok Then Out("[Party] Profession skill template failed; will set trainer skills by slot")
+	If $l_b_Ok Then Out("[Skills] Profession skill template loaded")
+	If Not $l_b_Ok Then Out("[Skills] Profession skill template failed; will set trainer skills by slot")
 	Return $l_b_Ok
 EndFunc
 
@@ -135,12 +142,148 @@ Func Leveler_LoadZenSkillBar()
 	Local $l_i_Map = Map_GetMapID()
 	; Skip reload if the template is already on this map.
 	If $g_i_ZenBarLoadedMap = $l_i_Map And Skill_GetSkillbarInfo(1, "SkillID") <> 0 Then
-		Out("[Party] Zen skill template already loaded on map " & $l_i_Map)
+		Out("[Skills] Zen skill template already loaded on map " & $l_i_Map)
 		Return True
 	EndIf
-	Out("[Party] Loading skill template " & $LEVELER_TEMPLATE_ZEN)
+	Out("[Skills] Loading skill template " & $LEVELER_TEMPLATE_ZEN)
 	Attribute_LoadSkillTemplate($LEVELER_TEMPLATE_ZEN)
 	$g_i_ZenBarLoadedMap = $l_i_Map
 	Sleep(800)
 	Return True
 EndFunc
+
+#EndRegion Load
+
+#Region Skill Bar
+
+Func Leveler_SkillIsLearnt($a_i_SkillID)
+	If World_IsSkillLearnt($a_i_SkillID) Then Return True
+	Return Account_IsSkillUnlocked($a_i_SkillID)
+EndFunc
+
+Func Leveler_WaitSkillLearnt($a_i_SkillID)
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 8000
+		If Leveler_SkillIsLearnt($a_i_SkillID) Then Return True
+		Sleep(250)
+	WEnd
+	Return Leveler_SkillIsLearnt($a_i_SkillID)
+EndFunc
+
+; Skill_GetSkillbarInfo only accepts slots 1-8, not skill IDs.
+Func Leveler_BarHasSkill($a_i_SkillID)
+	Local $i
+	For $i = 1 To 8
+		If Skill_GetSkillbarInfo($i, "SkillID") = $a_i_SkillID Then Return True
+	Next
+	Return False
+EndFunc
+
+Func Leveler_PutSkillOnBar($a_i_Slot, $a_i_SkillID)
+	If $a_i_SkillID = 0 Then Return True
+	If Skill_GetSkillbarInfo($a_i_Slot, "SkillID") = $a_i_SkillID Then Return True
+	If Not Leveler_WaitSkillLearnt($a_i_SkillID) Then
+		Out("[Skills] Skill " & $a_i_SkillID & " is not learnt yet")
+		Return False
+	EndIf
+	Local $i
+	For $i = 1 To 6
+		If Skill_GetSkillbarInfo($a_i_Slot, "SkillID") = $a_i_SkillID Then Return True
+		Skill_SetSkillbarSkill($a_i_Slot, $a_i_SkillID)
+		Local $l_h_Timer = TimerInit()
+		While TimerDiff($l_h_Timer) < 2000
+			Sleep(200)
+			If Skill_GetSkillbarInfo($a_i_Slot, "SkillID") = $a_i_SkillID Then
+				Out("[Skills] Slot " & $a_i_Slot & " = skill " & $a_i_SkillID)
+				Return True
+			EndIf
+		WEnd
+	Next
+	Out("[Skills] Slot " & $a_i_Slot & " is " & Skill_GetSkillbarInfo($a_i_Slot, "SkillID") & ", wanted " & $a_i_SkillID)
+	Return False
+EndFunc
+
+Func Leveler_CloseTrainerWindow()
+	Agent_CancelAction()
+	Sleep(300)
+	Local $l_f_X = Agent_GetAgentInfo(-2, "X")
+	Local $l_f_Y = Agent_GetAgentInfo(-2, "Y")
+	Map_Move($l_f_X + 80, $l_f_Y + 80, 20)
+	Sleep(700)
+	Agent_CancelAction()
+	Sleep(200)
+EndFunc
+
+Func Leveler_TrainerSkillsOnBar()
+	If Leveler_InterruptSkillsUnlocked() Then
+		If Not Leveler_BarHasSkill($SKILL_CRY_OF_FRUSTRATION) Then Return False
+		If Not Leveler_BarHasSkill($SKILL_POWER_DRAIN) Then Return False
+		If Not Leveler_BarHasSkill($SKILL_SIGNET_OF_DISRUPTION) Then Return False
+		Return True
+	EndIf
+	If Not Leveler_BarHasSkill($SKILL_SIGNET_OF_DISRUPTION) Then Return False
+	If Not Leveler_BarHasSkill($SKILL_LEECH_SIGNET) Then Return False
+	Return True
+EndFunc
+
+Func Leveler_BuySkillIfNeeded($a_i_SkillID)
+	If World_IsSkillLearnt($a_i_SkillID) Then Return True
+	Skill_BuySkillByID($a_i_SkillID)
+	If Leveler_WaitSkillLearnt($a_i_SkillID) Then Return True
+	Out("[Skills] Could not learn skill " & $a_i_SkillID)
+	Return False
+EndFunc
+
+; Monastery: SoD, Leech Signet, Energy Burn. Kaineng: Cry, Power Drain, SoD.
+; $a_b_CloseTrainer False at Cho so we do not walk off Kayao.
+Func Leveler_EquipTrainerSkills($a_b_CloseTrainer = True)
+	$g_b_UAIReady = False
+	If $a_b_CloseTrainer Then Leveler_CloseTrainerWindow()
+	If Leveler_TrainerSkillsOnBar() Then
+		Out("[Skills] Trainer skills are already on the bar")
+		Return True
+	EndIf
+
+	If Leveler_InterruptSkillsUnlocked() Then
+		Local $l_i_Kind = Leveler_CurrentSkillBarKind()
+		If $l_i_Kind = $LEVELER_BAR_STARTER Then $l_i_Kind = $LEVELER_BAR_INTERRUPT
+		Leveler_LoadProfessionSkillBar($l_i_Kind)
+		Sleep(600)
+		If Leveler_TrainerSkillsOnBar() Then Return True
+		Leveler_PutSkillOnBar(1, $SKILL_CRY_OF_FRUSTRATION)
+		Leveler_PutSkillOnBar(2, $SKILL_POWER_DRAIN)
+		Leveler_PutSkillOnBar(3, $SKILL_SIGNET_OF_DISRUPTION)
+		If Leveler_TrainerSkillsOnBar() Then Return True
+		Out("[Skills] Interrupt skills are learnt but not all on the bar yet")
+		Return False
+	EndIf
+
+	Local $l_i_Slot = 1
+	If World_IsSkillLearnt($SKILL_SIGNET_OF_DISRUPTION) Then
+		Leveler_PutSkillOnBar($l_i_Slot, $SKILL_SIGNET_OF_DISRUPTION)
+		$l_i_Slot += 1
+	EndIf
+	If World_IsSkillLearnt($SKILL_LEECH_SIGNET) Then
+		Leveler_PutSkillOnBar($l_i_Slot, $SKILL_LEECH_SIGNET)
+		$l_i_Slot += 1
+	EndIf
+	If World_IsSkillLearnt($SKILL_ENERGY_BURN) Then Leveler_PutSkillOnBar($l_i_Slot, $SKILL_ENERGY_BURN)
+	If Leveler_TrainerSkillsOnBar() Then Return True
+	Out("[Skills] Zhao Di skills are not all on the bar yet. Slots: " & Skill_GetSkillbarInfo(1, "SkillID") & ", " & Skill_GetSkillbarInfo(2, "SkillID") & ", " & Skill_GetSkillbarInfo(3, "SkillID"))
+	Return False
+EndFunc
+
+Func Leveler_EquipSkillBar()
+	If Not Map_GetInstanceInfo("IsOutpost") Then Return True
+	If Leveler_InterruptSkillsUnlocked() Then
+		Leveler_LoadProfessionSkillBar()
+		If Not Leveler_TrainerSkillsOnBar() Then Leveler_EquipTrainerSkills()
+		Return True
+	EndIf
+	If Leveler_UsesZenSkillBar() Then Return Leveler_LoadZenSkillBar()
+	If Leveler_ZhaoDiSkillsUnlocked() Then Return Leveler_EquipTrainerSkills()
+	Leveler_LoadProfessionSkillBar($LEVELER_BAR_STARTER)
+	Return True
+EndFunc
+
+#EndRegion Skill Bar
