@@ -101,11 +101,10 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 
 	Out("Let's do " & $a_s_Name)
 	Out("Exiting Outpost")
-	; Native Factions character on Cho / Zen. Wait ourselves so a timeout cannot resend Enter.
-	Ui_EnterChallenge(False, False)
+	; False = native character. Wait for the instance through the API.
+	Ui_EnterChallenge(False)
 	$g_i_EnterMissionMap = $l_i_StartMap
 	$g_h_MissionPrepQuiet = 0
-	Sleep(1500)
 	If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
 		If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
 			Out("[Step] Mission is still loading. Not sending Enter Challenge again.")
@@ -116,6 +115,37 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	EndIf
 	Sleep(2000)
 	Out("[Step] Mission instance loaded on map " & Map_GetMapID())
+	Return True
+EndFunc
+
+; Skip the intro video after Enter Challenge or arriving at Zen Daijun.
+Func Leveler_SkipEnterCinematic($a_i_Timeout = 15000)
+	Local $l_h_Timer = TimerInit()
+	Local $l_b_Skipped = False
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Map_GetInstanceInfo("IsLoading") Then
+			Sleep(200)
+			ContinueLoop
+		EndIf
+		If Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic() Then
+			Cinematic_SkipCinematic()
+			$l_b_Skipped = True
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		If $l_b_Skipped Then
+			Out("[Step] Skipped cinematic")
+			Sleep(500)
+			Return True
+		EndIf
+		If TimerDiff($l_h_Timer) < 4000 Then
+			Sleep(150)
+			ContinueLoop
+		EndIf
+		Return True
+	WEnd
+	If $l_b_Skipped Then Out("[Step] Skipped cinematic")
 	Return True
 EndFunc
 

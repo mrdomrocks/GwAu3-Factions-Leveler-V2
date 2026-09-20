@@ -70,10 +70,11 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_SpiritRiftWatch Then $l_s_Callback = "Leveler_InterruptSpiritRifts"
 
 	Local $l_b_Ok = False
-	If Map_GetInstanceInfo("IsOutpost") Or Not Pathfinder_IsMapAvailable($l_i_StartMap) Then
-		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 30000, $a_b_Combat)
-	Else
+	; Use pathfinder in towns too when the map is loaded (Seitung → Jaya portal, etc.).
+	If Pathfinder_IsMapAvailable($l_i_StartMap) Then
 		$l_b_Ok = Pathfinder_MoveTo($a_f_X, $a_f_Y, -1, $l_v_Obstacles, $l_i_Aggro, $LEVELER_FIGHT_RANGE_OUT, 0, $l_s_Callback)
+	Else
+		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 90000, $a_b_Combat)
 	EndIf
 
 	If Map_GetMapID() <> $l_i_StartMap Then Return True
@@ -248,6 +249,22 @@ Func Leveler_MoveAndExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False)
 		Sleep(1500)
 	EndIf
 	Return Map_WaitMapLoading($a_i_MapID)
+EndFunc
+
+; Pathfinder to a portal, then walk through it.
+Func Leveler_PathToExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False)
+	Out("[Path] Pathfinder to portal " & Round($a_f_X) & ", " & Round($a_f_Y) & " → map " & $a_i_MapID)
+	If Map_GetMapID() = $a_i_MapID Then Return True
+	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) Then
+		If Map_GetMapID() = $a_i_MapID Then Return True
+		Out("[Path] Pathfinder did not reach the portal. Walking the last stretch.")
+	EndIf
+	If Map_GetMapID() = $a_i_MapID Then Return True
+	If Not Leveler_MoveAndExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat) Then
+		Out("[Path] Did not load map " & $a_i_MapID & " (now " & Map_GetMapID() & ")")
+		Return False
+	EndIf
+	Return Leveler_WaitUntilMapReady()
 EndFunc
 
 ; Walk the Lost Treasure entrance portal back to Ran Musu. Used when a completed

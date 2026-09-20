@@ -8,7 +8,7 @@ Global Const $LEVELER_BAR_INTERRUPT = 1
 Global Const $LEVELER_BAR_INSPIRE = 2
 ; A/Me bar used from Zen Daijun until Kaineng. Apply the template; do not check slots.
 Global Const $LEVELER_BAR_ZEN = 3
-Global Const $LEVELER_TEMPLATE_ZEN = "OwVAIcdP8BogGwBFhAA"
+Global Const $LEVELER_TEMPLATE_ZEN = "OwVCEnYCX3DfAKoBcwQAAA"
 
 Func Leveler_ProfessionSkillBar($a_i_Kind, $a_i_Prof = 0)
 	If $a_i_Prof = 0 Then $a_i_Prof = Leveler_PrimaryProfession()

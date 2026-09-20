@@ -164,8 +164,8 @@ Func Leveler_IsQuestDone($a_i_QuestID)
 	Return $g_ab_QuestDone[$l_i_Flag] = True
 EndFunc
 
-Func Leveler_MarkQuestDone($a_i_QuestID)
-	If Leveler_HasIncompleteQuest($a_i_QuestID) Then Return
+Func Leveler_MarkQuestDone($a_i_QuestID, $a_b_Force = False)
+	If Not $a_b_Force And Leveler_HasIncompleteQuest($a_i_QuestID) Then Return
 	Local $l_i_Flag = Leveler_QuestFlagIndex($a_i_QuestID)
 	If $l_i_Flag < 0 Then Return
 	$g_ab_QuestDone[$l_i_Flag] = True
@@ -456,8 +456,23 @@ Func Leveler_LostTreasureAlreadyDone()
 	If Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then Return False
 	If Quest_GetQuestInfo($QUEST_LOST_TREASURE, "IsCompleted") Then Return True
 	If Leveler_IsQuestDone($QUEST_LOST_TREASURE) Then Return True
+	If Leveler_HasQuest($QUEST_WARNING_TENGU) Or Leveler_QuestFinished($QUEST_WARNING_TENGU) Then Return True
 	If Leveler_QuestFinished($QUEST_THREAT_GROWS) Or Leveler_HasQuest($QUEST_THREAT_GROWS) Then Return True
 	If Leveler_HasQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasQuest($QUEST_ROAD_LESS) Then Return True
+	Return False
+EndFunc
+
+; Empty log means not started. Do not treat that as handed in.
+Func Leveler_WarningTheTenguDone()
+	If Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then Return False
+	If Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Then Return True
+	If Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Then Return True
+	If Leveler_QuestFinished($QUEST_THREAT_GROWS) Then Return True
+	If Map_IsMapUnlocked($MAP_SEITUNG) Then Return True
+	Local $l_i_Map = Map_GetMapID()
+	If $l_i_Map = $MAP_SEITUNG Or $l_i_Map = $MAP_TSUMEI Or $l_i_Map = $MAP_PANJIANG Then Return True
+	If $l_i_Map = $MAP_SAOSHANG Or $l_i_Map = $MAP_JAYA Or $l_i_Map = $MAP_HAIJU Or $l_i_Map = $MAP_ZEN_OP Then Return True
 	Return False
 EndFunc
 
@@ -516,18 +531,11 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_CHO_MISSION] = $l_b_RanMusu Or $l_b_Seitung Or $l_b_TsumeiPath
 
 	$g_ab_StepDone[$LEVELER_STEP_ATTR_1] = Leveler_LostTreasureAlreadyDone()
-	If Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Then
+	If Leveler_QuestNeedsHandIn($QUEST_WARNING_TENGU) Or Not Leveler_WarningTheTenguDone() Then
 		$g_ab_StepDone[$LEVELER_STEP_TENGU] = False
-	ElseIf Leveler_QuestFinished($QUEST_WARNING_TENGU) Or Quest_GetQuestInfo($QUEST_WARNING_TENGU, "IsCompleted") Then
-		$g_ab_StepDone[$LEVELER_STEP_TENGU] = True
-		Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
-	ElseIf Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then
-		$g_ab_StepDone[$LEVELER_STEP_TENGU] = True
-		Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
-		Out("[Status] Warning the Tengu is already out of the log. Logging it completed and staying on Lost Treasure.")
 	Else
-		$g_ab_StepDone[$LEVELER_STEP_TENGU] = Leveler_IsQuestDone($QUEST_WARNING_TENGU) Or Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_JOURNEY_MASTER) Or Leveler_HasIncompleteQuest($QUEST_ROAD_LESS) Or $l_b_Seitung Or $l_b_TsumeiPath
-		If $g_ab_StepDone[$LEVELER_STEP_TENGU] Then Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
+		$g_ab_StepDone[$LEVELER_STEP_TENGU] = True
+		Leveler_MarkQuestDone($QUEST_WARNING_TENGU)
 	EndIf
 	If Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) And Leveler_NearLostTreasureHandIn() Then
 		Out("[Status] Already at Raitahn Nem hand-in " & Round($LOST_CHO_END_X) & ", " & Round($LOST_CHO_END_Y) & ". Will send dialog 0x17 without replaying the escort.")

@@ -18,8 +18,7 @@ Func Leveler_QuestLoop($a_i_QuestID, $a_f_X, $a_f_Y, $a_i_Dialog, $a_s_Mode = "a
 	EndIf
 
 	If $a_s_Mode = "complete" And $a_i_QuestID <> 0 And Not Leveler_HasQuest($a_i_QuestID) And $a_i_QuestID <> $QUEST_SECONDARY Then
-		Out("[Quest] #" & $a_i_QuestID & " is not in the log; cannot take the reward")
-		Return False
+		Return Leveler_FinishIfCompleteUnavailable($a_i_QuestID, $a_i_NpcModel)
 	EndIf
 
 	; Do not set a quest active or request its info until it is in the log.
@@ -30,6 +29,7 @@ Func Leveler_QuestLoop($a_i_QuestID, $a_f_X, $a_f_Y, $a_i_Dialog, $a_s_Mode = "a
 		Sleep(200)
 	EndIf
 
+	Local $l_b_Talked = False
 	Local $l_i_Attempt
 	For $l_i_Attempt = 1 To 8
 		If $g_b_LevelerPaused Then Return False
@@ -48,12 +48,14 @@ Func Leveler_QuestLoop($a_i_QuestID, $a_f_X, $a_f_Y, $a_i_Dialog, $a_s_Mode = "a
 			Sleep(500)
 			ContinueLoop
 		EndIf
+		$l_b_Talked = True
 
 		If $a_i_QuestID <> 0 Then Quest_RequestInfos($a_i_QuestID)
 		If Leveler_WaitQuestResult($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap, 4000, $l_b_HadQuest) Then ExitLoop
 	Next
 
 	If Not Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $l_i_StartMap, $l_b_HadQuest) Then
+		If $a_s_Mode = "complete" And $l_b_Talked And Leveler_FinishIfCompleteUnavailable($a_i_QuestID, $a_i_NpcModel) Then Return True
 		Out("[Quest] Failed to " & $a_s_Mode & " #" & $a_i_QuestID)
 		Return False
 	EndIf
@@ -106,26 +108,18 @@ Func Leveler_QuestTalk($a_f_X, $a_f_Y, $a_i_QuestID, $a_s_Mode, $a_i_Dialog, $a_
 	Return True
 EndFunc
 
-; Standard GwAu3 dialogs are 0x008QQQ01 (accept), 0x008QQQ04 (update), 0x008QQQ07 (reward).
+; Always send the numeric dialog ID. Do not rely on Ui_AcceptQuest string hex.
 Func Leveler_SendQuestAction($a_i_QuestID, $a_s_Mode, $a_i_Dialog)
+	If $a_i_Dialog <> 0 Then Ui_Dialog($a_i_Dialog)
 	Switch $a_s_Mode
 		Case "accept"
-			If $a_i_QuestID <> 0 And ($a_i_Dialog = 0 Or Leveler_IsStandardQuestDialog($a_i_Dialog, $a_i_QuestID, 1)) Then
-				Ui_AcceptQuest($a_i_QuestID)
-			ElseIf $a_i_Dialog <> 0 Then
-				Ui_Dialog($a_i_Dialog)
-			EndIf
+			If $a_i_QuestID <> 0 And $a_i_Dialog = 0 Then Ui_AcceptQuest($a_i_QuestID)
 		Case "complete"
 			If $a_i_QuestID <> 0 Then Ui_RewardQuest($a_i_QuestID)
 			If $a_i_Dialog <> 0 Then Ui_Dialog($a_i_Dialog)
 		Case "step"
-			If $a_i_QuestID <> 0 And ($a_i_Dialog = 0 Or Leveler_IsStandardQuestDialog($a_i_Dialog, $a_i_QuestID, 4)) Then
-				Ui_UpdateQuest($a_i_QuestID)
-			ElseIf $a_i_Dialog <> 0 Then
-				Ui_Dialog($a_i_Dialog)
-			EndIf
+			If $a_i_QuestID <> 0 And $a_i_Dialog = 0 Then Ui_UpdateQuest($a_i_QuestID)
 		Case Else
-			If $a_i_Dialog <> 0 Then Ui_Dialog($a_i_Dialog)
 	EndSwitch
 EndFunc
 
@@ -413,4 +407,15 @@ Func Leveler_NpcHasQuestMarker($a_i_NpcModel)
 	If $l_i_Npc = 0 Then Return False
 	If Not Leveler_IsTalkNpc($l_i_Npc) Then Return False
 	Return Agent_GetAgentInfo($l_i_Npc, "HasQuest")
+EndFunc
+
+; After talking and sending complete: no reward dialog means the quest is already handed in.
+Func Leveler_FinishIfCompleteUnavailable($a_i_QuestID, $a_i_NpcModel = 0)
+	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
+	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
+	If Leveler_QuestReadyForReward($a_i_QuestID) Then Return False
+	If Leveler_QuestNeedsHandIn($a_i_QuestID) And Leveler_NpcHasQuestMarker($a_i_NpcModel) Then Return False
+	Leveler_MarkQuestDone($a_i_QuestID, True)
+	Out("[Quest] #" & $a_i_QuestID & " complete dialog is not available. Treating as already handed in.")
+	Return True
 EndFunc
