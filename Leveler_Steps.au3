@@ -645,7 +645,6 @@ Func Leveler_Step_ChosMission()
 	If Map_GetMapID() = $MAP_RAN_MUSU Then Return Leveler_MarkChoMissionComplete()
 	If Map_GetMapID() = $MAP_CHO_OUTPOST And Not Map_GetInstanceInfo("IsOutpost") Then
 		Out("[Step] Already inside Minister Cho's Estate")
-		Leveler_ReapplyZhaoDiSkillBar()
 	Else
 		If Map_GetMapID() <> $MAP_CHO_OUTPOST Or Not Map_GetInstanceInfo("IsOutpost") Then
 			If Not Leveler_Travel($MAP_CHO_OUTPOST) Then Return False
@@ -654,13 +653,12 @@ Func Leveler_Step_ChosMission()
 		If Not Leveler_FormalIntroductionTurnedIn() Then
 			Out("[Step] Formal Introduction must be handed in at Kayao before the mission")
 			If Not Leveler_HandInFormalAtKayao(False) Then Return False
-			; Do not Agent_CancelAction here. ACTION_CANCEL next to Enter Mission disconnects.
 			Sleep(1200)
 		EndIf
-		Out("[Step] Load skill bar, then henchmen, then enter")
-		If Not Leveler_EquipTrainerSkills(False) Then Return False
-		; False: do not LeaveGroup before Enter Challenge.
+		; Stage 1: henchmen. Skill bar is already set — do not reload it.
+		Out("[Step] Add henchmen, then enter")
 		If Not Leveler_EnsureFormingPartyHenchmen(False) Then Return False
+		; Stage 2: native Enter Challenge.
 		If Not Leveler_EnterMission("Minister Cho's Estate", $MAP_CHO_OUTPOST) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
@@ -1413,7 +1411,6 @@ Func Leveler_Step_ToZenDaijun()
 	EndIf
 
 	If Map_GetMapID() <> $MAP_ZEN_OP Then Return False
-	Leveler_SkipEnterCinematic()
 	Out("[Step] Arrived at Zen Daijun")
 	Return True
 EndFunc
@@ -1450,9 +1447,10 @@ Func Leveler_Step_ZenDaijunMission()
 			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
 		EndIf
 		If Not Leveler_WaitUntilMapReady() Then Return False
-		Out("[Step] Load skill bar, then henchmen, then enter")
-		If Not Leveler_LoadZenSkillBar() Then Return False
+		; Stage 1: henchmen. Skill bar is already set — do not reload it.
+		Out("[Step] Add henchmen, then enter")
 		If Not Leveler_PrepareMissionParty() Then Return False
+		; Stage 2: native Enter Challenge.
 		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_OP) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False

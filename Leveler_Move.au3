@@ -1475,8 +1475,6 @@ Func Leveler_RecoverWipe()
 	$g_b_SpiritRiftWatch = False
 	$g_b_UAIReady = False
 	$g_i_LastUAIMap = 0
-	; Allow a fresh Enter Challenge after returning to the outpost.
-	$g_i_EnterMissionMap = 0
 	If $g_b_FarmMode Then
 		Out("[Recover] Wiped during Punch-Out farm. Returning to Gunnar's Hold.")
 		Sleep(2000)
@@ -1513,8 +1511,6 @@ Func Leveler_RecoverWipe()
 		Out("[Recover] Failed to reach an outpost.")
 		Return False
 	EndIf
-	; Skill / party / ReturnToOutpost packets must settle before Enter Challenge.
-	Leveler_MarkMissionPrepQuiet()
 	Out("[Recover] Back in outpost. Settling before retry: " & $g_s_CurrentHeader)
 	Sleep(3000)
 	Return True

@@ -123,7 +123,6 @@ Func Leveler_LoadProfessionSkillBar($a_i_Kind = -1)
 	If $l_s_Bar = "" Then Return False
 	Out("[Party] Loading profession " & Leveler_PrimaryProfession() & " bar kind " & $a_i_Kind)
 	Local $l_b_Ok = Attribute_LoadSkillTemplate($l_s_Bar)
-	Leveler_MarkMissionPrepQuiet()
 	Sleep(800)
 	If $l_b_Ok Then Out("[Party] Profession skill template loaded")
 	If Not $l_b_Ok Then Out("[Party] Profession skill template failed; will set trainer skills by slot")
@@ -142,7 +141,6 @@ Func Leveler_LoadZenSkillBar()
 	Out("[Party] Loading skill template " & $LEVELER_TEMPLATE_ZEN)
 	Attribute_LoadSkillTemplate($LEVELER_TEMPLATE_ZEN)
 	$g_i_ZenBarLoadedMap = $l_i_Map
-	Leveler_MarkMissionPrepQuiet()
 	Sleep(800)
 	Return True
 EndFunc

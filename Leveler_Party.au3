@@ -419,17 +419,11 @@ Func Leveler_EquipTrainerSkills($a_b_CloseTrainer = True)
 		If $l_i_Kind = $LEVELER_BAR_STARTER Then $l_i_Kind = $LEVELER_BAR_INTERRUPT
 		Leveler_LoadProfessionSkillBar($l_i_Kind)
 		Sleep(600)
-		If Leveler_TrainerSkillsOnBar() Then
-			Leveler_MarkMissionPrepQuiet()
-			Return True
-		EndIf
+		If Leveler_TrainerSkillsOnBar() Then Return True
 		Leveler_PutSkillOnBar(1, $SKILL_CRY_OF_FRUSTRATION)
 		Leveler_PutSkillOnBar(2, $SKILL_POWER_DRAIN)
 		Leveler_PutSkillOnBar(3, $SKILL_SIGNET_OF_DISRUPTION)
-		If Leveler_TrainerSkillsOnBar() Then
-			Leveler_MarkMissionPrepQuiet()
-			Return True
-		EndIf
+		If Leveler_TrainerSkillsOnBar() Then Return True
 		Out("[Step] Interrupt skills are learnt but not all on the bar yet")
 		Return False
 	EndIf
@@ -444,10 +438,7 @@ Func Leveler_EquipTrainerSkills($a_b_CloseTrainer = True)
 		$l_i_Slot += 1
 	EndIf
 	If World_IsSkillLearnt($SKILL_ENERGY_BURN) Then Leveler_PutSkillOnBar($l_i_Slot, $SKILL_ENERGY_BURN)
-	If Leveler_TrainerSkillsOnBar() Then
-		Leveler_MarkMissionPrepQuiet()
-		Return True
-	EndIf
+	If Leveler_TrainerSkillsOnBar() Then Return True
 	Out("[Step] Zhao Di skills are not all on the bar yet. Slots: " & Skill_GetSkillbarInfo(1, "SkillID") & ", " & Skill_GetSkillbarInfo(2, "SkillID") & ", " & Skill_GetSkillbarInfo(3, "SkillID"))
 	Return False
 EndFunc

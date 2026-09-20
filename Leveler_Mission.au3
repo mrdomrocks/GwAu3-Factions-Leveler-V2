@@ -15,7 +15,6 @@ Func Leveler_InMissionInstance($a_i_MapID = 0)
 EndFunc
 
 ; Poll until the mission instance is explorable. Stay silent while loading.
-; Do not use Map_WaitMapLoading: it skips cinematics during the load.
 Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 90000)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
@@ -24,78 +23,25 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 900
 			Sleep(250)
 			ContinueLoop
 		EndIf
-		If Leveler_InMissionInstance($a_i_MapID) Then
-			$g_i_EnterMissionMap = 0
-			Return True
-		EndIf
+		If Leveler_InMissionInstance($a_i_MapID) Then Return True
 		If Map_GetInstanceInfo("IsExplorable") Then
 			Local $l_i_Map = Map_GetMapID()
-			If $l_i_Map = $a_i_StartMap Or $l_i_Map = $a_i_MapID Then
-				$g_i_EnterMissionMap = 0
-				Return True
-			EndIf
+			If $l_i_Map = $a_i_StartMap Or $l_i_Map = $a_i_MapID Then Return True
 		EndIf
 		Sleep(250)
 	WEnd
 	Return Leveler_InMissionInstance($a_i_MapID)
 EndFunc
 
-Func Leveler_MarkMissionPrepQuiet()
-	$g_h_MissionPrepQuiet = TimerInit()
-EndFunc
-
-; Skillbar / hench packets stacked with Enter can disconnect. Drain them first.
-Func Leveler_WaitMissionEnterQuiet($a_i_QuietMs = 4500)
-	If $g_h_MissionPrepQuiet = 0 Then
-		Sleep($a_i_QuietMs)
-		Return True
-	EndIf
-	Local $l_i_Left = $a_i_QuietMs - TimerDiff($g_h_MissionPrepQuiet)
-	If $l_i_Left > 0 Then
-		Out("[Step] Waiting " & Int($l_i_Left) & " ms so party/skill packets settle before Enter")
-		Sleep($l_i_Left)
-	EndIf
-	Return True
-EndFunc
-
+; Two stages for missions: add henchmen (caller), then native Enter Challenge.
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Local $l_i_StartMap = Map_GetMapID()
 	If Leveler_InMissionInstance($a_i_MapID) Then
-		$g_i_EnterMissionMap = 0
 		Out("[Step] Already inside " & $a_s_Name & " (map " & $l_i_StartMap & ")")
 		Return True
 	EndIf
-
-	; Engine already accepted Enter Challenge. Do not send it again.
-	If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
-		Out("[Step] Mission is already starting; waiting for the map to load")
-		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
-		Sleep(2000)
-		Return True
-	EndIf
-
-	If $g_i_EnterMissionMap = $l_i_StartMap Then
-		Out("[Step] Enter Challenge already sent on this outpost. Waiting for the instance.")
-		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
-		Sleep(2000)
-		Return True
-	EndIf
-
 	If Not Map_GetInstanceInfo("IsOutpost") Then
 		Out("[Step] Cannot enter " & $a_s_Name & " from map " & $l_i_StartMap & " type " & Map_GetInstanceInfo("Type"))
-		Return False
-	EndIf
-
-	; Do not CancelAction, LeaveGroup, or reload the skill bar here.
-	; After a wipe recover, quiet timer is fresh — wait the full drain before Enter.
-	Leveler_WaitMissionEnterQuiet(4500)
-
-	If Not Map_GetInstanceInfo("IsOutpost") Or Map_GetInstanceInfo("IsLoading") Then
-		Out("[Step] Outpost not ready for Enter Challenge (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
-		Return False
-	EndIf
-	If Party_GetPartyContextInfo("IsDefeated") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
-		Out("[Step] Party still defeated or waiting for mission. Not sending Enter Challenge.")
 		Return False
 	EndIf
 
@@ -103,13 +49,7 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Out("Exiting Outpost")
 	; False = native character. Wait for the instance through the API.
 	Ui_EnterChallenge(False)
-	$g_i_EnterMissionMap = $l_i_StartMap
-	$g_h_MissionPrepQuiet = 0
 	If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
-		If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
-			Out("[Step] Mission is still loading. Not sending Enter Challenge again.")
-			Return False
-		EndIf
 		Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
 		Return False
 	EndIf
@@ -117,36 +57,4 @@ Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Out("[Step] Mission instance loaded on map " & Map_GetMapID())
 	Return True
 EndFunc
-
-; Skip the intro video after Enter Challenge or arriving at Zen Daijun.
-Func Leveler_SkipEnterCinematic($a_i_Timeout = 15000)
-	Local $l_h_Timer = TimerInit()
-	Local $l_b_Skipped = False
-	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If $g_b_LevelerPaused Then Return False
-		If Map_GetInstanceInfo("IsLoading") Then
-			Sleep(200)
-			ContinueLoop
-		EndIf
-		If Game_GetGameInfo("IsCinematic") Or Leveler_InCinematic() Then
-			Cinematic_SkipCinematic()
-			$l_b_Skipped = True
-			Sleep(250)
-			ContinueLoop
-		EndIf
-		If $l_b_Skipped Then
-			Out("[Step] Skipped cinematic")
-			Sleep(500)
-			Return True
-		EndIf
-		If TimerDiff($l_h_Timer) < 4000 Then
-			Sleep(150)
-			ContinueLoop
-		EndIf
-		Return True
-	WEnd
-	If $l_b_Skipped Then Out("[Step] Skipped cinematic")
-	Return True
-EndFunc
-
 #EndRegion Mission

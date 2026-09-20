@@ -100,7 +100,6 @@ Func Leveler_EnsureFormingPartyHenchmen($a_b_LeaveFirst = True)
 		Sleep(500)
 	EndIf
 	Leveler_AddHenchmanList($l_ai_Hench)
-	Leveler_MarkMissionPrepQuiet()
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < 5000
 		If Leveler_HasFormingPartyHenchmen() Then ExitLoop
@@ -140,7 +139,6 @@ Func Leveler_PrepareMissionParty()
 	If Leveler_HenchmanCount() < $l_i_Want Then
 		; Do not LeaveGroup here. Kick + Enter Mission disconnects.
 		Leveler_AddHenchmanList($l_ai_Want)
-		Leveler_MarkMissionPrepQuiet()
 		Local $l_h_Timer = TimerInit()
 		While TimerDiff($l_h_Timer) < 5000
 			If Leveler_HenchmanCount() >= $l_i_Want Then ExitLoop

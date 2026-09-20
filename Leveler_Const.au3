@@ -397,10 +397,6 @@ Global $g_s_CurrentHeader = ""
 Global $g_b_UAIReady = False
 Global $g_i_LastUAIMap = 0
 Global $g_b_ConnectionLost = False
-; Last outpost we queued Enter Challenge on. Do not send it twice.
-Global $g_i_EnterMissionMap = 0
-; TimerInit() after the last skillbar / hench packet. Enter waits until this is quiet.
-Global $g_h_MissionPrepQuiet = 0
 ; Map ID where the Zen template was already applied this run.
 Global $g_i_ZenBarLoadedMap = 0
 ; One-time recovery after a completed Lost Treasure restart: path Cho -> Ran Musu -> Tengu.
