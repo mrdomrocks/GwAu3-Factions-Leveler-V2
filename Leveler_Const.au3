@@ -439,4 +439,8 @@ Global $g_b_MoxUnlocked = False
 Global $g_b_XunlaiUnlocked = False
 ; Sticky after GToB trainer dialogs.
 Global $g_b_SecondaryProfsTalked = False
+; Outpost MapID after native Ui_EnterChallenge, so we do not send Enter twice.
+Global $g_i_EnterMissionMap = 0
+; Timer after hench/skill packets so Enter Challenge is not stacked with them.
+Global $g_h_MissionPrepQuiet = 0
 #EndRegion Runtime State
