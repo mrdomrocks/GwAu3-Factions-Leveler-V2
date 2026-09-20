@@ -237,19 +237,6 @@ Func Leveler_QuestReadyForReward($a_i_QuestID)
 	Return Leveler_QuestLogMatch($a_i_QuestID) = 2
 EndFunc
 
-; #317 and #318 stay active until the NPC hand-in removes them from the log.
-Func Leveler_QuestNeedsTurnIn($a_i_QuestID)
-	If $a_i_QuestID = $QUEST_SECONDARY Then Return True
-	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return True
-	Return False
-EndFunc
-
-Func Leveler_QuestLogActive($a_i_QuestID)
-	If Leveler_QuestNeedsTurnIn($a_i_QuestID) Then Return Leveler_QuestInLog($a_i_QuestID)
-	If Quest_GetQuestInfo($a_i_QuestID, "IsIncomplete") Then Return True
-	Return Leveler_QuestLogMatch($a_i_QuestID) = 1
-EndFunc
-
 Func Leveler_QuestLogCompleted($a_i_QuestID)
 	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
 	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()

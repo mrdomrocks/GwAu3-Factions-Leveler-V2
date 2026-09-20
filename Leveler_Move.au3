@@ -217,10 +217,6 @@ Func Leveler_TalkJoraOnIceCliff()
 	Return True
 EndFunc
 
-Func Leveler_TalkJoraInEotn()
-	Return Leveler_TalkJoraOnIceCliff()
-EndFunc
-
 ; Target the living NPC, walk into talk range, then send the dialog.
 Func Leveler_TalkAndDialog($a_i_Npc, $a_i_Dialog)
 	If $a_i_Npc = 0 Then Return False
@@ -959,17 +955,6 @@ Func Leveler_TalkModel($a_i_Model, $a_i_Dialog)
 	Return True
 EndFunc
 
-Func Leveler_WaitUntilInCombat($a_i_Timeout = 60000)
-	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If $g_b_LevelerPaused Then Return False
-		If Leveler_IsWiped() Then Return False
-		If Leveler_InDanger($LEVELER_AGGRO) Then Return True
-		Sleep(250)
-	WEnd
-	Return Leveler_InDanger($LEVELER_AGGRO)
-EndFunc
-
 ; Wine can report a live cinematic pointer that is actually null. Do not treat that as a video.
 Func Leveler_InCinematic()
 	Local $l_p_Ptr = Game_GetGameInfo("Cinematic")
@@ -983,23 +968,6 @@ Func Leveler_OnCinematicMap()
 	If $l_i_Map >= 679 And $l_i_Map <= 685 Then Return True
 	If $l_i_Map = 689 Or $l_i_Map = 694 Then Return True
 	Return False
-EndFunc
-
-; Press skip only if this account already knows the cinematic. Never block the next action.
-Func Leveler_SkipKnownCinematic($a_i_StartTimeout = 2500)
-	Local $l_h_Timer = TimerInit()
-	While Not Leveler_InCinematic()
-		If TimerDiff($l_h_Timer) > $a_i_StartTimeout Then Return True
-		Sleep(100)
-	WEnd
-	Other_PingSleep(1200)
-	$l_h_Timer = TimerInit()
-	While Leveler_InCinematic() And TimerDiff($l_h_Timer) < 5000
-		Cinematic_SkipCinematic()
-		Sleep(200)
-	WEnd
-	If Not Leveler_InCinematic() Then Out("[Move] Skipped known cinematic")
-	Return True
 EndFunc
 
 ; After the scrying pool: skip if this account already knows the video, else wait it out.
@@ -1040,10 +1008,6 @@ Func Leveler_WaitCinematic($a_i_StartTimeout = 8000, $a_i_PlayTimeout = 240000)
 	WEnd
 	Sleep(500)
 	Return True
-EndFunc
-
-Func Leveler_SkipCinematic($a_i_StartTimeout = 8000, $a_i_PlayTimeout = 240000)
-	Return Leveler_WaitCinematic($a_i_StartTimeout, $a_i_PlayTimeout)
 EndFunc
 
 ; After a mission ends: skip the cinematic, then wait for whatever outpost the
@@ -1249,42 +1213,6 @@ Func Leveler_HasKeiranBow()
 	If Item_FindItemByModelID($MODEL_KEIRAN_BOW) <> 0 Then Return True
 	If Item_GetInventoryInfo("WeaponSet0WeaponModelID") = $MODEL_KEIRAN_BOW Then Return True
 	If Item_GetInventoryInfo("WeaponSet1WeaponModelID") = $MODEL_KEIRAN_BOW Then Return True
-	Return False
-EndFunc
-
-Func Leveler_EquipKeiranBow()
-	If Not Leveler_HasKeiranBow() Then
-		Out("[Farm] Getting Keiran's Bow from Gwen")
-		If Not Leveler_MoveAndDialog(-6583.00, 6672.00, $DIALOG_KEIRAN_BOW, False) Then Return False
-		Sleep(800)
-	EndIf
-	Local $l_i_Bow = Item_FindItemByModelID($MODEL_KEIRAN_BOW)
-	If $l_i_Bow <> 0 Then Item_EquipItem($l_i_Bow)
-	Sleep(400)
-	Return True
-EndFunc
-
-; Open Keiran's HotN dialog and enter Auspicious Beginnings (first button + 0xE).
-Func Leveler_EnterAbQuest()
-	Local $l_i_Attempt
-	For $l_i_Attempt = 1 To 4
-		If Map_GetMapID() = $MAP_AB Then Return True
-		If Not Leveler_InteractNpcAt(-6662.00, 6584.00, False) Then
-			Sleep(400)
-			ContinueLoop
-		EndIf
-		Sleep(700)
-		; Prefer the documented first-button + 0xE pattern, then nearby IDs.
-		Local $l_ai_Dialogs[8] = [0x98, 0x8F, 0x97, 0x99, 0x9A, 0x8E, 0x90, 0x81]
-		Local $d
-		For $d = 0 To UBound($l_ai_Dialogs) - 1
-			Ui_Dialog($l_ai_Dialogs[$d])
-			Sleep(600)
-			If Map_GetMapID() <> $MAP_HOM Then ExitLoop
-		Next
-		If Map_WaitMapLoading($MAP_AB, -1, 15000) Then Return True
-	Next
-	Out("[Farm] Failed to enter Auspicious Beginnings")
 	Return False
 EndFunc
 
@@ -1528,6 +1456,10 @@ EndFunc
 
 Func Leveler_RecoverWipe()
 	$g_b_SpiritRiftWatch = False
+	$g_b_UAIReady = False
+	$g_i_LastUAIMap = 0
+	; Allow a fresh Enter Challenge after returning to the outpost.
+	$g_i_EnterMissionMap = 0
 	If $g_b_FarmMode Then
 		Out("[Recover] Wiped during Punch-Out farm. Returning to Gunnar's Hold.")
 		Sleep(2000)
@@ -1535,8 +1467,7 @@ Func Leveler_RecoverWipe()
 			If Not Leveler_Travel($MAP_GUNNAR) Then
 				Chat_SendChat("resign", "/")
 				Sleep(1200)
-				If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
-				Map_WaitMapLoading()
+				Leveler_ReturnFromDefeat()
 			EndIf
 		EndIf
 		$g_b_KilroyMode = True
@@ -1551,8 +1482,7 @@ Func Leveler_RecoverWipe()
 			If Not Leveler_Travel($MAP_GUNNAR) Then
 				Chat_SendChat("resign", "/")
 				Sleep(1200)
-				If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
-				Map_WaitMapLoading()
+				Leveler_ReturnFromDefeat()
 			EndIf
 		EndIf
 		Out("[Recover] Kilroy wipe handled. Retrying Punch the Clown.")
@@ -1561,21 +1491,41 @@ Func Leveler_RecoverWipe()
 
 	Out("[Recover] Party wiped or dead. Resigning and returning to outpost.")
 	Chat_SendChat("resign", "/")
-	Sleep(1200)
+	Sleep(1500)
+	If Not Leveler_ReturnFromDefeat() Then
+		Out("[Recover] Failed to reach an outpost.")
+		Return False
+	EndIf
+	; Skill / party / ReturnToOutpost packets must settle before Enter Challenge.
+	Leveler_MarkMissionPrepQuiet()
+	Out("[Recover] Back in outpost. Settling before retry: " & $g_s_CurrentHeader)
+	Sleep(3000)
+	Return True
+EndFunc
 
+; Send ReturnToOutpost once, then wait. Do not spam it — that disconnects on re-enter.
+Func Leveler_ReturnFromDefeat()
+	Local $l_b_SentReturn = False
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < 60000
-		If Map_GetInstanceInfo("IsOutpost") Then ExitLoop
-		If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
+		If $g_b_LevelerPaused Then Return False
+		If Map_GetInstanceInfo("IsLoading") Then
+			Sleep(250)
+			ContinueLoop
+		EndIf
+		If Map_GetInstanceInfo("IsOutpost") Then
+			Sleep(1000)
+			Return True
+		EndIf
+		If Party_GetPartyContextInfo("IsDefeated") And Not $l_b_SentReturn Then
+			Out("[Recover] Returning to outpost")
+			Map_ReturnToOutpost(False)
+			$l_b_SentReturn = True
+			Sleep(2000)
+			ContinueLoop
+		EndIf
 		Sleep(500)
 	WEnd
-
-	Map_WaitMapLoading()
-	Sleep(1000)
-	If Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Recover] Back in outpost. Retrying: " & $g_s_CurrentHeader)
-		Return True
-	EndIf
-	Out("[Recover] Failed to reach an outpost.")
+	If Map_GetInstanceInfo("IsOutpost") Then Return True
 	Return False
 EndFunc

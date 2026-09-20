@@ -26,10 +26,6 @@ Func Leveler_IsMesmer()
 	Return Leveler_PrimaryProfession() = $GC_I_PROFESSION_MESMER
 EndFunc
 
-Func Leveler_HasMesmer()
-	Return Leveler_PrimaryProfession() = $GC_I_PROFESSION_MESMER Or Leveler_SecondaryProfession() = $GC_I_PROFESSION_MESMER
-EndFunc
-
 ; Bitmask of professions this character can select (PartyProfession.unlocked_professions).
 Func Leveler_UnlockedProfessionFlags()
 	Local $l_i_MyID = Agent_GetMyID()
@@ -68,10 +64,6 @@ Func Leveler_ProfessionUnlockCount($a_i_Flags)
 	Return $l_i_Count
 EndFunc
 
-Func Leveler_IsProfessionUnlocked($a_i_Prof)
-	Return Leveler_ProfessionBitOn(Leveler_UnlockedProfessionFlags(), $a_i_Prof)
-EndFunc
-
 ; GToB trainers unlock every secondary, including Paragon and Dervish.
 Func Leveler_RemainingSecondariesUnlocked()
 	If $g_b_SecondaryProfsTalked Then Return True
@@ -88,15 +80,6 @@ EndFunc
 #EndRegion Profession
 
 #Region Party
-
-Func Leveler_HenchmanCount()
-	Local $l_i_Count = Party_GetPartyContextInfo("HenchmenCount")
-	If $l_i_Count > 0 Then Return $l_i_Count
-	$l_i_Count = Party_GetMyPartyInfo("ArrayHenchmanPartyMemberSize")
-	If $l_i_Count > 0 Then Return $l_i_Count
-	If Party_GetMyPartyHenchmanInfo(1, "AgentID") <> 0 Then Return 1
-	Return 0
-EndFunc
 
 Func Leveler_HeroCount()
 	Local $l_i_Count = Party_GetPartyContextInfo("HeroCount")
@@ -223,105 +206,6 @@ Func Leveler_ConfirmOliasInHeroList()
 	Return False
 EndFunc
 
-Func Leveler_FormingPartyHenchIDs()
-	Local $l_ai_Hench[3] = [2, 5, 1]
-	Return $l_ai_Hench
-EndFunc
-
-Func Leveler_HenchmenForMap($a_i_Map = 0)
-	If $a_i_Map = 0 Then $a_i_Map = Map_GetMapID()
-	Local $l_i_Max = Map_GetCurrentAreaInfo("MaxPartySize")
-
-	If $a_i_Map = $MAP_SEITUNG Then
-		Local $l_ai_Seitung[5] = [2, 3, 1, 6, 5]
-		Return $l_ai_Seitung
-	EndIf
-	If $a_i_Map = $MAP_ZEN_OP Then
-		Local $l_ai_Zen[5] = [2, 3, 1, 8, 5]
-		Return $l_ai_Zen
-	EndIf
-	If $a_i_Map = $MAP_MARKETPLACE Then
-		Local $l_ai_Market[7] = [6, 9, 5, 1, 4, 7, 3]
-		Return $l_ai_Market
-	EndIf
-	If $a_i_Map = $MAP_KAINENG Then
-		Local $l_ai_Kc[7] = [2, 10, 4, 8, 7, 9, 12]
-		Return $l_ai_Kc
-	EndIf
-	If $a_i_Map = $MAP_BOREAL Then
-		Local $l_ai_Boreal[7] = [7, 9, 2, 3, 4, 6, 5]
-		Return $l_ai_Boreal
-	EndIf
-	If $a_i_Map = $MAP_EOTN Or $a_i_Map = $MAP_HOM Then
-		Local $l_ai_Eotn[7] = [2, 3, 5, 6, 7, 9, 10]
-		Return $l_ai_Eotn
-	EndIf
-	If $a_i_Map = $MAP_GUNNAR Then
-		Local $l_ai_Gunnar[3] = [4, 5, 6]
-		Return $l_ai_Gunnar
-	EndIf
-	; EotN hench order: 1 Devona, 2 Talon, 3 Aidan, 4 Zho, 5 Lina, 6 Mhenlo, 7 Eve, 8 Lo Sha, 9 Cynn, 10 Herta
-	If $a_i_Map = $MAP_LONGEYE Then
-		Local $l_ai_Longeye[3] = [6, 4, 8]
-		Return $l_ai_Longeye
-	EndIf
-	If $a_i_Map = $MAP_LIONS_ARCH Then
-		Local $l_ai_La[1] = [1]
-		Return $l_ai_La
-	EndIf
-	If $a_i_Map = $MAP_KAMADAN Then
-		Local $l_ai_Kamadan[3] = [2, 12, 9]
-		Return $l_ai_Kamadan
-	EndIf
-	If $l_i_Max > 4 Then
-		Local $l_ai_Large[7] = [2, 3, 5, 6, 7, 9, 10]
-		Return $l_ai_Large
-	EndIf
-
-	Local $l_ai_Small[3] = [2, 5, 1]
-	Return $l_ai_Small
-EndFunc
-
-Func Leveler_AddHenchmanList(ByRef $a_ai_Hench)
-	Local $i
-	Local $l_s_List = ""
-	For $i = 0 To UBound($a_ai_Hench) - 1
-		If $i > 0 Then $l_s_List &= ", "
-		$l_s_List &= $a_ai_Hench[$i]
-		Party_AddNpc($a_ai_Hench[$i])
-		Sleep(250)
-	Next
-	Sleep(500)
-	Out("[Party] Invited henchmen " & $l_s_List)
-	Return True
-EndFunc
-
-Func Leveler_HasFormingPartyHenchmen()
-	Return Leveler_HenchmanCount() >= 3
-EndFunc
-
-Func Leveler_EnsureFormingPartyHenchmen()
-	If Leveler_HasFormingPartyHenchmen() Then
-		Out("[Party] Forming A Party henchmen are already in the party (" & Leveler_HenchmanCount() & ")")
-		Return True
-	EndIf
-	Local $l_ai_Hench = Leveler_FormingPartyHenchIDs()
-	Party_LeaveGroup(True)
-	Sleep(500)
-	Leveler_AddHenchmanList($l_ai_Hench)
-	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < 5000
-		If Leveler_HasFormingPartyHenchmen() Then ExitLoop
-		Sleep(250)
-	WEnd
-	If Leveler_HasFormingPartyHenchmen() Then
-		Out("[Party] Forming A Party henchmen ready (" & Leveler_HenchmanCount() & ")")
-		Return True
-	EndIf
-	Out("[Party] Forming A Party needs 3 henchmen (2, 5, 1); have " & Leveler_HenchmanCount() & ". Retrying.")
-	Return False
-EndFunc
-
 Func Leveler_AddHeroTeam($a_b_Olias = False)
 	Local $l_i_Fourth = $GC_I_HERO_ID_MOX
 	Local $l_s_FourthBar = "OgCikys8wchuD4xb5VAAAAAA"
@@ -364,136 +248,7 @@ Func Leveler_PrepareHeroTeam($a_ai_Hench = 0, $a_b_Olias = False)
 	Return True
 EndFunc
 
-; Match Python PrepareForBattle: always LeaveParty, then AddHenchmen for this map.
-; Skipping Leave when HenchmanCount looks full left new characters without henchmen
-; when the count API was stale, which breaks Forming A Party.
-Func Leveler_PrepareForBattle()
-	$g_b_CombatMode = True
-	$g_b_UAIReady = False
-	Leveler_EquipSkillBar()
-	Ui_SetDifficulty(False)
-
-	Local $l_ai_Want = Leveler_HenchmenForMap()
-	Party_LeaveGroup(True)
-	Sleep(800)
-	Leveler_AddHenchmanList($l_ai_Want)
-	Out("[Party] Henchmen in party: " & Leveler_HenchmanCount() & "/" & UBound($l_ai_Want))
-
-	Leveler_PrepareCombatAI()
-	Return True
-EndFunc
-
-Func Leveler_PrepareMissionParty()
-	$g_b_CombatMode = True
-	Local $l_ai_Want = Leveler_HenchmenForMap()
-	Local $l_i_Want = UBound($l_ai_Want)
-	If Leveler_HenchmanCount() < $l_i_Want Then
-		; Do not LeaveGroup here. Kick + Enter Mission disconnects.
-		Leveler_AddHenchmanList($l_ai_Want)
-		Local $l_h_Timer = TimerInit()
-		While TimerDiff($l_h_Timer) < 5000
-			If Leveler_HenchmanCount() >= $l_i_Want Then ExitLoop
-			Sleep(250)
-		WEnd
-		Out("[Party] Henchmen in party: " & Leveler_HenchmanCount() & "/" & $l_i_Want)
-	Else
-		Out("[Party] Mission henchmen already in the party")
-	EndIf
-	Return True
-EndFunc
-
 #EndRegion Party
-
-#Region Mission
-
-Func Leveler_InMissionInstance($a_i_MapID = 0)
-	If Map_GetInstanceInfo("IsLoading") Then Return False
-	If Map_GetInstanceInfo("IsOutpost") Then Return False
-	If Not Map_GetInstanceInfo("IsExplorable") Then Return False
-	If $a_i_MapID <> 0 And Map_GetMapID() = $a_i_MapID Then Return True
-	; Cho and Zen keep the outpost map ID when the mission instance loads.
-	If Map_GetMapID() = $MAP_CHO_OUTPOST Then Return True
-	If Map_GetMapID() = $MAP_ZEN_OP Then Return True
-	If Map_GetMapID() = $MAP_ZEN_EXP Then Return True
-	Return False
-EndFunc
-
-; Poll until the mission instance is explorable. Stay silent while loading.
-; Do not use Map_WaitMapLoading: it skips cinematics during the load.
-Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 90000)
-	Local $l_h_Timer = TimerInit()
-	While TimerDiff($l_h_Timer) < $a_i_Timeout
-		If $g_b_LevelerPaused Then Return False
-		If Map_GetInstanceInfo("IsLoading") Then
-			Sleep(250)
-			ContinueLoop
-		EndIf
-		If Leveler_InMissionInstance($a_i_MapID) Then
-			$g_i_EnterMissionMap = 0
-			Return True
-		EndIf
-		If Map_GetInstanceInfo("IsExplorable") Then
-			Local $l_i_Map = Map_GetMapID()
-			If $l_i_Map = $a_i_StartMap Or $l_i_Map = $a_i_MapID Then
-				$g_i_EnterMissionMap = 0
-				Return True
-			EndIf
-		EndIf
-		Sleep(250)
-	WEnd
-	Return Leveler_InMissionInstance($a_i_MapID)
-EndFunc
-
-Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
-	Local $l_i_StartMap = Map_GetMapID()
-	If Leveler_InMissionInstance($a_i_MapID) Then
-		$g_i_EnterMissionMap = 0
-		Out("[Step] Already inside " & $a_s_Name & " (map " & $l_i_StartMap & ")")
-		Return True
-	EndIf
-
-	; Engine already accepted Enter Challenge. Do not send it again.
-	If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
-		Out("[Step] Mission is already starting; waiting for the map to load")
-		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
-		Sleep(2000)
-		Return True
-	EndIf
-
-	If $g_i_EnterMissionMap = $l_i_StartMap Then
-		Out("[Step] Enter Challenge already sent on this outpost. Waiting for the instance.")
-		If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then Return False
-		Sleep(2000)
-		Return True
-	EndIf
-
-	If Not Map_GetInstanceInfo("IsOutpost") Then
-		Out("[Step] Cannot enter " & $a_s_Name & " from map " & $l_i_StartMap & " type " & Map_GetInstanceInfo("Type"))
-		Return False
-	EndIf
-
-	Out("Let's do " & $a_s_Name)
-	Out("Exiting Outpost")
-	; Ui_EnterChallenge(False) writes EnterMission(1) and instant-DCs here.
-	; Map_EnterChallenge hardcodes that same 1. Arborstone-safe call is True -> 0.
-	; Second arg False: wait ourselves so a timeout cannot resend Enter on the next loop.
-	Ui_EnterChallenge(True, False)
-	$g_i_EnterMissionMap = $l_i_StartMap
-	Sleep(1500)
-	If Not Leveler_WaitMissionExplorable($a_i_MapID, $l_i_StartMap) Then
-		If Map_GetInstanceInfo("IsLoading") Or Party_GetPartyContextInfo("IsWaitingForMission") Then
-			Out("[Step] Mission is still loading. Not sending Enter Challenge again.")
-			Return False
-		EndIf
-		Out("[Step] Mission map did not become explorable (map " & Map_GetMapID() & ", type " & Map_GetInstanceInfo("Type") & ")")
-		Return False
-	EndIf
-	Sleep(2000)
-	Out("[Step] Mission instance loaded on map " & Map_GetMapID())
-	Return True
-EndFunc
-
-#EndRegion Mission
 
 #Region Combat
 
@@ -560,10 +315,6 @@ Func Leveler_CacheSkillBarNow()
 	Next
 	If $g_b_CacheWeaponSet Then UAI_DetermineWeaponSets()
 	Return True
-EndFunc
-
-Func Leveler_ConfigureAggressiveEnv()
-	Return Leveler_PrepareCombatAI()
 EndFunc
 
 Func Leveler_SetPacifist()
@@ -668,11 +419,17 @@ Func Leveler_EquipTrainerSkills($a_b_CloseTrainer = True)
 		If $l_i_Kind = $LEVELER_BAR_STARTER Then $l_i_Kind = $LEVELER_BAR_INTERRUPT
 		Leveler_LoadProfessionSkillBar($l_i_Kind)
 		Sleep(600)
-		If Leveler_TrainerSkillsOnBar() Then Return True
+		If Leveler_TrainerSkillsOnBar() Then
+			Leveler_MarkMissionPrepQuiet()
+			Return True
+		EndIf
 		Leveler_PutSkillOnBar(1, $SKILL_CRY_OF_FRUSTRATION)
 		Leveler_PutSkillOnBar(2, $SKILL_POWER_DRAIN)
 		Leveler_PutSkillOnBar(3, $SKILL_SIGNET_OF_DISRUPTION)
-		If Leveler_TrainerSkillsOnBar() Then Return True
+		If Leveler_TrainerSkillsOnBar() Then
+			Leveler_MarkMissionPrepQuiet()
+			Return True
+		EndIf
 		Out("[Step] Interrupt skills are learnt but not all on the bar yet")
 		Return False
 	EndIf
@@ -687,7 +444,10 @@ Func Leveler_EquipTrainerSkills($a_b_CloseTrainer = True)
 		$l_i_Slot += 1
 	EndIf
 	If World_IsSkillLearnt($SKILL_ENERGY_BURN) Then Leveler_PutSkillOnBar($l_i_Slot, $SKILL_ENERGY_BURN)
-	If Leveler_TrainerSkillsOnBar() Then Return True
+	If Leveler_TrainerSkillsOnBar() Then
+		Leveler_MarkMissionPrepQuiet()
+		Return True
+	EndIf
 	Out("[Step] Zhao Di skills are not all on the bar yet. Slots: " & Skill_GetSkillbarInfo(1, "SkillID") & ", " & Skill_GetSkillbarInfo(2, "SkillID") & ", " & Skill_GetSkillbarInfo(3, "SkillID"))
 	Return False
 EndFunc

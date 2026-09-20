@@ -338,7 +338,7 @@ Global Const $MODEL_MICHIKO = 3295
 Global Const $MICHIKO_KAINENG_X = -1661.91
 Global Const $MICHIKO_KAINENG_Y = -636.09
 
-; Merchant bags (Py4GW ModelID.Bag = 35, Belt_Pouch = 34; reward pouch = 33)
+; Merchant bags (Bag = 35, Belt_Pouch = 34; reward pouch = 33)
 Global Const $MODEL_BAG = 35
 Global Const $MODEL_BELT_POUCH = 34
 Global Const $MODEL_BELT_POUCH_REWARD = 33
@@ -399,6 +399,8 @@ Global $g_i_LastUAIMap = 0
 Global $g_b_ConnectionLost = False
 ; Last outpost we queued Enter Challenge on. Do not send it twice.
 Global $g_i_EnterMissionMap = 0
+; TimerInit() after the last skillbar / hench packet. Enter waits until this is quiet.
+Global $g_h_MissionPrepQuiet = 0
 ; Map ID where the Zen template was already applied this run.
 Global $g_i_ZenBarLoadedMap = 0
 ; One-time recovery after a completed Lost Treasure restart: path Cho -> Ran Musu -> Tengu.

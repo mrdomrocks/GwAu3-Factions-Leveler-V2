@@ -192,7 +192,7 @@ Func Leveler_Step_ExitOverlook()
 	Return Map_WaitMapLoading($MAP_SHING_JEA)
 EndFunc
 
-; Match Python Forming_A_Party: Travel Shing Jea → PrepareForBattle (leave + hench 2/5/1)
+; Forming A Party: Travel Shing Jea → PrepareForBattle (leave + hench 2/5/1)
 ; → accept #440 at Instructor Ng coords → exit Sunqua Vale → complete #440.
 ; Do not pass TogoModel; the accept NPC is not Master Togo.
 Func Leveler_Step_FormingAParty()
@@ -217,7 +217,7 @@ Func Leveler_Step_FormingAParty()
 	Else
 		If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	EndIf
-	; Python always LeaveParty + AddHenchmen before accept. Forming A Party requires a full party of 4.
+	; LeaveParty + AddHenchmen before accept. Forming A Party requires a full party of 4.
 	Leveler_PrepareForBattle()
 	If Not Leveler_EnsureFormingPartyHenchmen() Then Return False
 	If Not Leveler_HasQuest($QUEST_FORMING_A_PARTY) Then
@@ -657,7 +657,8 @@ Func Leveler_Step_ChosMission()
 		EndIf
 		Out("[Step] Load skill bar, then henchmen, then enter")
 		If Not Leveler_EquipTrainerSkills(False) Then Return False
-		If Not Leveler_EnsureFormingPartyHenchmen() Then Return False
+		; False: do not LeaveGroup before Enter Challenge.
+		If Not Leveler_EnsureFormingPartyHenchmen(False) Then Return False
 		If Not Leveler_EnterMission("Minister Cho's Estate", $MAP_CHO_OUTPOST) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
@@ -679,7 +680,7 @@ Func Leveler_Step_ChosMission()
 	If Not Leveler_MoveTo(333.32, 1124.44, True) Then Return False
 	If Not Leveler_MoveTo(-3337.14, -4741.27, True) Then Return False
 	If Not Leveler_WaitCombat(35000) Then Return False
-	If Not Leveler_ConfigureAggressiveEnv() Then Return False
+	If Not Leveler_PrepareCombatAI() Then Return False
 	If Not Leveler_MoveTo(-4661.99, -6285.81, True) Then Return False
 	If Not Leveler_MoveTo(-7454, -7384, True) Then Return False ; Zoo Entrance
 	If Not Leveler_MoveTo(-9138, -4191, True) Then Return False ; First Zoo Fight
@@ -1715,7 +1716,7 @@ Func Leveler_Step_AMastersBurden()
 		Return True
 	EndIf
 
-	; Python: Travel Kaineng → QuestLoop accept #337 Tosai → SetActive #349 → Marketplace → Wajjun.
+	; Travel Kaineng → QuestLoop accept #337 Tosai → SetActive #349 → Marketplace → Wajjun.
 	; Skip the Kaineng dialog when #349 is already in the log and #337 does not need accepting.
 	If Leveler_HasQuest($QUEST_MASTERS_BURDEN) And Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
 		Out("[Step] A Master's Burden already in the log — skipping Kaineng dialog")
@@ -2134,29 +2135,6 @@ Func Leveler_RunFronisInstance()
 	Leveler_LootNearby(0, 2000, 10000)
 	Out("[Farm] Fronis run finished. Returning to Gunnar's Hold.")
 	If Not Leveler_Travel($MAP_GUNNAR) Then Return False
-	Return True
-EndFunc
-
-Func Leveler_RunAbPath()
-	If Map_GetMapID() <> $MAP_AB Then Return False
-	$g_b_CombatMode = True
-	If Not Leveler_MoveTo(11714, -4590, True) Then Return False
-	Leveler_WaitUntilInCombat(20000)
-	If Not Leveler_MoveTo(9973, -6394, True) Then Return False
-	If Not Leveler_MoveTo(8448, -8676, True) Then Return False
-	If Not Leveler_MoveTo(4284, -7384, True) Then Return False
-	If Not Leveler_MoveTo(2442, -9532, True) Then Return False
-	If Not Leveler_MoveTo(948, -11427, True) Then Return False
-	If Not Leveler_MoveTo(-1605, -11181, True) Then Return False
-	If Not Leveler_MoveTo(-2279, -9099, True) Then Return False
-	If Not Leveler_MoveTo(-5688, -10252, True) Then Return False
-	If Not Leveler_MoveTo(-9311, -8500, True) Then Return False
-	If Not Leveler_MoveTo(-12904, -7805, True) Then Return False
-	If Not Leveler_MoveTo(-15338, -8893, True) Then Return False
-	Sleep(10000)
-	If Not Leveler_MoveTo(-17952, -8940, True) Then Return False
-	If Not Map_WaitMapLoading($MAP_HOM, -1, 45000) Then Return False
-	Leveler_SetPacifist()
 	Return True
 EndFunc
 
