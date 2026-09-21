@@ -287,12 +287,28 @@ EndFunc
 
 Func Leveler_MoveAndExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
-	Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat)
-	If Map_GetMapID() = $l_i_StartMap Then
-		Map_Move($a_f_X, $a_f_Y, 10)
-		Sleep(1500)
+	If $l_i_StartMap = $a_i_MapID Then Return True
+
+	Out("[Move] Exit to map " & $a_i_MapID & " via " & Round($a_f_X) & ", " & Round($a_f_Y))
+	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) Then
+		If Map_GetMapID() = $a_i_MapID Then Return Leveler_WaitUntilMapReady()
+		Out("[Move] Did not reach the portal at " & Round($a_f_X) & ", " & Round($a_f_Y))
 	EndIf
-	Return Map_WaitMapLoading($a_i_MapID)
+	If Map_GetMapID() = $a_i_MapID Then Return Leveler_WaitUntilMapReady()
+
+	; Nudge into the portal several times — a single Map_Move often stops short.
+	Local $i
+	For $i = 1 To 10
+		If Map_GetMapID() <> $l_i_StartMap Then ExitLoop
+		Map_MoveLayer($a_f_X, $a_f_Y, Agent_GetAgentInfo(-2, "Plane"))
+		Sleep(400)
+	Next
+	If Map_GetMapID() = $a_i_MapID Then Return Leveler_WaitUntilMapReady()
+	If Not Map_WaitMapLoading($a_i_MapID) Then
+		Out("[Move] Timed out waiting for map " & $a_i_MapID & " (still " & Map_GetMapID() & ")")
+		Return False
+	EndIf
+	Return Leveler_WaitUntilMapReady()
 EndFunc
 
 ; Pathfinder to a portal, then walk through it.
@@ -309,6 +325,18 @@ Func Leveler_PathToExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False)
 		Return False
 	EndIf
 	Return Leveler_WaitUntilMapReady()
+EndFunc
+
+; Marketplace → Wajjun Bazaar portal (same coords as the Python leveler).
+Func Leveler_GoToWajjun()
+	If Map_GetMapID() = $MAP_WAJJUN Then Return True
+	If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
+	If Not Leveler_WaitUntilMapReady() Then Return False
+	Leveler_PrepareForBattle()
+	If Not Leveler_WaitUntilMapReady() Then Return False
+	Out("[Step] Exiting The Marketplace to Wajjun Bazaar")
+	If Not Leveler_PathToExit(11430.00, 15200.00, $MAP_WAJJUN, False) Then Return False
+	Return True
 EndFunc
 
 ; Walk the Lost Treasure entrance portal back to Ran Musu. Used when a completed

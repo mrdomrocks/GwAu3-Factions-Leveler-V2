@@ -1777,9 +1777,7 @@ Func Leveler_Step_SearchForACure()
 		If Leveler_ShouldResumeExplorable($QUEST_SEARCH_CURE) Then
 			Out("[Step] Staying on map " & Map_GetMapID() & " to finish The Search For A Cure")
 		Else
-			If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
-			Leveler_PrepareForBattle()
-			If Not Leveler_MoveAndExit(11430.00, 15200.00, $MAP_WAJJUN, True) Then Return False
+			If Not Leveler_GoToWajjun() Then Return False
 		EndIf
 	EndIf
 
@@ -1832,12 +1830,13 @@ Func Leveler_Step_AMastersBurden()
 	Sleep(300)
 
 	If Map_GetMapID() <> $MAP_WAJJUN Then
-		If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
-		Leveler_PrepareForBattle()
-		If Not Leveler_MoveAndExit(11430.00, 15200.00, $MAP_WAJJUN, True) Then Return False
+		If Not Leveler_GoToWajjun() Then Return False
 	Else
 		Leveler_PrepareForBattle()
 	EndIf
+
+	If Not Leveler_WaitUntilMapReady() Then Return False
+	If Not Leveler_PrepareCombatAI() Then Return False
 
 	If Not Leveler_MoveTo(10033.88, 13838.59, True) Then Return False
 	If Not Leveler_MoveTo(11637.23, 11837.92, True) Then Return False
