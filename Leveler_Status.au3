@@ -577,17 +577,17 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_TO_ZEN] = $l_b_ZenOp Or $l_b_ToZenPath
 	$g_ab_StepDone[$LEVELER_STEP_ZEN_MISSION] = $l_b_Marketplace Or ($l_b_ZenOp And $l_i_Map = $MAP_SEITUNG And Map_GetInstanceInfo("IsOutpost") And Not $l_b_ToZenPath)
 	$g_ab_StepDone[$LEVELER_STEP_TO_MARKET] = (Map_IsMapUnlocked($MAP_MARKETPLACE) Or $l_i_Map = $MAP_MARKETPLACE Or $l_b_Kaineng Or $l_i_Map = $MAP_BUKDEK Or $l_i_Map = $MAP_WAJJUN) And $l_i_Map <> $MAP_KAINENG_DOCKS
+	$g_ab_StepDone[$LEVELER_STEP_BURDEN] = Leveler_MastersBurdenDone()
 	$g_ab_StepDone[$LEVELER_STEP_TO_KC] = $l_b_Kaineng
 	; Michiko in Kaineng Center. Zhao Di Leech Signet (61) must not skip this.
 	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = Leveler_Skills2Unlocked()
 	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] And Not $l_b_SeitungArmor
 	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_SearchCureDone()
-	$g_ab_StepDone[$LEVELER_STEP_BURDEN] = Leveler_MastersBurdenDone()
 	; Mox: in the party, AddHero works, or this character already reached EotN.
 	$g_ab_StepDone[$LEVELER_STEP_UNLOCK_MOX] = Leveler_HasMoxUnlocked()
 	$g_ab_StepDone[$LEVELER_STEP_TO_BOREAL] = Leveler_HasMoxUnlocked() And (Map_IsMapUnlocked($MAP_BOREAL) Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_ICE_CLIFF Or $l_b_Eotn) And $l_i_Map <> $MAP_TUNNELS
-	Out("[Status] DestroyMon=" & $g_ab_StepDone[$LEVELER_STEP_DESTROY_MON] & " Skills2=" & $g_ab_StepDone[$LEVELER_STEP_SKILLS2] & " MaxArmorEq=" & $g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] & " DestroySeitung=" & $g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] & " Cure=" & $g_ab_StepDone[$LEVELER_STEP_CURE] & " Burden=" & $g_ab_StepDone[$LEVELER_STEP_BURDEN] & " Mox=" & $g_ab_StepDone[$LEVELER_STEP_UNLOCK_MOX])
+	Out("[Status] DestroyMon=" & $g_ab_StepDone[$LEVELER_STEP_DESTROY_MON] & " Skills2=" & $g_ab_StepDone[$LEVELER_STEP_SKILLS2] & " MaxArmorEq=" & $g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] & " DestroySeitung=" & $g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] & " Burden=" & $g_ab_StepDone[$LEVELER_STEP_BURDEN] & " Cure=" & $g_ab_StepDone[$LEVELER_STEP_CURE] & " Mox=" & $g_ab_StepDone[$LEVELER_STEP_UNLOCK_MOX])
 	$g_ab_StepDone[$LEVELER_STEP_TO_EOTN] = $l_b_Eotn And $l_i_Map <> $MAP_ICE_CLIFF
 	$g_ab_StepDone[$LEVELER_STEP_EOTN_POOL] = Leveler_EotnPoolReady()
 	; Live EotN: Against the Destroyers in the log means Hall of Monuments next, not Seitung Unwelcome Guest.

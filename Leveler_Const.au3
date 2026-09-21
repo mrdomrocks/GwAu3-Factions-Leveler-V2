@@ -24,12 +24,12 @@ Global Const $LEVELER_STEP_DESTROY_MON = 16
 Global Const $LEVELER_STEP_TO_ZEN = 17
 Global Const $LEVELER_STEP_ZEN_MISSION = 18
 Global Const $LEVELER_STEP_TO_MARKET = 19
-Global Const $LEVELER_STEP_TO_KC = 20
-Global Const $LEVELER_STEP_SKILLS2 = 21
-Global Const $LEVELER_STEP_MAX_ARMOR = 22
-Global Const $LEVELER_STEP_DESTROY_SEITUNG = 23
-Global Const $LEVELER_STEP_CURE = 24
-Global Const $LEVELER_STEP_BURDEN = 25
+Global Const $LEVELER_STEP_BURDEN = 20
+Global Const $LEVELER_STEP_TO_KC = 21
+Global Const $LEVELER_STEP_SKILLS2 = 22
+Global Const $LEVELER_STEP_MAX_ARMOR = 23
+Global Const $LEVELER_STEP_DESTROY_SEITUNG = 24
+Global Const $LEVELER_STEP_CURE = 25
 Global Const $LEVELER_STEP_UNLOCK_MOX = 26
 Global Const $LEVELER_STEP_TO_BOREAL = 27
 Global Const $LEVELER_STEP_TO_EOTN = 28
@@ -67,12 +67,12 @@ Global $g_as_StepNames[$LEVELER_STEP_COUNT] = [ _
 		"To Zen Daijun", _
 		"Zen Daijun Mission", _
 		"To Marketplace", _
+		"Quest: A Master's Burden", _
 		"To Kaineng Center", _
 		"Complete Skills Training", _
 		"Craft Max Armor", _
 		"Destroy Seitung Armor", _
 		"Quest: The Search For A Cure", _
-		"Quest: A Master's Burden", _
 		"Unlock Mox", _
 		"To Boreal Station", _
 		"To Eye of the North", _

@@ -62,6 +62,8 @@ Func Leveler_ExecuteStep($a_i_Step)
 			$l_b_Ok = Leveler_Step_ZenDaijunMission()
 		Case $LEVELER_STEP_TO_MARKET
 			$l_b_Ok = Leveler_Step_ToMarketplace()
+		Case $LEVELER_STEP_BURDEN
+			$l_b_Ok = Leveler_Step_AMastersBurden()
 		Case $LEVELER_STEP_TO_KC
 			$l_b_Ok = Leveler_Step_ToKainengCenter()
 		Case $LEVELER_STEP_SKILLS2
@@ -72,8 +74,6 @@ Func Leveler_ExecuteStep($a_i_Step)
 			$l_b_Ok = Leveler_Step_DestroySeitung()
 		Case $LEVELER_STEP_CURE
 			$l_b_Ok = Leveler_Step_SearchForACure()
-		Case $LEVELER_STEP_BURDEN
-			$l_b_Ok = Leveler_Step_AMastersBurden()
 		Case $LEVELER_STEP_UNLOCK_MOX
 			$l_b_Ok = Leveler_Step_UnlockMox()
 		Case $LEVELER_STEP_TO_BOREAL
