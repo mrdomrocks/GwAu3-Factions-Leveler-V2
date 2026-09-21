@@ -1809,7 +1809,7 @@ Func Leveler_Step_AMastersBurden()
 	Leveler_LogQuestState($QUEST_MASTERS_BURDEN, "A Master's Burden")
 	If Leveler_MastersBurdenDone() Then
 		Out("[Step] A Master's Burden already completed")
-		Return True
+		Return Leveler_AcceptBrotherTosai()
 	EndIf
 
 	; To Marketplace accepts #349 in Seitung. Recover here if that was skipped.
@@ -1818,14 +1818,13 @@ Func Leveler_Step_AMastersBurden()
 		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 16927, 9004, $DIALOG_BURDEN_ACCEPT, "accept") Then Return False
 	EndIf
 
-	; Reward-ready: hand in at Kaineng Docks (Python complete path).
+	; Reward-ready: hand in at Kaineng Docks, then pick up Seek out Brother Tosai in Kaineng.
 	If Leveler_QuestReadyForReward($QUEST_MASTERS_BURDEN) Then
-		Return Leveler_MastersBurdenHandIn()
+		If Not Leveler_MastersBurdenHandIn() Then Return False
+		Return Leveler_AcceptBrotherTosai()
 	EndIf
 
-	; Match Python A_Masters_Burden: Kaineng Tosai → active #349 → Marketplace → Wajjun → docks.
-	If Not Leveler_Travel($MAP_KAINENG) Then Return False
-	If Not Leveler_QuestLoop($QUEST_BROTHER_TOSAI, 1784.00, 991.00, $DIALOG_TOSAI_ACCEPT, "accept") Then Return False
+	; Marketplace → Wajjun path → docks hand-in. Seek out Brother Tosai is after #349.
 	Ui_ActiveQuest($QUEST_MASTERS_BURDEN)
 	Sleep(300)
 
@@ -1855,10 +1854,11 @@ Func Leveler_Step_AMastersBurden()
 	If Not Leveler_MoveTo(10774.00, -6636.00, True) Then Return False
 	If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 10774.00, -6636.00, $DIALOG_BURDEN_STEP2, "step", $MODEL_BURDEN_NPC) Then Return False
 
-	Return Leveler_MastersBurdenHandIn()
+	If Not Leveler_MastersBurdenHandIn() Then Return False
+	Return Leveler_AcceptBrotherTosai()
 EndFunc
 
-; Marketplace → Kaineng Docks hand-in for #349, then abandon Seek out Brother Tosai (#337).
+; Marketplace → Kaineng Docks hand-in for #349.
 Func Leveler_MastersBurdenHandIn()
 	If Map_GetMapID() <> $MAP_KAINENG_DOCKS Then
 		If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
@@ -1867,17 +1867,24 @@ Func Leveler_MastersBurdenHandIn()
 		If Not Map_WaitMapLoading($MAP_KAINENG_DOCKS) Then Return False
 	EndIf
 	If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 9950.00, 20033.00, $DIALOG_BURDEN_COMPLETE, "complete") Then Return False
-	If Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
-		Ui_ActiveQuest($QUEST_BROTHER_TOSAI)
-		Sleep(200)
-		Quest_AbandonQuest($QUEST_BROTHER_TOSAI)
-		Sleep(300)
-	EndIf
 	If Leveler_QuestNeedsHandIn($QUEST_MASTERS_BURDEN) Or Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
 		Out("[Step] A Master's Burden is still in the log")
 		Return False
 	EndIf
 	Out("[Step] A Master's Burden complete")
+	Return True
+EndFunc
+
+; After #349: travel Kaineng Center and accept Seek out Brother Tosai (#337).
+Func Leveler_AcceptBrotherTosai()
+	If Leveler_HasQuest($QUEST_BROTHER_TOSAI) Or Leveler_IsQuestDone($QUEST_BROTHER_TOSAI) Then
+		Out("[Step] Seek out Brother Tosai already accepted or done")
+		Return True
+	EndIf
+	Out("[Step] Traveling to Kaineng Center for Seek out Brother Tosai")
+	If Not Leveler_Travel($MAP_KAINENG) Then Return False
+	If Not Leveler_QuestLoop($QUEST_BROTHER_TOSAI, 1784.00, 991.00, $DIALOG_TOSAI_ACCEPT, "accept") Then Return False
+	Out("[Step] Seek out Brother Tosai accepted")
 	Return True
 EndFunc
 

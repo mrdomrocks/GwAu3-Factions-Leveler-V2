@@ -235,7 +235,6 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 	If Leveler_SearchCureDone() Then Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 	If Leveler_MastersBurdenDone() Then
 		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
-		Leveler_MarkQuestDone($QUEST_BROTHER_TOSAI)
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 	EndIf
 	If Leveler_QuestFinished($QUEST_AGAINST_DESTROYERS) Then
