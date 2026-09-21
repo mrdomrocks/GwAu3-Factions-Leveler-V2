@@ -1814,78 +1814,53 @@ Func Leveler_Step_AMastersBurden()
 		Return True
 	EndIf
 
-	; To Marketplace normally accepts #349 in Seitung. Recover here if that was skipped.
+	; To Marketplace accepts #349 in Seitung. Recover here if that was skipped.
 	If Not Leveler_HasQuest($QUEST_MASTERS_BURDEN) Then
 		If Not Leveler_Travel($MAP_SEITUNG) Then Return False
 		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 16927, 9004, $DIALOG_BURDEN_ACCEPT, "accept") Then Return False
 	EndIf
 
+	; Reward-ready: hand in at Kaineng Docks (Python complete path).
 	If Leveler_QuestReadyForReward($QUEST_MASTERS_BURDEN) Then
-		If Map_GetMapID() <> $MAP_KAINENG_DOCKS Then
-			If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
-			If Not Leveler_MoveTo(12250, 18236, False) Then Return False
-			If Not Leveler_MoveTo(10343, 20329, False) Then Return False
-			If Not Map_WaitMapLoading($MAP_KAINENG_DOCKS) Then Return False
-		EndIf
-		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 9950.00, 20033.00, $DIALOG_BURDEN_COMPLETE, "complete") Then Return False
-		If Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
-			Ui_ActiveQuest($QUEST_BROTHER_TOSAI)
-			Sleep(200)
-			Quest_AbandonQuest($QUEST_BROTHER_TOSAI)
-			Sleep(300)
-		EndIf
-		If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
-			Out("[Step] A Master's Burden is still in the log after the complete dialog")
-			Return False
-		EndIf
-		Out("[Step] A Master's Burden complete")
-		Return True
+		Return Leveler_MastersBurdenHandIn()
 	EndIf
 
-	; Travel Kaineng → QuestLoop accept #337 Tosai → SetActive #349 → Marketplace → Wajjun.
-	; Skip the Kaineng dialog when #349 is already in the log and #337 does not need accepting.
-	If Leveler_HasQuest($QUEST_MASTERS_BURDEN) And Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
-		Out("[Step] A Master's Burden already in the log — skipping Kaineng dialog")
-	ElseIf Not Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
-		If Not Leveler_Travel($MAP_KAINENG) Then Return False
-		If Not Leveler_QuestLoop($QUEST_BROTHER_TOSAI, 1784.00, 991.00, $DIALOG_TOSAI_ACCEPT, "accept") Then Return False
-	ElseIf Leveler_ShouldResumeExplorable($QUEST_MASTERS_BURDEN) Then
-		Out("[Step] A Master's Burden is in the log and map " & Map_GetMapID() & " is not an outpost. Resuming from here.")
-	EndIf
-	If Leveler_HasQuest($QUEST_MASTERS_BURDEN) Then Ui_ActiveQuest($QUEST_MASTERS_BURDEN)
+	; Match Python A_Masters_Burden: Kaineng Tosai → active #349 → Marketplace → Wajjun → docks.
+	If Not Leveler_Travel($MAP_KAINENG) Then Return False
+	If Not Leveler_QuestLoop($QUEST_BROTHER_TOSAI, 1784.00, 991.00, $DIALOG_TOSAI_ACCEPT, "accept") Then Return False
+	Ui_ActiveQuest($QUEST_MASTERS_BURDEN)
 	Sleep(300)
 
 	If Map_GetMapID() <> $MAP_WAJJUN Then
-		If Leveler_ShouldResumeExplorable($QUEST_MASTERS_BURDEN) Then
-			Out("[Step] Staying on map " & Map_GetMapID() & " to finish A Master's Burden")
-		Else
-			If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
-			Leveler_PrepareForBattle()
-			If Not Leveler_MoveAndExit(11430.00, 15200.00, $MAP_WAJJUN, True) Then Return False
-		EndIf
+		If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
+		Leveler_PrepareForBattle()
+		If Not Leveler_MoveAndExit(11430.00, 15200.00, $MAP_WAJJUN, True) Then Return False
 	Else
 		Leveler_PrepareForBattle()
 	EndIf
 
-	If Map_GetMapID() = $MAP_WAJJUN Or Not Leveler_IsOutpost() Then
-		If Not Leveler_MoveTo(10033.88, 13838.59, True) Then Return False
-		If Not Leveler_MoveTo(11637.23, 11837.92, True) Then Return False
-		If Not Leveler_MoveTo(10007.72, 10951.80, True) Then Return False
-		If Not Leveler_MoveTo(8200.78, 12134.04, True) Then Return False
-		If Not Leveler_MoveTo(8133.31, 7629.99, True) Then Return False
-		If Not Leveler_MoveTo(5329.09, 7626.73, True) Then Return False
-		If Not Leveler_MoveTo(4145.20, 6584.09, True) Then Return False
-		If Not Leveler_MoveTo(-1663.82, 7113.72, True) Then Return False
-		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, -1893.00, 6922.00, $DIALOG_BURDEN_STEP2, "step", $MODEL_BROTHER_TOSAI) Then Return False
-		If Not Leveler_MoveTo(4207.15, 6226.59, True) Then Return False
-		If Not Leveler_MoveTo(4944.20, 3398.03, True) Then Return False
-		If Not Leveler_MoveTo(4401.08, 618.24, True) Then Return False
-		If Not Leveler_MoveTo(5802.95, -2295.56, True) Then Return False
-		If Not Leveler_MoveTo(4671.93, -5007.46, True) Then Return False
-		If Not Leveler_MoveTo(10774.00, -6636.00, True) Then Return False
-		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 10774.00, -6636.00, $DIALOG_BURDEN_STEP2, "step", $MODEL_BURDEN_NPC) Then Return False
-	EndIf
+	If Not Leveler_MoveTo(10033.88, 13838.59, True) Then Return False
+	If Not Leveler_MoveTo(11637.23, 11837.92, True) Then Return False
+	If Not Leveler_MoveTo(10007.72, 10951.80, True) Then Return False
+	If Not Leveler_MoveTo(8200.78, 12134.04, True) Then Return False
+	If Not Leveler_MoveTo(8133.31, 7629.99, True) Then Return False
+	If Not Leveler_MoveTo(5329.09, 7626.73, True) Then Return False
+	If Not Leveler_MoveTo(4145.20, 6584.09, True) Then Return False
+	If Not Leveler_MoveTo(-1663.82, 7113.72, True) Then Return False
+	If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, -1893.00, 6922.00, $DIALOG_BURDEN_STEP2, "step", $MODEL_BROTHER_TOSAI) Then Return False
+	If Not Leveler_MoveTo(4207.15, 6226.59, True) Then Return False
+	If Not Leveler_MoveTo(4944.20, 3398.03, True) Then Return False
+	If Not Leveler_MoveTo(4401.08, 618.24, True) Then Return False
+	If Not Leveler_MoveTo(5802.95, -2295.56, True) Then Return False
+	If Not Leveler_MoveTo(4671.93, -5007.46, True) Then Return False
+	If Not Leveler_MoveTo(10774.00, -6636.00, True) Then Return False
+	If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 10774.00, -6636.00, $DIALOG_BURDEN_STEP2, "step", $MODEL_BURDEN_NPC) Then Return False
 
+	Return Leveler_MastersBurdenHandIn()
+EndFunc
+
+; Marketplace → Kaineng Docks hand-in for #349, then abandon Seek out Brother Tosai (#337).
+Func Leveler_MastersBurdenHandIn()
 	If Map_GetMapID() <> $MAP_KAINENG_DOCKS Then
 		If Not Leveler_Travel($MAP_MARKETPLACE) Then Return False
 		If Not Leveler_MoveTo(12250, 18236, False) Then Return False
