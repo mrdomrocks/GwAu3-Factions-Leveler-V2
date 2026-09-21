@@ -227,7 +227,7 @@ Func Leveler_Step_FormingAParty()
 	Else
 		If Not Leveler_Travel($MAP_SHING_JEA) Then Return False
 	EndIf
-	; LeaveParty + AddHenchmen before accept. Forming A Party requires a full party of 4.
+	; Party_LeaveGroup + Leveler_AddHenchmanList before accept. Forming A Party requires a full party of 4.
 	Leveler_PrepareForBattle()
 	If Not Leveler_EnsureFormingPartyHenchmen() Then Return False
 	If Not Leveler_HasQuest($QUEST_FORMING_A_PARTY) Then
@@ -443,7 +443,7 @@ Func Leveler_GetMichiko()
 	Return $l_i_Npc
 EndFunc
 
-; Walk Kaineng Center to Michiko. Direct Map_Move from spawn hits buildings.
+; Walk Kaineng Center to Michiko via the open streets.
 Func Leveler_PathToMichiko()
 	Local $l_i_Npc = Leveler_GetMichiko()
 	If $l_i_Npc <> 0 And Agent_GetDistance($l_i_Npc) < 600 Then
@@ -451,11 +451,15 @@ Func Leveler_PathToMichiko()
 		Return True
 	EndIf
 
-	Out("[Step] Pathing to Michiko (model " & $MODEL_MICHIKO & ") near Bejunkan")
-	Local $l_af_Path[3][2] = [ _
-			[1592.00, -796.00], _
-			[1784.00, 991.00], _
-			[$MICHIKO_KAINENG_X, $MICHIKO_KAINENG_Y] _
+	Out("[Step] Pathing to Michiko (model " & $MODEL_MICHIKO & ")")
+	Local $l_af_Path[7][2] = [ _
+			[2492.00, -3991.00], _
+			[2941.00, -2362.00], _
+			[2959.00, -734.00], _
+			[2375.00, 597.00], _
+			[1169.00, 611.00], _
+			[374.00, 926.00], _
+			[413.00, 1312.00] _
 			]
 	If Not Leveler_FollowCoords($l_af_Path, False) Then Return False
 	Return True
@@ -671,10 +675,11 @@ Func Leveler_Step_ChosMission()
 		; Stage 1: henchmen. Skill bar is already set — do not reload it.
 		Out("[Step] Add henchmen, then enter")
 		If Not Leveler_EnsureFormingPartyHenchmen(False) Then Return False
-		; Stage 2: Map_EnterChallenge.
+		; Stage 2: native Ui_EnterChallenge.
 		If Not Leveler_EnterMission("Minister Cho's Estate", $MAP_CHO_OUTPOST) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
+	Leveler_EnsurePathfinder()
 	If Not Leveler_PrepareCombatAI() Then Return False
 	If Leveler_IsWiped() Then Return False
 
@@ -687,6 +692,9 @@ Func Leveler_Step_ChosMission()
 	If Not Leveler_MoveTo(4268.49, -3621.66, True) Then Return False
 	If Not Leveler_WaitCombat(20000) Then Return False
 	If Not Leveler_MoveTo(6216, -1108, True) Then Return False ; Bridge Corner
+	; Mid-bridge points so Pathfinder keeps the elevated layer (Map_MoveLayer).
+	If Not Leveler_MoveTo(4800, -400, True) Then Return False
+	If Not Leveler_MoveTo(3600, 100, True) Then Return False
 	If Not Leveler_MoveTo(2617, 642, True) Then Return False ; Past Bridge
 	If Not Leveler_MoveTo(1706.90, 1711.44, True) Then Return False
 	If Not Leveler_WaitCombat(30000) Then Return False
@@ -698,6 +706,7 @@ Func Leveler_Step_ChosMission()
 	If Not Leveler_MoveTo(-7454, -7384, True) Then Return False ; Zoo Entrance
 	If Not Leveler_MoveTo(-9138, -4191, True) Then Return False ; First Zoo Fight
 	If Not Leveler_MoveTo(-7109, -25, True) Then Return False ; Bridge Waypoint
+	If Not Leveler_MoveTo(-7250, 1100, True) Then Return False ; Zoo bridge mid
 	If Not Leveler_MoveTo(-7443, 2243, True) Then Return False ; Zoo Exit
 	If Not Leveler_WaitCombat(5000) Then Return False
 	If Not Leveler_MoveTo(-16924, 2445, True) Then Return False ; Final Destination
@@ -1439,13 +1448,22 @@ Func Leveler_Step_ZenDaijunMission()
 			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
 		EndIf
 		If Not Leveler_WaitUntilMapReady() Then Return False
+		; One Seitung Harbor round-trip refreshes the outpost before henchmen / Enter.
+		If Not $g_b_ZenSeitungBounceDone Then
+			Out("[Step] Rezoning Zen Daijun via Seitung Harbor before the mission")
+			If Not Leveler_Travel($MAP_SEITUNG) Then Return False
+			If Not Leveler_Travel($MAP_ZEN_OP) Then Return False
+			If Not Leveler_WaitUntilMapReady() Then Return False
+			$g_b_ZenSeitungBounceDone = True
+		EndIf
 		; Stage 1: henchmen. Skill bar is already set — do not reload it.
 		Out("[Step] Add henchmen, then enter")
 		If Not Leveler_PrepareMissionParty() Then Return False
-		; Stage 2: Map_EnterChallenge.
+		; Stage 2: native Ui_EnterChallenge.
 		If Not Leveler_EnterMission("Zen Daijun", $MAP_ZEN_OP) Then Return False
 	EndIf
 	If Not Leveler_WaitUntilMapReady() Then Return False
+	Leveler_EnsurePathfinder()
 	If Not Leveler_PrepareCombatAI() Then Return False
 	If Leveler_IsWiped() Then Return False
 

@@ -1,4 +1,7 @@
 #RequireAdmin
+; GUI, Start / Pause, and the main bot loop for the Factions character leveler.
+; Includes GwAu3 API, Pathfinder, then Leveler_* modules (Const first).
+
 Opt("GUIOnEventMode", True)
 Opt("GUICloseOnESC", False)
 Opt("ExpandVarStrings", 1)

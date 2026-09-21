@@ -15,7 +15,7 @@ Global Const $LEVELER_STEP_BAGS = 7
 Global Const $LEVELER_STEP_SKILLS = 8
 Global Const $LEVELER_STEP_TO_CHO = 9
 Global Const $LEVELER_STEP_CHO_MISSION = 10
-Global Const $LEVELER_STEP_ATTR_1 = 11
+Global Const $LEVELER_STEP_ATTR_1 = 11 ; Lost Treasure (historical ATTR name kept for step index stability)
 Global Const $LEVELER_STEP_TENGU = 12
 Global Const $LEVELER_STEP_THREAT = 13
 Global Const $LEVELER_STEP_ROAD = 14
@@ -34,7 +34,7 @@ Global Const $LEVELER_STEP_UNLOCK_MOX = 26
 Global Const $LEVELER_STEP_TO_BOREAL = 27
 Global Const $LEVELER_STEP_TO_EOTN = 28
 Global Const $LEVELER_STEP_EOTN_POOL = 29
-Global Const $LEVELER_STEP_ATTR_2 = 30
+Global Const $LEVELER_STEP_ATTR_2 = 30 ; An Unwelcome Guest (historical ATTR name kept for step index stability)
 Global Const $LEVELER_STEP_TO_GUNNAR = 31
 Global Const $LEVELER_STEP_KILROY = 32
 Global Const $LEVELER_STEP_FARM_20 = 33
@@ -92,77 +92,79 @@ Global $g_ab_StepDone[$LEVELER_STEP_COUNT]
 #EndRegion Steps
 
 #Region Maps
-; Outposts and explorables this run travels.
-Global Const $MAP_MONASTERY_OVERLOOK = 212
-Global Const $MAP_SHING_JEA = 242
-Global Const $MAP_SUNQUA_VALE = 238
-Global Const $MAP_LINNOK = 252
-Global Const $MAP_CHO_OUTPOST = 214
-Global Const $MAP_RAN_MUSU = 251
-Global Const $MAP_CHO_EXPLORABLE = 245
-Global Const $MAP_KINYA = 236
-Global Const $MAP_TSUMEI = 249
-Global Const $MAP_PANJIANG = 235
-Global Const $MAP_SAOSHANG = 313
-Global Const $MAP_SEITUNG = 250
-Global Const $MAP_JAYA = 196
-Global Const $MAP_HAIJU = 237
-Global Const $MAP_ZEN_OP = 213
-Global Const $MAP_ZEN_EXP = 246
-Global Const $MAP_KAINENG_DOCKS = 302
-Global Const $MAP_MARKETPLACE = 303
-Global Const $MAP_BUKDEK = 240
-Global Const $MAP_WAJJUN = 239
-Global Const $MAP_KAINENG = 194
-Global Const $MAP_TUNNELS = 692
-Global Const $MAP_BOREAL = 675
-Global Const $MAP_ICE_CLIFF = 499
-Global Const $MAP_EOTN = 642
-Global Const $MAP_HOM = 646
-Global Const $MAP_AB = 849
-Global Const $MAP_NORRHART = 548
-Global Const $MAP_GUNNAR = 644
-Global Const $MAP_KILROY = 703
-Global Const $MAP_FRONIS = 704
-Global Const $MAP_LIONS_ARCH = 55
-Global Const $MAP_BEJUNKAN = 290
-Global Const $MAP_LIONS_GATE = 415
-Global Const $MAP_KC_SUNSPEARS = 400
-Global Const $MAP_KAMADAN = 449
-Global Const $MAP_SUN_DOCKS = 543
-Global Const $MAP_CONSULATE = 429
-Global Const $MAP_DOCKS = 493
-Global Const $MAP_BLOODSTONE_FEN = 471
-Global Const $MAP_GTOB = 248
-Global Const $MAP_LONGEYE = 650
+; Outposts and explorables this run travels (GwAu3 map labels).
+Global Const $MAP_MONASTERY_OVERLOOK = 212 ; Monastery Overlook
+Global Const $MAP_SHING_JEA = 242 ; Shing Jea Monastery
+Global Const $MAP_SUNQUA_VALE = 238 ; Sunqua Vale
+Global Const $MAP_LINNOK = 252 ; Linnok Courtyard
+Global Const $MAP_CHO_OUTPOST = 214 ; Minister Cho's Estate (mission outpost)
+Global Const $MAP_RAN_MUSU = 251 ; Ran Musu Gardens
+Global Const $MAP_CHO_EXPLORABLE = 245 ; Minister Cho's Estate (explorable)
+Global Const $MAP_CHO_MISSION = 257 ; Minister Cho's Estate (mission area)
+Global Const $MAP_KINYA = 236 ; Kinya Province
+Global Const $MAP_TSUMEI = 249 ; Tsumei Village
+Global Const $MAP_PANJIANG = 235 ; Panjiang Peninsula
+Global Const $MAP_SAOSHANG = 313 ; Saoshang Trail
+Global Const $MAP_SEITUNG = 250 ; Seitung Harbor
+Global Const $MAP_JAYA = 196 ; Jaya Bluffs
+Global Const $MAP_HAIJU = 237 ; Haiju Lagoon
+Global Const $MAP_ZEN_OP = 213 ; Zen Daijun (mission outpost)
+Global Const $MAP_ZEN_EXP = 246 ; Zen Daijun (explorable / Unwelcome Guest)
+Global Const $MAP_ZEN_MISSION = 258 ; Zen Daijun (mission area)
+Global Const $MAP_KAINENG_DOCKS = 302 ; Kaineng Docks
+Global Const $MAP_MARKETPLACE = 303 ; The Marketplace
+Global Const $MAP_BUKDEK = 240 ; Bukdek Byway
+Global Const $MAP_WAJJUN = 239 ; Wajjun Bazaar
+Global Const $MAP_KAINENG = 194 ; Kaineng Center
+Global Const $MAP_TUNNELS = 692 ; Tunnels Below Cantha
+Global Const $MAP_BOREAL = 675 ; Boreal Station
+Global Const $MAP_ICE_CLIFF = 499 ; Ice Cliff Chasms
+Global Const $MAP_EOTN = 642 ; Eye of the North
+Global Const $MAP_HOM = 646 ; Hall of Monuments
+Global Const $MAP_AB = 849 ; Auspicious Beginnings
+Global Const $MAP_NORRHART = 548 ; Norrhart Domains
+Global Const $MAP_GUNNAR = 644 ; Gunnar's Hold
+Global Const $MAP_KILROY = 703 ; Kilroy's Punchout Training
+Global Const $MAP_FRONIS = 704 ; Fronis Irontoe's Lair
+Global Const $MAP_LIONS_ARCH = 55 ; Lion's Arch
+Global Const $MAP_BEJUNKAN = 290 ; Bejunkan Pier
+Global Const $MAP_LIONS_GATE = 415 ; Lion's Gate
+Global Const $MAP_KC_SUNSPEARS = 400 ; Kaineng Center (Sunspears in Cantha)
+Global Const $MAP_KAMADAN = 449 ; Kamadan, Jewel of Istan
+Global Const $MAP_SUN_DOCKS = 543 ; Sun Docks
+Global Const $MAP_CONSULATE = 429 ; Consulate
+Global Const $MAP_DOCKS = 493 ; Consulate Docks
+Global Const $MAP_BLOODSTONE_FEN = 471 ; Bloodstone Fen
+Global Const $MAP_GTOB = 248 ; Great Temple of Balthazar
+Global Const $MAP_LONGEYE = 650 ; Longeye's Ledge
 
 #EndRegion Maps
 
 #Region Quests
-; Story and unlock quest IDs.
-Global Const $QUEST_FORMING_A_PARTY = 440
-Global Const $QUEST_SECONDARY = 317
-Global Const $QUEST_FORMAL_INTRO = 318
-Global Const $QUEST_LOST_TREASURE = 346
-Global Const $QUEST_WARNING_TENGU = 339
-Global Const $QUEST_THREAT_GROWS = 340
-Global Const $QUEST_JOURNEY_MASTER = 341
-Global Const $QUEST_ROAD_LESS = 342
-Global Const $QUEST_MASTERS_BURDEN = 349
-Global Const $QUEST_SEARCH_CURE = 336
-Global Const $QUEST_BROTHER_TOSAI = 337
-Global Const $QUEST_EARTH_MOVE = 821
-Global Const $QUEST_AGAINST_DESTROYERS = 913
-Global Const $QUEST_MISSING_VANGUARD = 793
-Global Const $QUEST_NORTHERN_ALLIES = 905
-Global Const $QUEST_KNOWLEDGEABLE_ASURA = 915
-Global Const $QUEST_UNWELCOME = 348
-Global Const $QUEST_NORNBEAR = 808
-Global Const $QUEST_PUNCH_CLOWN = 858
-Global Const $QUEST_PUNCH_EXTRAVAGANZA = 856
-Global Const $QUEST_CHAOS_KRYTA = 479
-Global Const $QUEST_SUNSPEARS_CANTHA = 724
-Global Const $QUEST_OLIAS = 782
+; Story and unlock quest IDs (GwAu3 quest labels).
+Global Const $QUEST_FORMING_A_PARTY = 440 ; Forming a Party
+Global Const $QUEST_SECONDARY = 317 ; Choose Your Secondary Profession
+Global Const $QUEST_FORMAL_INTRO = 318 ; A Formal Introduction
+Global Const $QUEST_LOST_TREASURE = 346 ; Lost Treasure
+Global Const $QUEST_WARNING_TENGU = 339 ; Warning the Tengu
+Global Const $QUEST_THREAT_GROWS = 340 ; The Threat Grows
+Global Const $QUEST_JOURNEY_MASTER = 341 ; Journey to the Master
+Global Const $QUEST_ROAD_LESS = 342 ; The Road Less Traveled
+Global Const $QUEST_MASTERS_BURDEN = 349 ; A Master's Burden
+Global Const $QUEST_SEARCH_CURE = 336 ; The Search for a Cure
+Global Const $QUEST_BROTHER_TOSAI = 337 ; Seek out Brother Tosai
+Global Const $QUEST_EARTH_MOVE = 821 ; I Feel the Earth Move Under Cantha's Feet
+Global Const $QUEST_AGAINST_DESTROYERS = 913 ; Against the Destroyers
+Global Const $QUEST_MISSING_VANGUARD = 793 ; The Missing Vanguard
+Global Const $QUEST_NORTHERN_ALLIES = 905 ; Northern Allies
+Global Const $QUEST_KNOWLEDGEABLE_ASURA = 915 ; The Knowledgeable Asura
+Global Const $QUEST_UNWELCOME = 348 ; An Unwelcome Guest
+Global Const $QUEST_NORNBEAR = 808 ; Tracking the Nornbear
+Global Const $QUEST_PUNCH_CLOWN = 858 ; Punch the Clown
+Global Const $QUEST_PUNCH_EXTRAVAGANZA = 856 ; Kilroy Stonekin's Punch-Out Extravaganza!
+Global Const $QUEST_CHAOS_KRYTA = 479 ; Chaos in Kryta
+Global Const $QUEST_SUNSPEARS_CANTHA = 724 ; Sunspears in Cantha
+Global Const $QUEST_OLIAS = 782 ; All for One and One for Justice
 
 #EndRegion Quests
 
@@ -238,11 +240,11 @@ Global Const $DIALOG_THREAT_COMPLETE = 0x815407
 Global Const $DIALOG_JOURNEY_ACCEPT = 0x815501
 Global Const $DIALOG_JOURNEY_COMPLETE = 0x815507
 Global Const $DIALOG_ROAD_ACCEPT = 0x815601
-Global Const $DIALOG_ROAD_TSUKARO_TALK = 0x815604
+Global Const $DIALOG_ROAD_TSUKARO_TALK = 0x815604 ; Same value as $DIALOG_ROAD_STEP2
 Global Const $DIALOG_ROAD_TSUKARO_GO = 0x800008
 Global Const $DIALOG_ROAD_TSUKARO_LETS_GO = 0x800009
 Global Const $DIALOG_ROAD_TSUKARO_YES = 0x80000B
-Global Const $DIALOG_ROAD_STEP2 = 0x815604
+Global Const $DIALOG_ROAD_STEP2 = 0x815604 ; Alias of $DIALOG_ROAD_TSUKARO_TALK
 Global Const $DIALOG_ROAD_COMPLETE = 0x815607
 Global Const $TSUKARO_LINNOK_X = 538.00
 Global Const $TSUKARO_LINNOK_Y = 10125.00
@@ -320,8 +322,8 @@ Global Const $MODEL_SISTER_TAI = 3367
 Global Const $MODEL_BROTHER_TOSAI = 3171
 Global Const $MODEL_BURDEN_NPC = 3307
 Global Const $MODEL_CURE_LOOT = 6496
-Global Const $MODEL_DESTROYERS_NPC = 6034
-Global Const $MODEL_JORA = 6034
+Global Const $MODEL_DESTROYERS_NPC = 6034 ; Same model as Jora at Ice Cliff
+Global Const $MODEL_JORA = 6034 ; Alias of $MODEL_DESTROYERS_NPC
 Global Const $MODEL_JORA_ALT = 6374
 Global Const $JORA_ICE_CLIFF_X = 2825.00
 Global Const $JORA_ICE_CLIFF_Y = -481.00
@@ -348,10 +350,10 @@ Global Const $MODEL_SUNSPEARS_NPC = 4914
 Global Const $MODEL_SUNSPEARS_COMPLETE = 4829
 Global Const $MODEL_GTOB_TRAINER = 201
 Global Const $MODEL_BRASS_KNUCKLES = 24897
-; Michiko [Skills] in Kaineng Center, north edge near the Bejunkan Pier exit.
+; Michiko [Skills] in Kaineng Center — end of the street path from spawn.
 Global Const $MODEL_MICHIKO = 3295
-Global Const $MICHIKO_KAINENG_X = -1661.91
-Global Const $MICHIKO_KAINENG_Y = -636.09
+Global Const $MICHIKO_KAINENG_X = 413.00
+Global Const $MICHIKO_KAINENG_Y = 1312.00
 
 ; Merchant bags (Bag = 35, Belt_Pouch = 34; reward pouch = 33)
 Global Const $MODEL_BAG = 35
@@ -408,21 +410,32 @@ Global $g_ab_QuestDone[$LEVELER_Q_COUNT]
 #EndRegion Quest Flags
 
 #Region Runtime State
+; Active step index in the GUI / dispatcher.
 Global $g_i_Step = $LEVELER_STEP_OVERLOOK
+; When True, the loop runs Leveler_StatusCheck and starts at the first incomplete step.
 Global $g_b_NeedStatusCheck = False
 Global $g_b_LevelerPaused = False
 Global $g_b_LevelerFailed = False
+; True while pathing / fighting in explorables that need UtilityAI.
 Global $g_b_CombatMode = False
+; Watch for spirit rift / farm-loop side effects.
 Global $g_b_SpiritRiftWatch = False
+; Level-20 Auspicious Beginnings farm loop.
 Global $g_b_FarmMode = False
+; Kilroy punch-out / Fronis fight loop.
 Global $g_b_KilroyMode = False
 Global $g_h_RiftCooldown = 0
+; Current step title shown in the GUI / logs.
 Global $g_s_CurrentHeader = ""
+; UtilityAI skill-bar cache is valid for $g_i_LastUAIMap.
 Global $g_b_UAIReady = False
 Global $g_i_LastUAIMap = 0
+; Client disconnect / lost map detected this run.
 Global $g_b_ConnectionLost = False
 ; Map ID where the Zen template was already applied this run.
 Global $g_i_ZenBarLoadedMap = 0
+; One Zen Daijun → Seitung Harbor → Zen Daijun bounce before mission henchmen.
+Global $g_b_ZenSeitungBounceDone = False
 ; One-time recovery after a completed Lost Treasure restart: path Cho -> Ran Musu -> Tengu.
 Global $g_b_LostTreasureToTenguOnce = False
 ; Set on Start only. Stay in an explorable after a client/script restart; do not block the next quest.
@@ -439,8 +452,4 @@ Global $g_b_MoxUnlocked = False
 Global $g_b_XunlaiUnlocked = False
 ; Sticky after GToB trainer dialogs.
 Global $g_b_SecondaryProfsTalked = False
-; Outpost MapID after Map_EnterChallenge, so we do not send Enter twice.
-Global $g_i_EnterMissionMap = 0
-; Timer after hench/skill packets so Enter Challenge is not stacked with them.
-Global $g_h_MissionPrepQuiet = 0
 #EndRegion Runtime State

@@ -1,8 +1,9 @@
 #include-once
-#Region Pathfinder
-; Load GWPathfinder.dll without blocking on maps.rar.
 
 ; Pathfinder, travel, NPC talk, combat waits, punch-out, and wipe recover.
+
+#Region Pathfinder
+; Load GWPathfinder.dll without blocking on maps.rar.
 
 ; Load the Pathfinder DLL only. Skip Pathfinder_Initialize() so we do not block
 ; on the GitHub maps.rar check / download during Start.
@@ -39,7 +40,8 @@ EndFunc
 #EndRegion Pathfinder
 
 #Region Movement
-; Pathfinder_MoveTo / Map_Move wrappers and portal exits.
+; Pathfinder_MoveTo / Map_MoveLayer wrappers and portal exits.
+; Bridges need Pathfinder layers — plain Map_Move sticks on elevated paths.
 
 ; Fight in explorables and punch-out instances. Stay pacifist in outposts.
 Func Leveler_ShouldFightHere()
@@ -51,6 +53,7 @@ EndFunc
 
 ; $a_b_Combat True = fight while walking. False is ignored in explorables.
 ; Outposts never fight. Returns True if we arrived or the map changed.
+; Missions / explorables always prefer Pathfinder_MoveTo (Map_MoveLayer) so bridges work.
 Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If $g_b_LevelerPaused Then Return False
 	If $g_b_KilroyMode Or $g_b_FarmMode Or Leveler_IsPunchoutMap() Then Leveler_HandleKilroyDeath()
@@ -64,23 +67,41 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	EndIf
 
 	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_b_Mission = Leveler_InMissionInstance()
+	Local $l_b_Explorable = Leveler_ShouldFightHere()
 	Leveler_EnsurePathfinder()
 
 	Local $l_v_Obstacles = 0
 	Local $l_i_Aggro = 0
 	If $a_b_Combat Then
 		Leveler_PrepareCombatAI()
-		$l_v_Obstacles = "Leveler_GetObstacles"
 		$l_i_Aggro = $LEVELER_AGGRO
+		; Mission bridges are single-file. Enemy obstacles often block A* on the only walkable strip.
+		; Fight via Pathfinder aggro instead; keep dynamic obstacles for normal explorables.
+		If Not $l_b_Mission Then $l_v_Obstacles = "Leveler_GetObstacles"
 	EndIf
 
 	Local $l_s_Callback = ""
 	If $g_b_SpiritRiftWatch Then $l_s_Callback = "Leveler_InterruptSpiritRifts"
 
 	Local $l_b_Ok = False
-	; Use pathfinder in towns too when the map is loaded (Seitung → Jaya portal, etc.).
-	If Pathfinder_IsMapAvailable($l_i_StartMap) Then
+	Local $l_b_HaveMesh = Pathfinder_IsMapAvailable($l_i_StartMap)
+	; Missions and explorables: always Pathfinder_MoveTo so waypoints use Map_MoveLayer.
+	If $l_b_HaveMesh Or $l_b_Mission Or $l_b_Explorable Then
+		If Not $l_b_HaveMesh Then
+			Out("[Move] No path mesh flag for map " & $l_i_StartMap & "; Pathfinder_MoveTo still used for layer-aware bridges")
+		EndIf
 		$l_b_Ok = Pathfinder_MoveTo($a_f_X, $a_f_Y, -1, $l_v_Obstacles, $l_i_Aggro, $LEVELER_FIGHT_RANGE_OUT, 0, $l_s_Callback)
+		If Not $l_b_Ok And Map_GetMapID() = $l_i_StartMap And Agent_GetDistanceToXY($a_f_X, $a_f_Y) >= $LEVELER_ARRIVE_RANGE Then
+			If $l_v_Obstacles <> 0 Then
+				Out("[Move] Retrying Pathfinder without combat obstacles")
+				$l_b_Ok = Pathfinder_MoveTo($a_f_X, $a_f_Y, -1, 0, $l_i_Aggro, $LEVELER_FIGHT_RANGE_OUT, 0, $l_s_Callback)
+			EndIf
+		EndIf
+		If Not $l_b_Ok And Map_GetMapID() = $l_i_StartMap And Agent_GetDistanceToXY($a_f_X, $a_f_Y) >= $LEVELER_ARRIVE_RANGE Then
+			Out("[Move] Pathfinder did not arrive; falling back to layer-aware direct move")
+			$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 90000, $a_b_Combat)
+		EndIf
 	Else
 		$l_b_Ok = Leveler_MoveDirect($a_f_X, $a_f_Y, 90000, $a_b_Combat)
 	EndIf
@@ -91,6 +112,7 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	Return $l_b_Ok
 EndFunc
 
+; Layer-aware direct move. Prefer Pathfinder_MoveTo; this is the fallback when mesh path fails.
 Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $l_h_Timer = TimerInit()
@@ -99,7 +121,8 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 		If Map_GetMapID() <> $l_i_StartMap Then Return True
 		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
 		If $a_b_Combat Then Leveler_CombatTick()
-		Map_Move($a_f_X, $a_f_Y, 20)
+		; Map_Move has no plane — sticks on bridges. Keep the current layer.
+		Map_MoveLayer($a_f_X, $a_f_Y, Agent_GetAgentInfo(-2, "Plane"))
 		Sleep(250)
 	WEnd
 	Return Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
