@@ -119,6 +119,14 @@ Func Leveler_ExecuteStep($a_i_Step)
 			Out("[Step] Cry of Frustration or Power Drain still missing. Staying on Michiko.")
 			Return False
 		EndIf
+		If $a_i_Step = $LEVELER_STEP_BURDEN And Not Leveler_MastersBurdenDone() Then
+			Out("[Step] A Master's Burden is not finished. Staying on this step.")
+			Return False
+		EndIf
+		If $a_i_Step = $LEVELER_STEP_CURE And Not Leveler_CureStepComplete() Then
+			Out("[Step] Search for a Cure or Seek out Brother Tosai still open. Staying on this step.")
+			Return False
+		EndIf
 		If $a_i_Step = $LEVELER_STEP_MAX_ARMOR And Not Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) Then
 			Out("[Step] Max armor is not equipped. Staying on the crafter.")
 			Return False
@@ -1724,10 +1732,10 @@ Func Leveler_Step_SearchForACure()
 	Leveler_LogQuestState($QUEST_SEARCH_CURE, "The Search For A Cure")
 	If Leveler_SearchCureDone() Then
 		Out("[Step] The Search For A Cure already completed")
-		Return True
+		Return Leveler_AcceptBrotherTosai()
 	EndIf
 
-	; Mox unlock is after A Master's Burden. If Mox can join, Cure is past / unavailable.
+	; Mox unlock is after this chain. If Mox can join, Cure / Tosai are past / unavailable.
 	If Leveler_MoxOrOliasAvailable() Then
 		Out("[Step] Mox/Olias available — ignoring The Search For A Cure pickup")
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
@@ -1744,13 +1752,28 @@ Func Leveler_Step_SearchForACure()
 			$g_ab_StepDone[$LEVELER_STEP_CURE] = True
 			Return True
 		EndIf
-		Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_ACCEPT, "accept")
-		; Already completed / unavailable: quest never enters the log — finish this step and continue.
+		; Imperial Agent Hanjo gives #336 — required before Seek out Brother Tosai.
+		Out("[Step] Speaking to Imperial Agent Hanjo for The Search for a Cure")
+		If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, $HANJO_KAINENG_X, $HANJO_KAINENG_Y, $DIALOG_CURE_ACCEPT, "accept") Then
+			; Mid-game: quest unavailable. Fresh characters must keep retrying Hanjo.
+			If Leveler_MoxOrOliasAvailable() Or Leveler_QuestFinished($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
+				Out("[Step] The Search For A Cure unavailable — treating as past and moving on")
+				Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
+				$g_ab_StepDone[$LEVELER_STEP_CURE] = True
+				Return Leveler_AcceptBrotherTosai()
+			EndIf
+			Out("[Step] Could not accept The Search For A Cure from Hanjo")
+			Return False
+		EndIf
 		If Not Leveler_HasQuest($QUEST_SEARCH_CURE) Then
-			Out("[Step] The Search For A Cure was not picked up — marking step complete and moving on")
-			Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
-			$g_ab_StepDone[$LEVELER_STEP_CURE] = True
-			Return True
+			If Leveler_MoxOrOliasAvailable() Or Leveler_QuestFinished($QUEST_SEARCH_CURE) Or Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then
+				Out("[Step] The Search For A Cure was not picked up — treating as past")
+				Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
+				$g_ab_StepDone[$LEVELER_STEP_CURE] = True
+				Return Leveler_AcceptBrotherTosai()
+			EndIf
+			Out("[Step] The Search For A Cure did not enter the log after talking to Hanjo")
+			Return False
 		EndIf
 	EndIf
 
@@ -1760,17 +1783,18 @@ Func Leveler_Step_SearchForACure()
 
 	If Leveler_QuestReadyForReward($QUEST_SEARCH_CURE) Then
 		If Not Leveler_Travel($MAP_KAINENG) Then Return False
-		If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_COMPLETE, "complete") Then Return False
+		If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, $BUJO_KAINENG_X, $BUJO_KAINENG_Y, $DIALOG_CURE_COMPLETE, "complete") Then Return False
 		If Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
 			Out("[Step] The Search For A Cure is still in the log after the complete dialog")
 			Return False
 		EndIf
 		Out("[Step] The Search For A Cure complete")
-		Return True
+		Return Leveler_AcceptBrotherTosai()
 	EndIf
 
 	If Map_GetMapID() = $MAP_KAINENG Then
-		If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_STEP, "step") Then Return False
+		; Bujo advances #336 after Hanjo sends you to him.
+		If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, $BUJO_KAINENG_X, $BUJO_KAINENG_Y, $DIALOG_CURE_STEP, "step") Then Return False
 	EndIf
 
 	If Map_GetMapID() <> $MAP_WAJJUN Then
@@ -1787,11 +1811,11 @@ Func Leveler_Step_SearchForACure()
 	Sleep(5000)
 
 	If Not Leveler_Travel($MAP_KAINENG) Then Return False
-	If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, 1784.00, 991.00, $DIALOG_CURE_COMPLETE, "complete") Then
+	If Not Leveler_QuestLoop($QUEST_SEARCH_CURE, $BUJO_KAINENG_X, $BUJO_KAINENG_Y, $DIALOG_CURE_COMPLETE, "complete") Then
 		If Not Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then
 			Out("[Step] The Search For A Cure is no longer in the log. Treating the hand-in as done.")
 			Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
-			Return True
+			Return Leveler_AcceptBrotherTosai()
 		EndIf
 		Return False
 	EndIf
@@ -1800,7 +1824,7 @@ Func Leveler_Step_SearchForACure()
 		Return False
 	EndIf
 	Out("[Step] The Search For A Cure complete")
-	Return True
+	Return Leveler_AcceptBrotherTosai()
 EndFunc
 
 Func Leveler_Step_AMastersBurden()
@@ -1809,7 +1833,7 @@ Func Leveler_Step_AMastersBurden()
 	Leveler_LogQuestState($QUEST_MASTERS_BURDEN, "A Master's Burden")
 	If Leveler_MastersBurdenDone() Then
 		Out("[Step] A Master's Burden already completed")
-		Return Leveler_AcceptBrotherTosai()
+		Return True
 	EndIf
 
 	; To Marketplace accepts #349 in Seitung. Recover here if that was skipped.
@@ -1818,13 +1842,13 @@ Func Leveler_Step_AMastersBurden()
 		If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 16927, 9004, $DIALOG_BURDEN_ACCEPT, "accept") Then Return False
 	EndIf
 
-	; Reward-ready: hand in at Kaineng Docks, then pick up Seek out Brother Tosai in Kaineng.
+	; Reward-ready: hand in at Kaineng Docks.
 	If Leveler_QuestReadyForReward($QUEST_MASTERS_BURDEN) Then
-		If Not Leveler_MastersBurdenHandIn() Then Return False
-		Return Leveler_AcceptBrotherTosai()
+		Return Leveler_MastersBurdenHandIn()
 	EndIf
 
-	; Marketplace → Wajjun path → docks hand-in. Seek out Brother Tosai is after #349.
+	; Marketplace → Wajjun path → docks hand-in.
+	; Seek out Brother Tosai comes later after Imperial Agent Hanjo / Search for a Cure.
 	Ui_ActiveQuest($QUEST_MASTERS_BURDEN)
 	Sleep(300)
 
@@ -1854,8 +1878,7 @@ Func Leveler_Step_AMastersBurden()
 	If Not Leveler_MoveTo(10774.00, -6636.00, True) Then Return False
 	If Not Leveler_QuestLoop($QUEST_MASTERS_BURDEN, 10774.00, -6636.00, $DIALOG_BURDEN_STEP2, "step", $MODEL_BURDEN_NPC) Then Return False
 
-	If Not Leveler_MastersBurdenHandIn() Then Return False
-	Return Leveler_AcceptBrotherTosai()
+	Return Leveler_MastersBurdenHandIn()
 EndFunc
 
 ; Marketplace → Kaineng Docks hand-in for #349.
@@ -1871,19 +1894,26 @@ Func Leveler_MastersBurdenHandIn()
 		Out("[Step] A Master's Burden is still in the log")
 		Return False
 	EndIf
+	Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
 	Out("[Step] A Master's Burden complete")
 	Return True
 EndFunc
 
-; After #349: travel Kaineng Center and accept Seek out Brother Tosai (#337).
+; After The Search for a Cure (Hanjo → Bujo): accept Seek out Brother Tosai (#337) from Bujo.
 Func Leveler_AcceptBrotherTosai()
 	If Leveler_HasQuest($QUEST_BROTHER_TOSAI) Or Leveler_IsQuestDone($QUEST_BROTHER_TOSAI) Then
 		Out("[Step] Seek out Brother Tosai already accepted or done")
 		Return True
 	EndIf
-	Out("[Step] Traveling to Kaineng Center for Seek out Brother Tosai")
-	If Not Leveler_Travel($MAP_KAINENG) Then Return False
-	If Not Leveler_QuestLoop($QUEST_BROTHER_TOSAI, 1784.00, 991.00, $DIALOG_TOSAI_ACCEPT, "accept") Then Return False
+	Out("[Step] Accepting Seek out Brother Tosai from Bujo (after Hanjo / Search for a Cure)")
+	If Map_GetMapID() <> $MAP_KAINENG Or Not Map_GetInstanceInfo("IsOutpost") Then
+		If Not Leveler_Travel($MAP_KAINENG) Then Return False
+	EndIf
+	If Not Leveler_QuestLoop($QUEST_BROTHER_TOSAI, $BUJO_KAINENG_X, $BUJO_KAINENG_Y, $DIALOG_TOSAI_ACCEPT, "accept") Then Return False
+	If Not Leveler_HasQuest($QUEST_BROTHER_TOSAI) And Not Leveler_IsQuestDone($QUEST_BROTHER_TOSAI) Then
+		Out("[Step] Seek out Brother Tosai did not enter the log")
+		Return False
+	EndIf
 	Out("[Step] Seek out Brother Tosai accepted")
 	Return True
 EndFunc

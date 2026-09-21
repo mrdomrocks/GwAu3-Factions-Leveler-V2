@@ -229,13 +229,13 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 	If Leveler_QuestProgress($QUEST_ROAD_LESS) Then
 		Leveler_MarkQuestDone($QUEST_JOURNEY_MASTER)
 	EndIf
-	If Leveler_HasIncompleteQuest($QUEST_BROTHER_TOSAI) Or Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then
+	If Leveler_HasIncompleteQuest($QUEST_BROTHER_TOSAI) Then
+		; Seek out Brother Tosai is only offered after The Search for a Cure.
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 	EndIf
 	If Leveler_SearchCureDone() Then Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 	If Leveler_MastersBurdenDone() Then
 		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN)
-		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
 	EndIf
 	If Leveler_QuestFinished($QUEST_AGAINST_DESTROYERS) Then
 		Leveler_MarkQuestDone($QUEST_EARTH_MOVE)
@@ -272,19 +272,31 @@ Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
 	Return True
 EndFunc
 
-; Search for a Cure (#336). Empty log is "not started" until Mox or Olias can join.
+; Search for a Cure (#336) from Imperial Agent Hanjo. Sticky flag or later proof only.
 Func Leveler_SearchCureDone()
 	If Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then Return False
-	If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then Return True
+	; Tosai (#337) is only offered after Cure — having it means Hanjo's quest is past.
 	If Leveler_HasIncompleteQuest($QUEST_BROTHER_TOSAI) Then Return True
+	If Leveler_IsQuestDone($QUEST_BROTHER_TOSAI) Then Return True
+	If Leveler_QuestFinished($QUEST_SEARCH_CURE) Then Return True
 	If Leveler_MoxOrOliasAvailable() Then Return True
 	If $g_ab_QuestDone[$LEVELER_Q_CURE] Then Return True
 	Return False
 EndFunc
 
-; A Master's Burden (#349). Empty log is "not started" until Mox or Olias can join.
+; Cure step requires Cure finished and Seek out Brother Tosai accepted (or mid-game skip).
+Func Leveler_CureStepComplete()
+	If Leveler_HasIncompleteQuest($QUEST_SEARCH_CURE) Then Return False
+	If Leveler_HasQuest($QUEST_BROTHER_TOSAI) Then Return True
+	If Leveler_IsQuestDone($QUEST_BROTHER_TOSAI) Then Return True
+	If Leveler_MoxOrOliasAvailable() Then Return True
+	Return False
+EndFunc
+
+; A Master's Burden (#349). Incomplete = not done. Empty log needs a sticky flag or mid-game proof.
 Func Leveler_MastersBurdenDone()
 	If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then Return False
+	If Leveler_QuestFinished($QUEST_MASTERS_BURDEN) Then Return True
 	If Leveler_MoxOrOliasAvailable() Then Return True
 	If $g_ab_QuestDone[$LEVELER_Q_BURDEN] Then Return True
 	Return False
@@ -582,7 +594,7 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = Leveler_Skills2Unlocked()
 	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] And Not $l_b_SeitungArmor
-	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_SearchCureDone()
+	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_CureStepComplete()
 	; Mox: in the party, AddHero works, or this character already reached EotN.
 	$g_ab_StepDone[$LEVELER_STEP_UNLOCK_MOX] = Leveler_HasMoxUnlocked()
 	$g_ab_StepDone[$LEVELER_STEP_TO_BOREAL] = Leveler_HasMoxUnlocked() And (Map_IsMapUnlocked($MAP_BOREAL) Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_ICE_CLIFF Or $l_b_Eotn) And $l_i_Map <> $MAP_TUNNELS

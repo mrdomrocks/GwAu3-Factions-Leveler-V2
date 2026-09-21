@@ -254,6 +254,12 @@ Global Const $DIALOG_BURDEN_COMPLETE = 0x815D07
 Global Const $DIALOG_CURE_ACCEPT = 0x815001
 Global Const $DIALOG_CURE_STEP = 0x815004
 Global Const $DIALOG_CURE_COMPLETE = 0x815007
+; Imperial Agent Hanjo (Kaineng) gives The Search for a Cure.
+Global Const $HANJO_KAINENG_X = 3772.00
+Global Const $HANJO_KAINENG_Y = -961.00
+; Bujo (Kaineng) gives Seek out Brother Tosai after Cure is done.
+Global Const $BUJO_KAINENG_X = 1784.00
+Global Const $BUJO_KAINENG_Y = 991.00
 Global Const $DIALOG_TOSAI_ACCEPT = 0x815101
 Global Const $DIALOG_UNLOCK_MOX = 0x85
 Global Const $DIALOG_EARTH_ACCEPT = 0x833501
