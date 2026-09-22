@@ -1,5 +1,6 @@
-#RequireAdmin
 ; GUI, Start / Pause, and the main bot loop for the Factions character leveler.
+; Do not use #RequireAdmin: AutoIt exits the first process to relaunch elevated,
+; and under Wine that relaunch fails so the window never appears.
 ; Includes GwAu3 API, Pathfinder, then Leveler_* modules (Const first).
 
 Opt("GUIOnEventMode", True)
@@ -105,7 +106,8 @@ GUISetState(@SW_SHOW)
 Out("Factions Character Leveler")
 Out("Factions leveler through remaining secondary professions.")
 Out("Pathing: GwAu3 Pathfinder plugin + GWPathfinder.dll")
-Out("Run AutoIt3 x86 on Windows with Guild Wars launched.")
+Out("Run AutoIt3 x86 with Guild Wars launched.")
+If Not IsAdmin() Then Out("Not running as admin. If the client cannot be read, start AutoIt as administrator.")
 Out("")
 
 #Region Main Loop
