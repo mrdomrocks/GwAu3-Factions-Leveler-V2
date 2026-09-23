@@ -130,6 +130,7 @@ EndFunc
 
 #Region Quest State
 
+; Copy the quest compass marker into X/Y when the quest is in the log.
 Func Leveler_FillQuestMarker($a_i_QuestID, ByRef $a_f_X, ByRef $a_f_Y)
 	If Not Leveler_HasQuest($a_i_QuestID) Then Return
 	Local $l_f_MX = Quest_GetQuestInfo($a_i_QuestID, "MarkerX")
@@ -139,6 +140,7 @@ Func Leveler_FillQuestMarker($a_i_QuestID, ByRef $a_f_X, ByRef $a_f_Y)
 	$a_f_Y = $l_f_MY
 EndFunc
 
+; Replace X/Y with the live NPC position when that model (or nearest NPC) is found.
 Func Leveler_ResolveQuestXY($a_i_NpcModel, ByRef $a_f_X, ByRef $a_f_Y)
 	Local $l_i_Npc = 0
 	If $a_i_NpcModel <> 0 Then $l_i_Npc = Leveler_GetAgentByModel($a_i_NpcModel)
@@ -149,6 +151,7 @@ Func Leveler_ResolveQuestXY($a_i_NpcModel, ByRef $a_f_X, ByRef $a_f_Y)
 	$a_f_Y = Agent_GetAgentInfo($l_i_Npc, "Y")
 EndFunc
 
+; Poll until accept/complete/step succeeds or the timeout elapses.
 Func Leveler_WaitQuestResult($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap, $a_i_Timeout = 4000, $a_b_HadQuest = True)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
@@ -160,6 +163,7 @@ Func Leveler_WaitQuestResult($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartM
 	Return Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap, $a_b_HadQuest)
 EndFunc
 
+; True when this accept/complete action does not need to be sent again.
 Func Leveler_QuestAlreadyDone($a_i_QuestID, $a_s_Mode)
 	Switch $a_s_Mode
 		Case "accept"
@@ -180,6 +184,7 @@ Func Leveler_QuestAlreadyDone($a_i_QuestID, $a_s_Mode)
 	EndSwitch
 EndFunc
 
+; True when the accept, complete, or step dialog already took effect.
 Func Leveler_QuestActionSucceeded($a_i_QuestID, $a_s_Mode, $a_i_NpcModel, $a_i_StartMap, $a_b_HadQuest = True)
 	Switch $a_s_Mode
 		Case "accept"
@@ -222,23 +227,27 @@ Func Leveler_QuestLogMatch($a_i_QuestID)
 	Return 0
 EndFunc
 
+; True when the quest is in this character's log (objectives or reward-ready).
 Func Leveler_QuestInLog($a_i_QuestID)
 	If $a_i_QuestID = 0 Then Return False
 	If Quest_GetQuestInfo($a_i_QuestID, "HasQuest") Then Return True
 	Return Leveler_QuestLogMatch($a_i_QuestID) <> 0
 EndFunc
 
+; True when the quest is in the log and CanReward / LogState bit 2 is set.
 Func Leveler_QuestReadyForReward($a_i_QuestID)
 	If Quest_GetQuestInfo($a_i_QuestID, "CanReward") Then Return True
 	Return Leveler_QuestLogMatch($a_i_QuestID) = 2
 EndFunc
 
+; True when the reward is ready, or #317/#318 have been handed in.
 Func Leveler_QuestLogCompleted($a_i_QuestID)
 	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
 	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
 	Return Leveler_QuestReadyForReward($a_i_QuestID)
 EndFunc
 
+; Raw LogState from Quest_GetQuestInfo or the quest-log memory entry.
 Func Leveler_QuestLogStateValue($a_i_QuestID)
 	If $a_i_QuestID = 0 Then Return 0
 	Local $l_i_State = Quest_GetQuestInfo($a_i_QuestID, "LogState")
@@ -255,6 +264,7 @@ Func Leveler_QuestLogStateValue($a_i_QuestID)
 	Return 0
 EndFunc
 
+; Print a human-readable quest-log line for debugging.
 Func Leveler_LogQuestState($a_i_QuestID, $a_s_Label = "")
 	Local $l_i_Match = Leveler_QuestLogMatch($a_i_QuestID)
 	Local $l_i_State = Leveler_QuestLogStateValue($a_i_QuestID)
@@ -281,6 +291,7 @@ Func Leveler_LogQuestState($a_i_QuestID, $a_s_Label = "")
 	Return $l_i_Match
 EndFunc
 
+; Primary quest ID this step must hand in before leaving, or 0.
 Func Leveler_StepQuestID($a_i_Step)
 	Switch $a_i_Step
 		Case $LEVELER_STEP_PARTY
@@ -317,6 +328,7 @@ Func Leveler_StepQuestID($a_i_Step)
 	Return 0
 EndFunc
 
+; True when HasQuest or the quest-log scan finds this ID.
 Func Leveler_HasQuest($a_i_QuestID)
 	If $a_i_QuestID = 0 Then Return False
 	If Quest_GetQuestInfo($a_i_QuestID, "HasQuest") Then Return True
@@ -332,6 +344,7 @@ Func Leveler_QuestNeedsHandIn($a_i_QuestID)
 	Return False
 EndFunc
 
+; Alias for Leveler_QuestNeedsHandIn.
 Func Leveler_HasIncompleteQuest($a_i_QuestID)
 	Return Leveler_QuestNeedsHandIn($a_i_QuestID)
 EndFunc
@@ -405,6 +418,7 @@ Func Leveler_StepHasActiveQuest($a_i_Step)
 	Return False
 EndFunc
 
+; True when the nearest talk NPC still shows a quest marker.
 Func Leveler_NpcHasQuestMarker($a_i_NpcModel)
 	Local $l_i_Npc = 0
 	If $a_i_NpcModel <> 0 Then $l_i_Npc = Leveler_GetAgentByModel($a_i_NpcModel)

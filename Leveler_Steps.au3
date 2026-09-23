@@ -3,6 +3,7 @@
 ; Step dispatcher and per-step runners, grouped by campaign.
 
 #Region Dispatcher
+; Run one step: wait for the map, travel to its outpost, dispatch, then advance on success.
 Func Leveler_ExecuteStep($a_i_Step)
 	If $g_b_LevelerPaused Then Return False
 	If Not Leveler_WaitUntilMapReady() Then Return False
@@ -151,8 +152,8 @@ Func Leveler_ExecuteStep($a_i_Step)
 			Out("[Step] Mox is not unlocked. Not leaving Kaineng for Boreal.")
 			Return False
 		EndIf
-		If $a_i_Step = $LEVELER_STEP_EOTN_POOL And Not Leveler_EotnPoolReady() Then
-			Out("[Step] HoM heroes or Tracking the Nornbear still open. Staying on this step.")
+		If $a_i_Step = $LEVELER_STEP_EOTN_POOL And Not Leveler_HomHeroesTalked() And Not Leveler_EotnPoolReady() Then
+			Out("[Step] Hall of Monuments hero dialogs are not finished. Staying on this step.")
 			Return False
 		EndIf
 		If $a_i_Step = $LEVELER_STEP_ATTR_2 And Not Leveler_UnwelcomeGuestDone() Then
@@ -171,6 +172,8 @@ Func Leveler_ExecuteStep($a_i_Step)
 				Out("[Step] Quest #" & $l_i_QuestID & " complete dialog was not available. Moving on.")
 			ElseIf $a_i_Step = $LEVELER_STEP_UNLOCK_OLIAS And Leveler_HasOliasUnlocked() Then
 				; Hero unlock is enough even if the quest is still in the log.
+			ElseIf $a_i_Step = $LEVELER_STEP_EOTN_POOL And (Leveler_HomHeroesTalked() Or Leveler_HasNornbearTracking()) Then
+				; Hall dialogs, or Tracking the Nornbear in the log, finish Unlock Eye of the North.
 			ElseIf Not (Leveler_ReachedGunnarsHold() And ($a_i_Step = $LEVELER_STEP_EOTN_POOL Or $a_i_Step = $LEVELER_STEP_ATTR_2 Or $a_i_Step = $LEVELER_STEP_TO_GUNNAR)) Then
 				Leveler_LogQuestState($l_i_QuestID, $g_as_StepNames[$a_i_Step])
 				Out("[Step] Quest #" & $l_i_QuestID & " still needs its complete dialog. Staying on '" & $g_as_StepNames[$a_i_Step] & "'.")
@@ -196,6 +199,7 @@ EndFunc
 #Region Shing Jea Monastery
 ; Overlook through Zhao Di skills.
 
+; Leave Monastery Overlook into Shing Jea Monastery.
 Func Leveler_Step_ExitOverlook()
 	$g_s_CurrentHeader = "Exit Monastery Overlook"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -213,6 +217,7 @@ EndFunc
 ; Forming A Party: Travel Shing Jea → PrepareForBattle (leave + hench 2/5/1)
 ; → accept #440 at Instructor Ng coords → exit Sunqua Vale → complete #440.
 ; Do not pass TogoModel; the accept NPC is not Master Togo.
+; Accept and complete Forming A Party (#440).
 Func Leveler_Step_FormingAParty()
 	$g_s_CurrentHeader = "Quest: Forming A Party"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -249,6 +254,7 @@ Func Leveler_Step_FormingAParty()
 	Return True
 EndFunc
 
+; Choose the secondary at Togo, take the #317 gold, and accept Formal Introduction.
 Func Leveler_Step_UnlockSecondary()
 	$g_s_CurrentHeader = "Unlock Secondary Profession"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -304,6 +310,7 @@ Func Leveler_Step_UnlockSecondary()
 	Return True
 EndFunc
 
+; Open the Xunlai chest so storage is available.
 Func Leveler_Step_UnlockXunlai()
 	$g_s_CurrentHeader = "Unlock Xunlai Storage"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -354,6 +361,7 @@ Func Leveler_Step_UnlockXunlai()
 	Return True
 EndFunc
 
+; Buy mats and craft the Clairvoyant Staff.
 Func Leveler_Step_CraftWeapon()
 	$g_s_CurrentHeader = "Craft Weapon"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -376,6 +384,7 @@ Func Leveler_Step_CraftWeapon()
 	Return True
 EndFunc
 
+; Buy mats and craft the monastery armor set.
 Func Leveler_Step_CraftMonasteryArmor()
 	$g_s_CurrentHeader = "Craft Monastery Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -390,12 +399,14 @@ Func Leveler_Step_CraftMonasteryArmor()
 	Return True
 EndFunc
 
+; Destroy leftover starter armor.
 Func Leveler_Step_DestroyStarter()
 	$g_s_CurrentHeader = "Destroy Starter Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	Return Leveler_DestroyStarterArmorAndJunk()
 EndFunc
 
+; Buy a bag and belt pouch.
 Func Leveler_Step_ExtendInventory()
 	$g_s_CurrentHeader = "Extend Inventory"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -408,6 +419,7 @@ Func Leveler_Step_ExtendInventory()
 	Return Leveler_ExtendInventory()
 EndFunc
 
+; Buy Zhao Di skills in Shing Jea and put them on the bar.
 Func Leveler_Step_UnlockSkills()
 	$g_s_CurrentHeader = "Unlock Skills Trainer"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -500,11 +512,13 @@ Func Leveler_BuyKainengInterrupts()
 	Return Leveler_EquipTrainerSkills()
 EndFunc
 
+; True when standing at Togo's Sunqua Vale start point.
 Func Leveler_NearSunquaTogoStart()
 	If Map_GetMapID() <> $MAP_SUNQUA_VALE Then Return False
 	Return Agent_GetDistanceToXY($TOGO_SUNQUA_X, $TOGO_SUNQUA_Y) < 800
 EndFunc
 
+; Talk to Zui in Sunqua Vale for Formal Introduction.
 Func Leveler_TalkToGuardsmanZui()
 	If Not Leveler_MoveTo($ZUI_SUNQUA_X, $ZUI_SUNQUA_Y, False) Then Return False
 	Local $l_i_Zui = Leveler_GetAgentByName("Zui")
@@ -540,6 +554,7 @@ Func Leveler_TalkToGuardsmanZui()
 	Return Leveler_HandInFormalAtKayao()
 EndFunc
 
+; Talk to Togo in Sunqua Vale for Formal Introduction.
 Func Leveler_TalkToSunquaTogo()
 	If Not Leveler_NearSunquaTogoStart() Then
 		Out("[Step] Togo start talk already done; going to Guardsman Zui")
@@ -610,6 +625,7 @@ Func Leveler_HandInFormalAtKayao($a_b_LoadSkills = True)
 	Return True
 EndFunc
 
+; Put Zhao Di skills back on the bar after a trainer or map load.
 Func Leveler_ReapplyZhaoDiSkillBar()
 	Out("[Step] Loading the monastery trainer skill bar")
 	If Not Leveler_EquipTrainerSkills(False) Then
@@ -624,6 +640,7 @@ EndFunc
 #Region Shing Jea Island
 ; Formal Introduction through Zen Daijun.
 
+; Finish Formal Introduction and travel to Minister Cho's Estate.
 Func Leveler_Step_ToChosEstate()
 	$g_s_CurrentHeader = "To Minister Cho's Estate"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -657,12 +674,14 @@ Func Leveler_Step_ToChosEstate()
 	Return Leveler_TalkToSunquaTogo()
 EndFunc
 
+; Mark the Cho mission step done after the instance.
 Func Leveler_MarkChoMissionComplete()
 	$g_ab_StepDone[$LEVELER_STEP_CHO_MISSION] = True
 	Out("[Step] Minister Cho's Estate complete. Arrived in Ran Musu Gardens.")
 	Return True
 EndFunc
 
+; Enter and complete Minister Cho's Estate, then exit to Ran Musu.
 Func Leveler_Step_ChosMission()
 	$g_s_CurrentHeader = "Minister Cho's Estate Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -727,6 +746,7 @@ Func Leveler_Step_ChosMission()
 	Return Leveler_MarkChoMissionComplete()
 EndFunc
 
+; Wait until Raitahn Nem is present for Lost Treasure.
 Func Leveler_WaitForRaitahnNem($a_i_Timeout = 20000)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
@@ -806,6 +826,7 @@ Func Leveler_PickupLostTreasure()
 	Return True
 EndFunc
 
+; Select Lost Treasure in the Progress list after a restart.
 Func Leveler_ShowLostTreasureStepOnGui()
 	$g_s_CurrentHeader = "Quest: Lost Treasure"
 	$g_i_Step = $LEVELER_STEP_ATTR_1
@@ -814,6 +835,7 @@ Func Leveler_ShowLostTreasureStepOnGui()
 	Leveler_RefreshStepList($LEVELER_STEP_ATTR_1)
 EndFunc
 
+; Select Warning the Tengu in the Progress list.
 Func Leveler_ShowTenguStepOnGui()
 	$g_s_CurrentHeader = "Quest: Warning the Tengu"
 	$g_i_Step = $LEVELER_STEP_TENGU
@@ -822,6 +844,7 @@ Func Leveler_ShowTenguStepOnGui()
 	Leveler_RefreshStepList($LEVELER_STEP_TENGU)
 EndFunc
 
+; Walk to one coordinate, logging an optional label.
 Func Leveler_WalkPoint($a_f_X, $a_f_Y, $a_b_Combat = False, $a_s_Label = "")
 	If $a_s_Label <> "" Then Out("[Path] " & $a_s_Label & " " & Round($a_f_X) & ", " & Round($a_f_Y))
 	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) Then
@@ -904,6 +927,7 @@ Func Leveler_HandInLostTreasureAtNem()
 	Return True
 EndFunc
 
+; Finish Lost Treasure at Raitahn Nem, including a late hand-in.
 Func Leveler_CompleteLostTreasureAtNem()
 	If Not Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then
 		Leveler_MarkQuestDone($QUEST_LOST_TREASURE)
@@ -1100,6 +1124,7 @@ Func Leveler_RunRanMusuToTenguHandIn()
 	Return True
 EndFunc
 
+; Run Lost Treasure: pickup, escort, and 0x17 hand-in at Raitahn Nem.
 Func Leveler_Step_LostTreasure()
 	Leveler_ShowLostTreasureStepOnGui()
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1125,6 +1150,7 @@ Func Leveler_Step_LostTreasure()
 	Return Leveler_CompleteLostTreasureAtNem()
 EndFunc
 
+; Run Warning the Tengu from Ran Musu through Kinya to Soar.
 Func Leveler_Step_WarningTheTengu()
 	$g_s_CurrentHeader = "Quest: Warning the Tengu"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1137,6 +1163,7 @@ Func Leveler_Step_WarningTheTengu()
 	Return Leveler_RunRanMusuToTenguHandIn()
 EndFunc
 
+; Accept, complete, and chain Threat Grows into Journey of the Master.
 Func Leveler_Step_TheThreatGrows()
 	$g_s_CurrentHeader = "Quest: The Threat Grows"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1276,6 +1303,7 @@ Func Leveler_TalkToGuardTsukaro()
 	Return Map_WaitMapLoading($MAP_SAOSHANG)
 EndFunc
 
+; Run Road Less Traveled through Linnok / Tsukaro and hand in at Seitung.
 Func Leveler_Step_TheRoadLessTraveled()
 	$g_s_CurrentHeader = "Quest: The Road Less Traveled"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1349,6 +1377,7 @@ Func Leveler_Step_TheRoadLessTraveled()
 	Return True
 EndFunc
 
+; Buy mats and craft Seitung Harbor armor.
 Func Leveler_Step_CraftSeitungArmor()
 	$g_s_CurrentHeader = "Craft Seitung Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1394,12 +1423,14 @@ Func Leveler_Step_CraftSeitungArmor()
 	Return True
 EndFunc
 
+; Destroy leftover monastery armor after Seitung is equipped.
 Func Leveler_Step_DestroyMonastery()
 	$g_s_CurrentHeader = "Destroy Monastery Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	Return Leveler_DestroyMonasteryArmor()
 EndFunc
 
+; Walk Jaya Bluffs / Haiju Lagoon to Zen Daijun.
 Func Leveler_Step_ToZenDaijun()
 	$g_s_CurrentHeader = "To Zen Daijun"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1445,6 +1476,7 @@ Func Leveler_Step_ToZenDaijun()
 	Return True
 EndFunc
 
+; Enter and complete Zen Daijun, then leave toward the docks.
 Func Leveler_Step_ZenDaijunMission()
 	$g_s_CurrentHeader = "Zen Daijun Mission"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1599,6 +1631,7 @@ EndFunc
 #Region Kaineng
 ; Marketplace through Mox.
 
+; Travel from Zen Daijun to The Marketplace.
 Func Leveler_Step_ToMarketplace()
 	$g_s_CurrentHeader = "To Marketplace"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1626,6 +1659,7 @@ Func Leveler_Step_ToMarketplace()
 	Return True
 EndFunc
 
+; Walk Bukdek / Wajjun to Kaineng Center.
 Func Leveler_Step_ToKainengCenter()
 	$g_s_CurrentHeader = "To Kaineng Center"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1653,6 +1687,7 @@ Func Leveler_Step_ToKainengCenter()
 	Return True
 EndFunc
 
+; Buy Cry of Frustration, Power Drain, and Backfire at Kaineng.
 Func Leveler_Step_CompleteSkillsTraining()
 	$g_s_CurrentHeader = "Complete Skills Training"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1674,6 +1709,7 @@ Func Leveler_Step_CompleteSkillsTraining()
 	Return True
 EndFunc
 
+; Buy mats and craft Kaineng max armor.
 Func Leveler_Step_CraftMaxArmor()
 	$g_s_CurrentHeader = "Craft Max Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1720,12 +1756,14 @@ Func Leveler_Step_CraftMaxArmor()
 	Return True
 EndFunc
 
+; Destroy leftover Seitung armor after max armor is on.
 Func Leveler_Step_DestroySeitung()
 	$g_s_CurrentHeader = "Destroy Seitung Armor"
 	Out("=== " & $g_s_CurrentHeader & " ===")
 	Return Leveler_DestroySeitungArmor()
 EndFunc
 
+; Run The Search For A Cure.
 Func Leveler_Step_SearchForACure()
 	$g_s_CurrentHeader = "Quest: The Search For A Cure"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1827,6 +1865,7 @@ Func Leveler_Step_SearchForACure()
 	Return Leveler_AcceptBrotherTosai()
 EndFunc
 
+; Run A Master's Burden and abandon leftover Brother Tosai.
 Func Leveler_Step_AMastersBurden()
 	$g_s_CurrentHeader = "Quest: A Master's Burden"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1918,6 +1957,7 @@ Func Leveler_AcceptBrotherTosai()
 	Return True
 EndFunc
 
+; Unlock Mox in Bukdek Byway and return to Kaineng.
 Func Leveler_Step_UnlockMox()
 	$g_s_CurrentHeader = "Unlock Mox"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1945,6 +1985,7 @@ EndFunc
 #Region Eye Of The North
 ; Boreal Station through the Auspicious Beginnings farm.
 
+; Take I Feel the Earth Move and walk the Tunnels to Boreal Station.
 Func Leveler_Step_ToBorealStation()
 	$g_s_CurrentHeader = "To Boreal Station"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -1982,18 +2023,42 @@ Func Leveler_Step_ToBorealStation()
 	If Not Leveler_MoveTo(10134, 16742, True) Then Return False
 	Sleep(3000)
 	Leveler_SetPacifist()
-	If Not Leveler_MoveTo(4523.25, 15448.03, False) Then Return False
-	If Not Leveler_MoveTo(-43.80, 18365.45, False) Then Return False
-	If Not Leveler_MoveTo(-10234.92, 16691.96, False) Then Return False
-	If Not Leveler_MoveTo(-17917.68, 18480.57, False) Then Return False
-	If Not Leveler_MoveAndExit(-18775, 19097, $MAP_BOREAL, False) Then
-		Sleep(8000)
-		If Not Map_WaitMapLoading($MAP_BOREAL, -1, 20000) Then Return False
+	Leveler_SetHeroesBehavior(2)
+	Out("[Step] Avoiding Destroyers. Running to the Boreal portal.")
+	Local $l_af_Run[4][2] = [[4523.25, 15448.03], [-43.80, 18365.45], [-10234.92, 16691.96], [-17917.68, 18480.57]]
+	Local $i
+	For $i = 0 To 3
+		If Map_GetMapID() = $MAP_BOREAL Then ExitLoop
+		If Not Leveler_RunTo($l_af_Run[$i][0], $l_af_Run[$i][1]) Then
+			Leveler_SetHeroesBehavior(0)
+			Return False
+		EndIf
+	Next
+	If Map_GetMapID() <> $MAP_BOREAL Then
+		If Not Leveler_RunTo(-18775, 19097) Then
+			Leveler_SetHeroesBehavior(0)
+			Return False
+		EndIf
+		Local $l_i_StartMap = Map_GetMapID()
+		For $i = 1 To 10
+			If Map_GetMapID() <> $l_i_StartMap Then ExitLoop
+			Map_MoveLayer(-18775, 19097, Agent_GetAgentInfo(-2, "Plane"))
+			Sleep(400)
+		Next
+		If Map_GetMapID() <> $MAP_BOREAL Then
+			Sleep(8000)
+			If Not Map_WaitMapLoading($MAP_BOREAL, -1, 20000) Then
+				Leveler_SetHeroesBehavior(0)
+				Return False
+			EndIf
+		EndIf
 	EndIf
+	Leveler_SetHeroesBehavior(0)
 	Out("[Step] Arrived at Boreal Station")
 	Return True
 EndFunc
 
+; Walk Ice Cliff Chasms from Boreal into Eye of the North.
 Func Leveler_Step_ToEyeOfTheNorth()
 	$g_s_CurrentHeader = "To Eye of the North"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -2032,42 +2097,29 @@ Func Leveler_Step_ToEyeOfTheNorth()
 	Return Leveler_EnterHallOfMonuments()
 EndFunc
 
-; Eye of the North outpost uses straight Map_Move. Walk a NW path to the HoM portal.
+; Eye of the North outpost. Python walks (-4416.39, 4932.36) then the portal (-5198, 5595).
 Func Leveler_EnterHallOfMonuments()
 	If Map_GetMapID() = $MAP_HOM Then Return True
 	If Map_GetMapID() <> $MAP_EOTN Then
 		If Not Leveler_Travel($MAP_EOTN) Then Return False
 	EndIf
-	Party_LeaveGroup(True)
-	Sleep(400)
 	Leveler_SetPacifist()
-	Local $l_af_Path[6][2] = [ _
-			[-1814.00, 2917.00], _
-			[-2800.00, 3800.00], _
-			[-3600.00, 4500.00], _
-			[-4416.39, 4932.36], _
-			[-4873.00, 5284.00], _
-			[-5198.00, 5595.00] _
-			]
 	Out("[Step] Pathing to the Hall of Monuments portal")
-	Leveler_FollowCoords($l_af_Path, False)
+	If Map_GetMapID() <> $MAP_HOM Then Leveler_OutpostMove(-4416.39, 4932.36, $MAP_HOM)
 	If Map_GetMapID() = $MAP_HOM Then Return True
 
 	Local $l_i_Attempt
-	For $l_i_Attempt = 1 To 4
+	For $l_i_Attempt = 1 To 8
 		If Map_GetMapID() = $MAP_HOM Then Return True
-		If Mod($l_i_Attempt, 2) = 1 Then
-			Map_Move(-5198.00, 5595.00, 10)
-		Else
-			Map_Move(-4873.00, 5284.00, 10)
-		EndIf
-		If Map_WaitMapLoading($MAP_HOM, -1, 12000) Then Return True
+		Map_Move(-5198.00, 5595.00, 0)
+		If Map_WaitMapLoading($MAP_HOM, -1, 4000) Then Return True
 	Next
 	If Map_GetMapID() = $MAP_HOM Then Return True
 	Out("[Step] Failed to enter the Hall of Monuments from Eye of the North")
 	Return False
 EndFunc
 
+; Unlock the Hall of Monuments pool and take Keiran's Bow.
 Func Leveler_Step_UnlockEotnPool()
 	$g_s_CurrentHeader = "Unlock Eye of the North Pool"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -2075,18 +2127,8 @@ Func Leveler_Step_UnlockEotnPool()
 		Out("[Step] Character has entered Gunnar's Hold. Eye of the North pool is complete.")
 		Return True
 	EndIf
-	If Leveler_HomHeroesTalked() Then
-		Out("[Step] Missing Vanguard, Northern Allies, and Knowledgeable Asura are in the log. HoM heroes are done.")
-		If Map_GetMapID() = $MAP_HOM Then
-			Out("[Step] Leaving the Hall of Monuments")
-			If Not Leveler_Travel($MAP_EOTN) Then Return False
-		EndIf
-		If Not Leveler_TalkJoraOnIceCliff() Then Return False
-		If Not Leveler_Step_ToGunnarsHold() Then Return False
-		Return True
-	EndIf
-	If Leveler_EotnPoolReady() Then
-		Out("[Step] HoM heroes and Tracking the Nornbear are already done")
+	If Leveler_HomHeroesTalked() Or Leveler_EotnPoolReady() Then
+		Out("[Step] Hall of Monuments hero dialogs are done. Unlock Eye of the North Pool is complete.")
 		Return True
 	EndIf
 	If Leveler_HasQuest($QUEST_AGAINST_DESTROYERS) Then
@@ -2145,6 +2187,7 @@ Func Leveler_Step_UnlockEotnPool()
 	Return True
 EndFunc
 
+; Repeat Kilroy Punch-Out Extravaganza until the character is level 20.
 Func Leveler_Step_FarmUntil20()
 	$g_s_CurrentHeader = "Farm Until Level 20"
 	Local $l_i_Level = Leveler_PlayerLevel()
@@ -2190,8 +2233,12 @@ Func Leveler_TalkKilroyNpc($a_i_Dialog)
 	Return Leveler_TalkAndDialog($l_i_Npc, $a_i_Dialog)
 EndFunc
 
-; Punch_Out_Farm: intro 0x835803, accept 0x835801, enter 0x85. Reward 0x835807.
+; Punch_Out_Farm: Punch the Clown (0x835A01 / 0x84 / 0x835A07) unlocks Kilroy, then intro 0x835803, accept 0x835801, enter 0x85.
 Func Leveler_HandleFronisOutpost()
+	If Not Leveler_PunchClownDone() Then
+		Out("[Farm] Punch the Clown dialog is required before Punch-Out Extravaganza")
+		If Not Leveler_Step_UnlockKilroy() Then Return False
+	EndIf
 	If Map_GetMapID() <> $MAP_GUNNAR Then
 		If Not Leveler_Travel($MAP_GUNNAR) Then Return False
 	EndIf
@@ -2285,6 +2332,7 @@ EndFunc
 #Region Post 20
 ; An Unwelcome Guest through remaining secondaries.
 
+; Walk Seitung Harbor to Zunraa's shrine.
 Func Leveler_SeitungZunraaPath()
 	Local $l_af_Path[5][2] = [ _
 			[16602.23, 11612.10], _
@@ -2298,6 +2346,7 @@ Func Leveler_SeitungZunraaPath()
 	Return Leveler_WaitMs(5000)
 EndFunc
 
+; Run An Unwelcome Guest (attribute quest 2) in Zen Daijun explorable.
 Func Leveler_Step_AnUnwelcomeGuest()
 	$g_s_CurrentHeader = "Quest: An Unwelcome Guest"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -2435,6 +2484,7 @@ Func Leveler_Step_AnUnwelcomeGuest()
 	Return True
 EndFunc
 
+; Walk Eye of the North -> Ice Cliff -> Norrhart into Gunnar's Hold.
 Func Leveler_Step_ToGunnarsHold()
 	$g_s_CurrentHeader = "To Gunnar's Hold"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -2480,6 +2530,33 @@ Func Leveler_Step_ToGunnarsHold()
 	Return True
 EndFunc
 
+; Stay on map 703 and fight. A knockdown must not travel home; that skips the clown and fails the hand-in.
+Func Leveler_FinishPunchClownFight()
+	Out("[Step] Fighting the clown. Staying in the instance until the quest is ready to hand in.")
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < 180000
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_QuestReadyForReward($QUEST_PUNCH_CLOWN) Then
+			Out("[Step] Punch the Clown is ready to hand in.")
+			Return True
+		EndIf
+		If Map_GetMapID() <> $MAP_KILROY Then
+			Out("[Step] Left Punch the Clown before it was ready to hand in.")
+			Return False
+		EndIf
+		If Agent_GetDistanceToXY(19290.50, -11552.23) >= $LEVELER_ARRIVE_RANGE Then
+			Leveler_MoveTo(19290.50, -11552.23, True)
+		Else
+			Leveler_CombatTick()
+			Sleep(50)
+		EndIf
+	WEnd
+	If Leveler_QuestReadyForReward($QUEST_PUNCH_CLOWN) Then Return True
+	Out("[Step] Punch the Clown fight timed out before the hand-in.")
+	Return False
+EndFunc
+
+; Accept, run, and complete Punch the Clown to unlock Kilroy punch-out.
 Func Leveler_Step_UnlockKilroy()
 	$g_s_CurrentHeader = "Unlock Kilroy Stonekin"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -2525,8 +2602,7 @@ Func Leveler_Step_UnlockKilroy()
 		$g_b_KilroyMode = False
 		Return False
 	EndIf
-	Leveler_MoveTo(19290.50, -11552.23, True)
-	If Not Leveler_WaitUntilOutpost(180000) Then
+	If Not Leveler_FinishPunchClownFight() Then
 		$g_b_KilroyMode = False
 		Return False
 	EndIf
@@ -2547,6 +2623,7 @@ Func Leveler_Step_UnlockKilroy()
 	Return True
 EndFunc
 
+; Take Chaos in Kryta from Kaineng and travel to Lion's Arch.
 Func Leveler_Step_ToLionsArch()
 	$g_s_CurrentHeader = "To Lion's Arch"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -2608,6 +2685,7 @@ Func Leveler_Step_ToLionsArch()
 	Return True
 EndFunc
 
+; Take Sunspears in Cantha and travel to Kamadan.
 Func Leveler_Step_ToKamadan()
 	$g_s_CurrentHeader = "To Kamadan"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -2685,6 +2763,7 @@ Func Leveler_Step_ToKamadan()
 	Return True
 EndFunc
 
+; Unlock Consulate Docks from Kamadan.
 Func Leveler_Step_ToConsulateDocks()
 	$g_s_CurrentHeader = "To Consulate Docks"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -2709,6 +2788,7 @@ Func Leveler_Step_ToConsulateDocks()
 	Return True
 EndFunc
 
+; Run the Olias unlock quest from Consulate Docks.
 Func Leveler_Step_UnlockOlias()
 	$g_s_CurrentHeader = "Unlock Olias"
 	Out("=== " & $g_s_CurrentHeader & " ===")
@@ -2789,6 +2869,7 @@ Func Leveler_OliasReturnToKamadan()
 	Return True
 EndFunc
 
+; Dialog IDs used at the Great Temple to unlock remaining secondaries.
 Func Leveler_UnlockTrainerDialogs()
 	Local $l_i_Prof = Leveler_PrimaryProfession()
 	Local $l_ai_All[10] = [ _
@@ -2824,6 +2905,7 @@ Func Leveler_UnlockTrainerDialogs()
 	Return True
 EndFunc
 
+; Unlock leftover secondary professions at the Great Temple of Balthazar.
 Func Leveler_Step_UnlockSecondaryProfs()
 	$g_s_CurrentHeader = "Unlock Remaining Secondary Professions"
 	Out("=== " & $g_s_CurrentHeader & " ===")

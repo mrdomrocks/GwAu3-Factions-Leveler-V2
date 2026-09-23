@@ -3,6 +3,7 @@
 ; Progress flags, skip rules, and the GUI status check that picks the next step.
 
 #Region Progress
+; Gold on the character, not storage.
 Func Leveler_CharacterGold()
 	Return Item_GetInventoryInfo("GoldCharacter")
 EndFunc
@@ -14,6 +15,7 @@ Func Leveler_HasPostXunlaiProgress()
 	Return False
 EndFunc
 
+; True after Formal Introduction is accepted or later tutorial progress exists.
 Func Leveler_HasFormalOrLater()
 	If Leveler_HasQuest($QUEST_FORMAL_INTRO) Then Return True
 	If Leveler_QuestFinished($QUEST_FORMAL_INTRO) Then Return True
@@ -49,6 +51,7 @@ Func Leveler_FormalIntroductionTurnedIn()
 	Return False
 EndFunc
 
+; True when this quest is handed in (or its special-case finish check passes).
 Func Leveler_QuestFinished($a_i_QuestID)
 	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
 	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
@@ -61,6 +64,7 @@ Func Leveler_QuestFinished($a_i_QuestID)
 	Return False
 EndFunc
 
+; Map a quest ID to its $LEVELER_Q_* flag index, or -1.
 Func Leveler_QuestFlagIndex($a_i_QuestID)
 	Switch $a_i_QuestID
 		Case $QUEST_FORMING_A_PARTY
@@ -111,6 +115,7 @@ Func Leveler_QuestFlagIndex($a_i_QuestID)
 	Return -1
 EndFunc
 
+; Map a $LEVELER_Q_* flag index back to its quest ID.
 Func Leveler_QuestIDFromFlag($a_i_Flag)
 	Switch $a_i_Flag
 		Case $LEVELER_Q_FORMING
@@ -161,12 +166,14 @@ Func Leveler_QuestIDFromFlag($a_i_Flag)
 	Return 0
 EndFunc
 
+; True when the sticky run flag (or QuestFinished) says this quest is done.
 Func Leveler_IsQuestDone($a_i_QuestID)
 	Local $l_i_Flag = Leveler_QuestFlagIndex($a_i_QuestID)
 	If $l_i_Flag < 0 Then Return Leveler_QuestFinished($a_i_QuestID)
 	Return $g_ab_QuestDone[$l_i_Flag] = True
 EndFunc
 
+; Set the sticky flag if the quest is not still in the log.
 Func Leveler_MarkQuestDone($a_i_QuestID, $a_b_Force = False)
 	If Not $a_b_Force And Leveler_HasIncompleteQuest($a_i_QuestID) Then Return
 	Local $l_i_Flag = Leveler_QuestFlagIndex($a_i_QuestID)
@@ -249,6 +256,7 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 	EndIf
 EndFunc
 
+; Log a skip and return True when the named quest is already finished.
 Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
 	If $a_i_QuestID = $QUEST_SEARCH_CURE And Leveler_SearchCureDone() Then
 		Leveler_MarkQuestDone($QUEST_SEARCH_CURE)
@@ -278,7 +286,8 @@ Func Leveler_SearchCureDone()
 	; Tosai (#337) is only offered after Cure — having it means Hanjo's quest is past.
 	If Leveler_HasIncompleteQuest($QUEST_BROTHER_TOSAI) Then Return True
 	If Leveler_IsQuestDone($QUEST_BROTHER_TOSAI) Then Return True
-	If Leveler_QuestFinished($QUEST_SEARCH_CURE) Then Return True
+	; Quest log bit only. Leveler_QuestFinished(#336) calls this function.
+	If Quest_GetQuestInfo($QUEST_SEARCH_CURE, "IsCompleted") Then Return True
 	If Leveler_MoxOrOliasAvailable() Then Return True
 	If $g_ab_QuestDone[$LEVELER_Q_CURE] Then Return True
 	Return False
@@ -293,19 +302,21 @@ Func Leveler_CureStepComplete()
 	Return False
 EndFunc
 
-; A Master's Burden (#349). Incomplete = not done. Empty log needs a sticky flag or mid-game proof.
+; A Master's Burden (#349). Max armor equipped means this character is already past it.
 Func Leveler_MastersBurdenDone()
+	If Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) Then Return True
 	If Leveler_HasIncompleteQuest($QUEST_MASTERS_BURDEN) Then Return False
-	If Leveler_QuestFinished($QUEST_MASTERS_BURDEN) Then Return True
+	; Quest log bit only. Leveler_QuestFinished(#349) calls this function.
+	If Quest_GetQuestInfo($QUEST_MASTERS_BURDEN, "IsCompleted") Then Return True
 	If Leveler_MoxOrOliasAvailable() Then Return True
 	If $g_ab_QuestDone[$LEVELER_Q_BURDEN] Then Return True
 	Return False
 EndFunc
 
-; Punch the Clown (#858) is finished once it has left the log and this character has reached Gunnar's Hold.
+; Punch the Clown (#858) must be taken and handed in. Gunnar's Hold alone does not unlock Kilroy.
 Func Leveler_PunchClownDone()
 	If Leveler_HasIncompleteQuest($QUEST_PUNCH_CLOWN) Then Return False
-	If Leveler_ReachedGunnarsHold() Then Return True
+	If Leveler_HasQuest($QUEST_PUNCH_CLOWN) Then Return False
 	If Leveler_IsQuestDone($QUEST_PUNCH_CLOWN) Then Return True
 	If Leveler_QuestFinished($QUEST_PUNCH_CLOWN) Then Return True
 	Return False
@@ -359,18 +370,18 @@ Func Leveler_ReachedGunnarsHold()
 	Return False
 EndFunc
 
+; Unlock Eye of the North Pool is complete once the Hall dialogs are done, or Tracking the Nornbear is in the log.
 Func Leveler_EotnPoolReady()
 	If Leveler_ReachedGunnarsHold() Then Return True
-	If Not Leveler_HomHeroesTalked() Then Return False
-	If Not Leveler_HasNornbearTracking() Then Return False
-	Local $l_i_Map = Map_GetMapID()
-	If $l_i_Map = $MAP_ICE_CLIFF Or $l_i_Map = $MAP_NORRHART Then Return False
-	Return $l_i_Map = $MAP_GUNNAR Or Map_IsMapUnlocked($MAP_GUNNAR)
+	If Leveler_HomHeroesTalked() Then Return True
+	If Leveler_HasNornbearTracking() Then Return True
+	Return False
 EndFunc
 
 Func Leveler_UnwelcomeGuestDone()
 	If Leveler_HasIncompleteQuest($QUEST_UNWELCOME) Then Return False
 	If Leveler_ReachedGunnarsHold() Then Return True
+	If Leveler_HasNornbearTracking() Then Return True
 	If Leveler_IsQuestDone($QUEST_UNWELCOME) Then Return True
 	If Leveler_QuestFinished($QUEST_UNWELCOME) Then Return True
 	; Already past Gunnar / Kryta. Do not rewind to Seitung Harbor for Zunraa.
@@ -386,11 +397,13 @@ Func Leveler_HasNornbearTracking()
 	Return False
 EndFunc
 
+; True when the character is still on Monastery Overlook (or its variants).
 Func Leveler_OnOverlook()
 	Local $l_i_Map = Map_GetMapID()
 	Return $l_i_Map = 212 Or $l_i_Map = 285 Or $l_i_Map = 416
 EndFunc
 
+; True when a Xunlai storage bag pointer is already valid.
 Func Leveler_HasStorageAccess()
 	If Item_GetBagPtr($GC_I_INVENTORY_STORAGE1) <> 0 Then Return True
 	If Item_GetInventoryInfo("Storage1Ptr") <> 0 Then Return True
@@ -428,10 +441,12 @@ Func Leveler_InterruptSkillsUnlocked()
 	Return True
 EndFunc
 
+; True when Kaineng interrupt skills (and Backfire, if Mesmer) are learnt.
 Func Leveler_Skills2Unlocked()
 	Return Leveler_InterruptSkillsUnlocked()
 EndFunc
 
+; True when Tengu / Threat / Journey / Road is in progress.
 Func Leveler_HasLaterQuest()
 	If Leveler_HasQuest($QUEST_WARNING_TENGU) Or Leveler_HasIncompleteQuest($QUEST_WARNING_TENGU) Then Return True
 	If Leveler_HasQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Then Return True
@@ -466,6 +481,7 @@ Func Leveler_RoadLessTraveledDone()
 	Return False
 EndFunc
 
+; True when Lost Treasure is handed in or a later island quest is active.
 Func Leveler_LostTreasureAlreadyDone()
 	If Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then Return False
 	If Quest_GetQuestInfo($QUEST_LOST_TREASURE, "IsCompleted") Then Return True
@@ -595,6 +611,18 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] = Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces())
 	$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = $g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] And Not $l_b_SeitungArmor
 	$g_ab_StepDone[$LEVELER_STEP_CURE] = Leveler_CureStepComplete()
+	; Max armor on the character means Burden through Destroy Seitung are behind us.
+	; Leave The Search For A Cure as the next step unless it is already finished.
+	If $g_ab_StepDone[$LEVELER_STEP_MAX_ARMOR] Then
+		$g_ab_StepDone[$LEVELER_STEP_BURDEN] = True
+		$g_ab_StepDone[$LEVELER_STEP_TO_KC] = True
+		$g_ab_StepDone[$LEVELER_STEP_SKILLS2] = True
+		$g_ab_StepDone[$LEVELER_STEP_DESTROY_SEITUNG] = True
+		Leveler_MarkQuestDone($QUEST_MASTERS_BURDEN, True)
+		If Not $g_ab_StepDone[$LEVELER_STEP_CURE] Then
+			Out("[Status] Max armor is equipped. A Master's Burden is complete. Next is The Search For A Cure.")
+		EndIf
+	EndIf
 	; Mox: in the party, AddHero works, or this character already reached EotN.
 	$g_ab_StepDone[$LEVELER_STEP_UNLOCK_MOX] = Leveler_HasMoxUnlocked()
 	$g_ab_StepDone[$LEVELER_STEP_TO_BOREAL] = Leveler_HasMoxUnlocked() And (Map_IsMapUnlocked($MAP_BOREAL) Or $l_i_Map = $MAP_BOREAL Or $l_i_Map = $MAP_ICE_CLIFF Or $l_b_Eotn) And $l_i_Map <> $MAP_TUNNELS
@@ -602,7 +630,7 @@ Func Leveler_StatusCheck()
 	$g_ab_StepDone[$LEVELER_STEP_TO_EOTN] = $l_b_Eotn And $l_i_Map <> $MAP_ICE_CLIFF
 	$g_ab_StepDone[$LEVELER_STEP_EOTN_POOL] = Leveler_EotnPoolReady()
 	; Live EotN: Against the Destroyers in the log means Hall of Monuments next, not Seitung Unwelcome Guest.
-	If Leveler_HasIncompleteQuest($QUEST_AGAINST_DESTROYERS) And Not Leveler_HomHeroesTalked() And ($l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM) Then
+	If Leveler_HasIncompleteQuest($QUEST_AGAINST_DESTROYERS) And Not Leveler_HomHeroesTalked() And Not Leveler_HasNornbearTracking() And ($l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_HOM) Then
 		$g_ab_StepDone[$LEVELER_STEP_TO_EOTN] = True
 		$g_ab_StepDone[$LEVELER_STEP_EOTN_POOL] = False
 		Out("[Status] Against the Destroyers is in the log on map " & $l_i_Map & ". Next is Hall of Monuments, not Seitung.")
@@ -612,9 +640,14 @@ Func Leveler_StatusCheck()
 		$g_ab_StepDone[$LEVELER_STEP_ATTR_2] = True
 		$g_ab_StepDone[$LEVELER_STEP_TO_GUNNAR] = True
 		Out("[Status] Character has entered Gunnar's Hold. Pool, An Unwelcome Guest, and To Gunnar's Hold are complete.")
-	ElseIf Leveler_HomHeroesTalked() And (Not Leveler_HasNornbearTracking() Or $l_i_Map = $MAP_HOM Or $l_i_Map = $MAP_EOTN Or $l_i_Map = $MAP_ICE_CLIFF Or $l_i_Map = $MAP_NORRHART) Then
-		$g_ab_StepDone[$LEVELER_STEP_EOTN_POOL] = False
-		Out("[Status] HoM hero quests are in the log. Next is Jora in Ice Cliff Chasms, then Gunnar's Hold.")
+	ElseIf Leveler_HomHeroesTalked() Then
+		$g_ab_StepDone[$LEVELER_STEP_EOTN_POOL] = True
+		Out("[Status] Hall of Monuments hero dialogs are done. Unlock Eye of the North Pool is complete.")
+	EndIf
+	If Leveler_HasNornbearTracking() Then
+		$g_ab_StepDone[$LEVELER_STEP_TO_EOTN] = True
+		$g_ab_StepDone[$LEVELER_STEP_EOTN_POOL] = True
+		Out("[Status] Tracking the Nornbear is in the quest log. Eye of the North is unlocked.")
 	EndIf
 	If Not $g_ab_StepDone[$LEVELER_STEP_ATTR_2] Then $g_ab_StepDone[$LEVELER_STEP_ATTR_2] = Leveler_UnwelcomeGuestDone()
 	If Not $g_ab_StepDone[$LEVELER_STEP_TO_GUNNAR] Then $g_ab_StepDone[$LEVELER_STEP_TO_GUNNAR] = Leveler_HasNornbearTracking() And Map_IsMapUnlocked($MAP_GUNNAR) And $l_i_Map <> $MAP_ICE_CLIFF And $l_i_Map <> $MAP_NORRHART And $l_i_Map <> $MAP_EOTN And $l_i_Map <> $MAP_HOM
@@ -650,6 +683,7 @@ Func Leveler_StatusCheck()
 	Return $l_i_Next
 EndFunc
 
+; Print Phase 1 quests that are still in the log.
 Func Leveler_LogActiveQuests()
 	Local $l_ai_Ids[8] = [$QUEST_FORMING_A_PARTY, $QUEST_SECONDARY, $QUEST_FORMAL_INTRO, $QUEST_LOST_TREASURE, $QUEST_WARNING_TENGU, $QUEST_THREAT_GROWS, $QUEST_JOURNEY_MASTER, $QUEST_ROAD_LESS]
 	Local $l_as_Names[8] = ["Forming A Party", "Choose Secondary", "Formal Introduction", "Lost Treasure", "Warning the Tengu", "The Threat Grows", "Journey of the Master", "The Road Less Traveled"]
@@ -665,6 +699,7 @@ Func Leveler_LogActiveQuests()
 	If Not $l_b_Any Then Out("[Status] No tracked quests are in the log")
 EndFunc
 
+; Lowest unfinished step index, skipping Vaettir when the profession does not need it.
 Func Leveler_FirstIncompleteStep()
 	For $i = 0 To $LEVELER_STEP_COUNT - 1
 		If $g_ab_StepDone[$i] Then ContinueLoop
@@ -673,6 +708,7 @@ Func Leveler_FirstIncompleteStep()
 	Return $LEVELER_STEP_DONE
 EndFunc
 
+; Mark every step up to $a_i_LastDone complete and refresh the list.
 Func Leveler_MarkStepsThrough($a_i_LastDone)
 	If $a_i_LastDone < 0 Then Return
 	For $i = 0 To $a_i_LastDone

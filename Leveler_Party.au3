@@ -4,12 +4,14 @@
 
 #Region Profession
 
+; Return the character primary profession ID (1-10).
 Func Leveler_PrimaryProfession()
 	Local $l_i_Prof = Agent_GetAgentInfo(-2, "Primary")
 	If $l_i_Prof >= 1 And $l_i_Prof <= 10 Then Return $l_i_Prof
 	Return Party_GetPartyProfessionInfo(-2, "Primary")
 EndFunc
 
+; Return the assigned secondary profession ID, or 0 if unset.
 Func Leveler_SecondaryProfession()
 	Local $l_i_Prof = Agent_GetAgentInfo(-2, "Secondary")
 	If $l_i_Prof >= 1 And $l_i_Prof <= 10 Then Return $l_i_Prof
@@ -24,6 +26,7 @@ Func Leveler_HasSecondaryProfession()
 	Return $l_i_Prof >= 1 And $l_i_Prof <= 10
 EndFunc
 
+; True when primary profession is Mesmer.
 Func Leveler_IsMesmer()
 	Return Leveler_PrimaryProfession() = $GC_I_PROFESSION_MESMER
 EndFunc
@@ -83,6 +86,7 @@ EndFunc
 
 #Region Heroes
 
+; How many heroes are in the current party.
 Func Leveler_HeroCount()
 	Local $l_i_Count = Party_GetPartyContextInfo("HeroCount")
 	If $l_i_Count > 0 Then Return $l_i_Count
@@ -208,6 +212,7 @@ Func Leveler_ConfirmOliasInHeroList()
 	Return False
 EndFunc
 
+; Add Gwen, Vekk, Ogden, and Mox and load their bars.
 Func Leveler_AddHeroTeam($a_b_Olias = False)
 	Local $l_i_Fourth = $GC_I_HERO_ID_MOX
 	Local $l_s_FourthBar = "OgCikys8wchuD4xb5VAAAAAA"
@@ -239,6 +244,7 @@ Func Leveler_AddHeroTeam($a_b_Olias = False)
 	Return True
 EndFunc
 
+; Leave the group, equip the player bar, add the hero team, then optional henchmen.
 Func Leveler_PrepareHeroTeam($a_ai_Hench = 0, $a_b_Olias = False)
 	$g_b_CombatMode = True
 	$g_b_UAIReady = False
@@ -254,6 +260,7 @@ EndFunc
 
 #Region UtilityAI
 
+; Cache the UtilityAI skill bar for this explorable map.
 Func Leveler_PrepareCombatAI()
 	$g_b_CombatMode = True
 	Local $l_i_Map = Map_GetMapID()
@@ -319,6 +326,7 @@ Func Leveler_CacheSkillBarNow()
 	Return True
 EndFunc
 
+; Turn combat mode off so pathing does not fight.
 Func Leveler_SetPacifist()
 	$g_b_CombatMode = False
 	Return True

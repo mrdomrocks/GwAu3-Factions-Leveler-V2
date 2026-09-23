@@ -3,6 +3,7 @@
 ; Inventory counts, Xunlai gold, and armor / weapon / bag crafting.
 
 #Region Inventory
+; Count this model in inventory, and storage unless told not to.
 Func Leveler_CountModel($a_i_Model, $a_b_IncludeStorage = True)
 	Local $l_i_Count = 0
 	Local $l_av_Inv = Item_GetInventoryArray()
@@ -207,6 +208,7 @@ Func Leveler_PrepareCraftWeaponFunds()
 	Return True
 EndFunc
 
+; True when the model is equipped or in bags (not crafter-window listings).
 Func Leveler_OwnsModel($a_i_Model)
 	If $a_i_Model = 0 Then Return False
 	If Leveler_IsModelEquipped($a_i_Model) Then Return True
@@ -215,6 +217,7 @@ Func Leveler_OwnsModel($a_i_Model)
 	Return False
 EndFunc
 
+; True when every piece in the set is owned.
 Func Leveler_ArmorSetOwned($a_ai_Pieces)
 	Local $i
 	For $i = 0 To UBound($a_ai_Pieces) - 1
@@ -223,6 +226,7 @@ Func Leveler_ArmorSetOwned($a_ai_Pieces)
 	Return True
 EndFunc
 
+; Wait until the open crafter lists this model.
 Func Leveler_WaitForCrafterOffer($a_i_Model, $a_i_Timeout = 8000)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
@@ -234,6 +238,7 @@ Func Leveler_WaitForCrafterOffer($a_i_Model, $a_i_Timeout = 8000)
 	Return False
 EndFunc
 
+; Wait until the model is in bags or equipped.
 Func Leveler_WaitForBagModel($a_i_Model, $a_i_Timeout = 6000)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
@@ -244,6 +249,7 @@ Func Leveler_WaitForBagModel($a_i_Model, $a_i_Timeout = 6000)
 	Return False
 EndFunc
 
+; True when a weapon set slot already holds this model.
 Func Leveler_WeaponSetHasModel($a_i_Model)
 	If $a_i_Model = 0 Then Return False
 	Local $l_as_Ptrs[8] = [ _
@@ -295,6 +301,7 @@ Func Leveler_EquippedBagHasModel($a_i_Model)
 	Return False
 EndFunc
 
+; True when the model is worn or in a weapon set.
 Func Leveler_IsModelEquipped($a_i_Model)
 	If $a_i_Model = 0 Then Return False
 	If Leveler_WeaponSetHasModel($a_i_Model) Then Return True
@@ -334,6 +341,7 @@ Func Leveler_EquipModel($a_i_Model)
 	Return False
 EndFunc
 
+; Pay gold, spend mats, craft the piece, and equip it.
 Func Leveler_CraftAndEquipPiece($a_i_ItemID, $a_i_Gold, $a_ai_Mats)
 	If Leveler_OwnsModel($a_i_ItemID) Then
 		Out("[Craft] Already own piece " & $a_i_ItemID)
@@ -361,6 +369,7 @@ Func Leveler_CraftAndEquipPiece($a_i_ItemID, $a_i_Gold, $a_ai_Mats)
 	Return Leveler_EquipModel($a_i_ItemID)
 EndFunc
 
+; Equip each owned piece in the set.
 Func Leveler_EquipArmorPieces($a_ai_Pieces)
 	Local $i
 	For $i = 0 To UBound($a_ai_Pieces) - 1
@@ -369,6 +378,7 @@ Func Leveler_EquipArmorPieces($a_ai_Pieces)
 	Return True
 EndFunc
 
+; True when every piece in the set is currently worn.
 Func Leveler_ArmorSetEquipped($a_ai_Pieces)
 	Local $i
 	For $i = 0 To UBound($a_ai_Pieces) - 1
@@ -555,6 +565,7 @@ Func Leveler_GetMonasteryPieces()
 	Return $l_ai_Pieces
 EndFunc
 
+; Buy monastery-armor mats into bags so Merchant_CraftItem can see them.
 Func Leveler_BuyEarlyArmorMaterials()
 	Local $l_ai_Models, $l_ai_Counts
 	Leveler_GetArmorBuyList($l_ai_Models, $l_ai_Counts)
@@ -566,6 +577,7 @@ Func Leveler_BuyEarlyArmorMaterials()
 EndFunc
 
 ; Inventory only for Merchant_CraftItem. Storage mats are moved into bags first; leftover lots are bought.
+; Buy 4 wood and 1 dust for the Clairvoyant Staff.
 Func Leveler_BuyWeaponMaterials()
 	Out("[Craft] Buying Clairvoyant Staff materials into inventory")
 	If Not Leveler_BuyMaterialShortfallInv($GC_I_MODELID_WOOD, 4) Then Return False
@@ -573,6 +585,7 @@ Func Leveler_BuyWeaponMaterials()
 	Return True
 EndFunc
 
+; Craft and equip the Clairvoyant Staff, or just equip it if already owned.
 Func Leveler_CraftWeapon()
 	If Not Leveler_OwnsModel($MODEL_CLAIRVOYANT_STAFF) Then
 		Local $l_ai_Mats[2][2]
@@ -592,6 +605,7 @@ Func Leveler_CraftWeapon()
 	Return True
 EndFunc
 
+; Craft and equip the Shing Jea monastery armor set.
 Func Leveler_CraftMonasteryArmor()
 	Local $l_ai_Pieces = Leveler_GetMonasteryPieces()
 	If Not Leveler_WaitForCrafterOffer($l_ai_Pieces[0][0]) Then Return False
@@ -608,6 +622,7 @@ Func Leveler_CraftMonasteryArmor()
 	Return True
 EndFunc
 
+; Destroy one inventory item of this model if it exists.
 Func Leveler_DestroyModel($a_i_Model)
 	Local $l_i_Item = Item_FindItemByModelID($a_i_Model)
 	If $l_i_Item = 0 Then $l_i_Item = Item_GetBagsItembyModelID($a_i_Model)
@@ -631,6 +646,7 @@ Func Leveler_DestroyBagModel($a_i_Model)
 	Return True
 EndFunc
 
+; Five starter-armor model IDs for the primary profession.
 Func Leveler_GetStarterArmorModels()
 	Local $l_i_Prof = Leveler_PrimaryProfession()
 	Local $l_ai_Armor[5]
@@ -690,6 +706,7 @@ Func Leveler_GetStarterArmorModels()
 	Return $l_ai_Armor
 EndFunc
 
+; True when any starter-armor piece is still owned.
 Func Leveler_HasStarterArmor()
 	Local $l_ai_Armor = Leveler_GetStarterArmorModels()
 	For $i = 0 To UBound($l_ai_Armor) - 1
@@ -699,6 +716,7 @@ Func Leveler_HasStarterArmor()
 	Return False
 EndFunc
 
+; True when the monastery set is owned.
 Func Leveler_HasMonasteryArmor()
 	Local $l_ai_Pieces = Leveler_GetMonasteryPieces()
 	For $i = 0 To UBound($l_ai_Pieces) - 1
@@ -863,6 +881,7 @@ Func Leveler_GetSeitungPieces()
 	Return $l_ai_Pieces
 EndFunc
 
+; Buy Seitung armor mats from the material trader.
 Func Leveler_BuySeitungMaterials()
 	Local $l_ai_Pieces = Leveler_GetSeitungPieces()
 	Local $l_i_Cloth = 0
@@ -891,6 +910,7 @@ Func Leveler_BuySeitungMaterials()
 	Return True
 EndFunc
 
+; True when bags already hold the Seitung craft mats.
 Func Leveler_SeitungMaterialsReady()
 	Local $l_ai_Pieces = Leveler_GetSeitungPieces()
 	Local $l_i_Cloth = 0
@@ -912,6 +932,7 @@ Func Leveler_SeitungMaterialsReady()
 	Return True
 EndFunc
 
+; True when the open material trader lists this model.
 Func Leveler_TraderOffersModel($a_i_Model)
 	If Merchant_GetMerchantItemPtr($a_i_Model) <> 0 Then Return True
 	Local $l_ap_Items = Item_GetItemArray()
@@ -927,6 +948,7 @@ Func Leveler_TraderOffersModel($a_i_Model)
 	Return False
 EndFunc
 
+; Wait until the trader lists this material.
 Func Leveler_WaitForMaterialOffer($a_i_Model, $a_i_Timeout = 8000)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
@@ -938,6 +960,7 @@ Func Leveler_WaitForMaterialOffer($a_i_Model, $a_i_Timeout = 8000)
 	Return False
 EndFunc
 
+; Buy the missing count into bags only (not storage).
 Func Leveler_BuyMaterialShortfallInv($a_i_Model, $a_i_Need)
 	Local $l_i_Have = Leveler_CountModel($a_i_Model, False)
 	If $l_i_Have >= $a_i_Need Then
@@ -988,6 +1011,7 @@ Func Leveler_BuyMaterialShortfallInv($a_i_Model, $a_i_Need)
 	Return True
 EndFunc
 
+; Craft and equip the Seitung Harbor armor set.
 Func Leveler_CraftSeitungArmor()
 	Local $l_ai_Pieces = Leveler_GetSeitungPieces()
 	If Not Leveler_WaitForCrafterOffer($l_ai_Pieces[0][0]) Then Return False
@@ -1004,6 +1028,7 @@ Func Leveler_CraftSeitungArmor()
 	Return True
 EndFunc
 
+; True when the Seitung set is owned.
 Func Leveler_HasSeitungArmor()
 	Local $l_ai_Pieces = Leveler_GetSeitungPieces()
 	For $i = 0 To UBound($l_ai_Pieces) - 1
@@ -1012,6 +1037,7 @@ Func Leveler_HasSeitungArmor()
 	Return False
 EndFunc
 
+; Destroy leftover monastery armor pieces.
 Func Leveler_DestroyMonasteryArmor()
 	Local $l_ai_Pieces = Leveler_GetMonasteryPieces()
 	For $i = 0 To UBound($l_ai_Pieces) - 1
@@ -1021,6 +1047,7 @@ Func Leveler_DestroyMonasteryArmor()
 	Return True
 EndFunc
 
+; Destroy leftover Seitung armor pieces.
 Func Leveler_DestroySeitungArmor()
 	If Not Leveler_ArmorSetEquipped(Leveler_GetMaxArmorPieces()) Then
 		Out("[Craft] Max armor is not equipped. Not destroying Seitung pieces.")
@@ -1113,6 +1140,7 @@ Func Leveler_GetMaxArmorPieces()
 	Return $l_ai_Pieces
 EndFunc
 
+; Write one Kaineng max-armor row (item + two mat stacks).
 Func Leveler_FillMaxPiece(ByRef $a_ai_Pieces, $a_i_Row, $a_i_Item, $a_i_Mat1, $a_i_Qty1, $a_i_Mat2, $a_i_Qty2)
 	$a_ai_Pieces[$a_i_Row][0] = $a_i_Item
 	$a_ai_Pieces[$a_i_Row][1] = $a_i_Mat1
@@ -1121,6 +1149,7 @@ Func Leveler_FillMaxPiece(ByRef $a_ai_Pieces, $a_i_Row, $a_i_Item, $a_i_Mat1, $a
 	$a_ai_Pieces[$a_i_Row][4] = $a_i_Qty2
 EndFunc
 
+; Kaineng crafter XY for the primary profession.
 Func Leveler_GetMaxArmorCrafter(ByRef $a_f_X, ByRef $a_f_Y)
 	Switch Leveler_PrimaryProfession()
 		Case $GC_I_PROFESSION_WARRIOR
@@ -1135,6 +1164,7 @@ Func Leveler_GetMaxArmorCrafter(ByRef $a_f_X, ByRef $a_f_Y)
 	EndSwitch
 EndFunc
 
+; True for cloth, hide, dust, or bone (merchant, not rare trader).
 Func Leveler_IsCommonMaterial($a_i_Model)
 	Switch $a_i_Model
 		Case $GC_I_MODELID_CLOTHS, $GC_I_MODELID_TANNED_HIDE, $GC_I_MODELID_DUST, $GC_I_MODELID_BONES
@@ -1143,6 +1173,7 @@ Func Leveler_IsCommonMaterial($a_i_Model)
 	Return False
 EndFunc
 
+; Add a material quantity into the need lists, merging duplicates.
 Func Leveler_AddMatNeed(ByRef $a_ai_Models, ByRef $a_ai_Counts, ByRef $a_i_Count, $a_i_Model, $a_i_Qty)
 	For $i = 0 To $a_i_Count - 1
 		If $a_ai_Models[$i] = $a_i_Model Then
@@ -1159,6 +1190,7 @@ Func Leveler_AddMatNeed(ByRef $a_ai_Models, ByRef $a_ai_Counts, ByRef $a_i_Count
 	$a_i_Count += 1
 EndFunc
 
+; Collect common or rare mats still needed for the max set.
 Func Leveler_GetMaxArmorMatNeeds($a_b_Common, ByRef $a_ai_Models, ByRef $a_ai_Counts)
 	Local $l_ai_M[8]
 	Local $l_ai_C[8]
@@ -1184,6 +1216,7 @@ Func Leveler_GetMaxArmorMatNeeds($a_b_Common, ByRef $a_ai_Models, ByRef $a_ai_Co
 	$a_ai_Counts = $l_ai_C
 EndFunc
 
+; Buy the common or rare mats for Kaineng max armor.
 Func Leveler_BuyMaxArmorMaterials($a_b_Common)
 	Local $l_ai_Models, $l_ai_Counts
 	Leveler_GetMaxArmorMatNeeds($a_b_Common, $l_ai_Models, $l_ai_Counts)
@@ -1209,6 +1242,7 @@ Func Leveler_BuyMaxArmorMaterials($a_b_Common)
 	Return True
 EndFunc
 
+; Craft and equip the Kaineng max-armor set.
 Func Leveler_CraftMaxArmor()
 	Local $l_ai_Pieces = Leveler_GetMaxArmorPieces()
 	If Not Leveler_WaitForCrafterOffer($l_ai_Pieces[0][0]) Then Return False
@@ -1227,6 +1261,7 @@ Func Leveler_CraftMaxArmor()
 	Return True
 EndFunc
 
+; True when the max-armor set is owned.
 Func Leveler_HasMaxArmor()
 	Local $l_ai_Pieces = Leveler_GetMaxArmorPieces()
 	For $i = 0 To UBound($l_ai_Pieces) - 1
@@ -1238,10 +1273,12 @@ EndFunc
 #EndRegion Max Armor
 
 #Region Bags
+; True when the Clairvoyant Staff is owned.
 Func Leveler_HasCraftedWeapon()
 	Return Leveler_OwnsModel($MODEL_CLAIRVOYANT_STAFF)
 EndFunc
 
+; True when a bag and belt pouch are already owned.
 Func Leveler_HasExtendedBags()
 	If Leveler_IsInventoryBagEquipped($GC_I_INVENTORY_BELT_POUCH) Then Return True
 	If Item_GetInventoryInfo("BeltPouchPtr") <> 0 And Item_GetBagInfo($GC_I_INVENTORY_BELT_POUCH, "Slots") > 0 Then Return True
@@ -1338,6 +1375,7 @@ Func Leveler_EquipInventoryBag($a_i_Model, $a_i_TargetBag, $a_i_TimeoutMs = 3000
 	Return False
 EndFunc
 
+; Destroy starter armor after the monastery set is on.
 Func Leveler_DestroyStarterArmorAndJunk()
 	Local $l_ai_Armor = Leveler_GetStarterArmorModels()
 	For $i = 0 To UBound($l_ai_Armor) - 1
@@ -1353,6 +1391,7 @@ Func Leveler_DestroyStarterArmorAndJunk()
 EndFunc
 
 ; Buy and equip Belt Pouch / bags from the merchant.
+; Buy a bag and belt pouch from the Shing Jea merchant.
 Func Leveler_ExtendInventory()
 	If Leveler_HasExtendedBags() Then
 		Out("[Craft] Belt Pouch already equipped")

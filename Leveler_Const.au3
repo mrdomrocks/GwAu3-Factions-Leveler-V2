@@ -23,18 +23,18 @@ Global Const $LEVELER_STEP_SEITUNG = 15
 Global Const $LEVELER_STEP_DESTROY_MON = 16
 Global Const $LEVELER_STEP_TO_ZEN = 17
 Global Const $LEVELER_STEP_ZEN_MISSION = 18
-Global Const $LEVELER_STEP_TO_MARKET = 19
-Global Const $LEVELER_STEP_BURDEN = 20
-Global Const $LEVELER_STEP_TO_KC = 21
-Global Const $LEVELER_STEP_SKILLS2 = 22
-Global Const $LEVELER_STEP_MAX_ARMOR = 23
-Global Const $LEVELER_STEP_DESTROY_SEITUNG = 24
-Global Const $LEVELER_STEP_CURE = 25
-Global Const $LEVELER_STEP_UNLOCK_MOX = 26
-Global Const $LEVELER_STEP_TO_BOREAL = 27
-Global Const $LEVELER_STEP_TO_EOTN = 28
-Global Const $LEVELER_STEP_EOTN_POOL = 29
-Global Const $LEVELER_STEP_ATTR_2 = 30 ; An Unwelcome Guest (historical ATTR name kept for step index stability)
+Global Const $LEVELER_STEP_ATTR_2 = 19 ; An Unwelcome Guest, Seitung Harbor / Zen Daijun
+Global Const $LEVELER_STEP_TO_MARKET = 20
+Global Const $LEVELER_STEP_BURDEN = 21
+Global Const $LEVELER_STEP_TO_KC = 22
+Global Const $LEVELER_STEP_SKILLS2 = 23
+Global Const $LEVELER_STEP_MAX_ARMOR = 24
+Global Const $LEVELER_STEP_DESTROY_SEITUNG = 25
+Global Const $LEVELER_STEP_CURE = 26
+Global Const $LEVELER_STEP_UNLOCK_MOX = 27
+Global Const $LEVELER_STEP_TO_BOREAL = 28
+Global Const $LEVELER_STEP_TO_EOTN = 29
+Global Const $LEVELER_STEP_EOTN_POOL = 30
 Global Const $LEVELER_STEP_TO_GUNNAR = 31
 Global Const $LEVELER_STEP_KILROY = 32
 Global Const $LEVELER_STEP_FARM_20 = 33
@@ -66,6 +66,7 @@ Global $g_as_StepNames[$LEVELER_STEP_COUNT] = [ _
 		"Destroy Monastery Armor", _
 		"To Zen Daijun", _
 		"Zen Daijun Mission", _
+		"Quest: An Unwelcome Guest", _
 		"To Marketplace", _
 		"Quest: A Master's Burden", _
 		"To Kaineng Center", _
@@ -77,7 +78,6 @@ Global $g_as_StepNames[$LEVELER_STEP_COUNT] = [ _
 		"To Boreal Station", _
 		"To Eye of the North", _
 		"Unlock Eye of the North Pool", _
-		"Quest: An Unwelcome Guest", _
 		"To Gunnar's Hold", _
 		"Unlock Kilroy Stonekin", _
 		"Farm Until Level 20", _

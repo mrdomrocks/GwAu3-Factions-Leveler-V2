@@ -112,7 +112,97 @@ Func Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat = False)
 	Return $l_b_Ok
 EndFunc
 
+; Run to a point without stopping to fight. One path is followed to the end.
+; Enemy obstacles are used for the first path so Destroyers are skirted when the mesh allows.
+; Rebuilding that path every tick, and cancelling the move, only stepped two waypoints at a time.
+Func Leveler_RunTo($a_f_X, $a_f_Y, $a_i_Timeout = 180000)
+	If $g_b_LevelerPaused Then Return False
+	Leveler_SetPacifist()
+	Leveler_EnsurePathfinder()
+	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_b_Avoid = True
+	Local $l_a_Path = Leveler_BuildRunPath($a_f_X, $a_f_Y, True)
+	If Not IsArray($l_a_Path) Or UBound($l_a_Path) = 0 Then
+		$l_b_Avoid = False
+		$l_a_Path = Leveler_BuildRunPath($a_f_X, $a_f_Y, False)
+		Out("[Move] No path around enemies. Running straight to " & Round($a_f_X) & ", " & Round($a_f_Y))
+	Else
+		Out("[Move] Running to " & Round($a_f_X) & ", " & Round($a_f_Y) & " (" & UBound($l_a_Path) & " waypoints, no fighting)")
+	EndIf
+
+	Local $l_i_Index = 0
+	Local $l_h_Timer = TimerInit()
+	Local $l_h_Stuck = TimerInit()
+	Local $l_f_StuckX = Agent_GetAgentInfo(-2, "X")
+	Local $l_f_StuckY = Agent_GetAgentInfo(-2, "Y")
+
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		If Leveler_IsWiped() Then Return False
+		If Map_GetMapID() <> $l_i_StartMap Then Return True
+		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+
+		If IsArray($l_a_Path) Then
+			While $l_i_Index < UBound($l_a_Path)
+				If Agent_GetDistanceToXY($l_a_Path[$l_i_Index][0], $l_a_Path[$l_i_Index][1]) >= 300 Then ExitLoop
+				$l_i_Index += 1
+			WEnd
+		EndIf
+
+		Local $l_f_GoX = $a_f_X
+		Local $l_f_GoY = $a_f_Y
+		Local $l_i_GoLayer = Agent_GetAgentInfo(-2, "Plane")
+		If IsArray($l_a_Path) And $l_i_Index < UBound($l_a_Path) Then
+			$l_f_GoX = $l_a_Path[$l_i_Index][0]
+			$l_f_GoY = $l_a_Path[$l_i_Index][1]
+			$l_i_GoLayer = $l_a_Path[$l_i_Index][2]
+		EndIf
+		Map_MoveLayer($l_f_GoX, $l_f_GoY, $l_i_GoLayer)
+
+		If TimerDiff($l_h_Stuck) > 2500 Then
+			Local $l_f_NowX = Agent_GetAgentInfo(-2, "X")
+			Local $l_f_NowY = Agent_GetAgentInfo(-2, "Y")
+			Local $l_f_Moved = Sqrt(($l_f_NowX - $l_f_StuckX) ^ 2 + ($l_f_NowY - $l_f_StuckY) ^ 2)
+			If $l_f_Moved < 120 Then
+				If $l_b_Avoid Then
+					$l_b_Avoid = False
+					Out("[Move] Avoid path is blocked. Running through to " & Round($a_f_X) & ", " & Round($a_f_Y))
+				EndIf
+				$l_a_Path = Leveler_BuildRunPath($a_f_X, $a_f_Y, False)
+				$l_i_Index = 0
+			EndIf
+			$l_f_StuckX = $l_f_NowX
+			$l_f_StuckY = $l_f_NowY
+			$l_h_Stuck = TimerInit()
+		EndIf
+		Sleep(50)
+	WEnd
+	If Map_GetMapID() <> $l_i_StartMap Then Return True
+	Return Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
+EndFunc
+
+Func Leveler_BuildRunPath($a_f_X, $a_f_Y, $a_b_Avoid)
+	Local $l_v_Obs = 0
+	If $a_b_Avoid Then $l_v_Obs = Leveler_GetObstacles(400, 2500)
+	Local $l_a_Path = _Pathfinder_GetPath(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), Agent_GetAgentInfo(-2, "Plane"), $a_f_X, $a_f_Y, -1, $l_v_Obs)
+	If IsArray($l_a_Path) And UBound($l_a_Path) > 0 Then Return $l_a_Path
+	Local $l_a_Empty[0][4]
+	Return $l_a_Empty
+EndFunc
+
+; Heroes avoid combat so they follow the run instead of pulling Destroyers. 0 = Fight, 2 = Avoid.
+Func Leveler_SetHeroesBehavior($a_i_Behavior)
+	Local $l_i_Count = Party_GetMyPartyInfo("ArrayHeroPartyMemberSize")
+	If $l_i_Count < 1 Then Return
+	Local $i
+	For $i = 1 To $l_i_Count
+		If Party_GetMyPartyHeroInfo($i, "AgentID") = 0 Then ContinueLoop
+		Ui_SetHeroBehavior($i, $a_i_Behavior)
+	Next
+EndFunc
+
 ; Layer-aware direct move. Prefer Pathfinder_MoveTo; this is the fallback when mesh path fails.
+; Walk straight to X/Y with Map_Move. In KilroyMode, STAND UP! on KO instead of aborting.
 Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $l_h_Timer = TimerInit()
@@ -128,6 +218,7 @@ Func Leveler_MoveDirect($a_f_X, $a_f_Y, $a_i_Timeout = 30000, $a_b_Combat = Fals
 	Return Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
 EndFunc
 
+; Walk to X/Y, open the NPC, and send a dialog.
 Func Leveler_MoveAndDialog($a_f_X, $a_f_Y, $a_i_Dialog, $a_b_Combat = False, $a_i_NpcModel = 0)
 	Local $l_i_StartMap = Map_GetMapID()
 	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) And Map_GetMapID() = $l_i_StartMap Then Return False
@@ -285,6 +376,7 @@ EndFunc
 #Region Travel
 ; Map_TravelTo, step outposts, and portal exits.
 
+; Walk to a portal coordinate and wait for the destination map.
 Func Leveler_MoveAndExit($a_f_X, $a_f_Y, $a_i_MapID, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
 	If $l_i_StartMap = $a_i_MapID Then Return True
@@ -562,6 +654,7 @@ EndFunc
 #Region Agents
 ; Name / model lookup and talk helpers.
 
+; First talk NPC whose name contains the string.
 Func Leveler_GetAgentByName($a_s_Name)
 	Local $l_i_Max = Agent_GetMaxAgents()
 	For $i = 1 To $l_i_Max - 1
@@ -602,6 +695,7 @@ Func Leveler_GetNearestNPCAt($a_f_X, $a_f_Y, $a_f_Range = 250)
 	Return $l_i_Best
 EndFunc
 
+; First living agent whose PlayerNumber matches the model.
 Func Leveler_GetAgentByModel($a_i_Model)
 	If $a_i_Model = 0 Then Return 0
 	Local $l_i_Max = Agent_GetMaxAgents()
@@ -613,6 +707,7 @@ Func Leveler_GetAgentByModel($a_i_Model)
 	Return 0
 EndFunc
 
+; True for the known Master Togo model IDs.
 Func Leveler_IsTogoModel($a_i_Model)
 	If $a_i_Model = $MODEL_TOGO_1 Then Return True
 	If $a_i_Model = $MODEL_TOGO_2 Then Return True
@@ -645,6 +740,7 @@ Func Leveler_GetTogo($a_f_NearX = 0, $a_f_NearY = 0)
 	Return 0
 EndFunc
 
+; Model ID of the Togo agent currently on this map, or 0.
 Func Leveler_TogoModel()
 	Local $l_i_Togo = Leveler_GetTogo()
 	If $l_i_Togo = 0 Then Return 0
@@ -743,6 +839,7 @@ Func Leveler_FollowTogo($a_i_Timeout = 180000)
 	Return Agent_GetDistanceToXY($ZUI_SUNQUA_X, $ZUI_SUNQUA_Y) < 500 Or Map_GetMapID() <> $l_i_StartMap
 EndFunc
 
+; Talk NPC nearest to X/Y that still has a quest marker.
 Func Leveler_GetQuestNpcAt($a_f_X, $a_f_Y, $a_f_Range = 500)
 	Local $l_i_Best = 0
 	Local $l_f_Best = $a_f_Range
@@ -766,6 +863,7 @@ Func Leveler_GetQuestNpcAt($a_f_X, $a_f_Y, $a_f_Range = 500)
 	Return $l_i_Best
 EndFunc
 
+; Pick a talk NPC by model, then by coordinate, then nearest to the player.
 Func Leveler_ResolveTalkNpc($a_f_X, $a_f_Y, $a_i_NpcModel = 0)
 	Local $l_i_Npc = 0
 	If $a_i_NpcModel <> 0 Then $l_i_Npc = Leveler_GetAgentByModel($a_i_NpcModel)
@@ -774,6 +872,7 @@ Func Leveler_ResolveTalkNpc($a_f_X, $a_f_Y, $a_i_NpcModel = 0)
 	Return $l_i_Npc
 EndFunc
 
+; Walk to X/Y and Agent_GoNPC the nearest talk NPC.
 Func Leveler_InteractNpcAt($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) Then Return False
 	Local $l_i_Npc = Leveler_ResolveTalkNpc($a_f_X, $a_f_Y)
@@ -789,6 +888,7 @@ EndFunc
 #Region Combat
 ; Aggro waits, spirit-rift interrupt, and danger checks.
 
+; True when the party is defeated.
 Func Leveler_IsWiped()
 	If Leveler_IsPunchoutMap() Or $g_b_FarmMode Then Return False
 	If Party_GetPartyContextInfo("IsDefeated") Then Return True
@@ -828,6 +928,7 @@ Func Leveler_CombatTick()
 	UAI_Fight(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $LEVELER_AGGRO, $LEVELER_FIGHT_RANGE_OUT)
 EndFunc
 
+; Fight in place for the given milliseconds.
 Func Leveler_WaitCombat($a_i_Ms)
 	If Not Leveler_ShouldFightHere() Then
 		Sleep($a_i_Ms)
@@ -844,6 +945,7 @@ Func Leveler_WaitCombat($a_i_Ms)
 	Return True
 EndFunc
 
+; True when a living enemy is inside aggro range.
 Func Leveler_InDanger($a_f_Range = $LEVELER_AGGRO)
 	Local $l_i_MyID = Agent_GetMyID()
 	Local $l_i_Max = Agent_GetMaxAgents()
@@ -856,6 +958,7 @@ Func Leveler_InDanger($a_f_Range = $LEVELER_AGGRO)
 	Return False
 EndFunc
 
+; Wait until no enemies are in aggro range, or the timeout.
 Func Leveler_WaitOutOfCombat($a_i_Timeout = 120000)
 	Local $l_h_Timer = TimerInit()
 	Local $l_h_Clear = 0
@@ -880,6 +983,7 @@ EndFunc
 #Region Lost Treasure
 ; Follow Raitahn Nem through Cho explorable.
 
+; Wait until the NPC model shows a quest marker.
 Func Leveler_WaitUntilModelHasQuest($a_i_Model, $a_i_Timeout = 180000)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
@@ -893,6 +997,7 @@ Func Leveler_WaitUntilModelHasQuest($a_i_Model, $a_i_Timeout = 180000)
 	Return False
 EndFunc
 
+; True when Raitahn Nem is at the Cho-explorable hand-in.
 Func Leveler_LostTreasureAtRouteEnd($a_i_Npc = 0)
 	If Leveler_InDanger($LEVELER_SPIRIT_RANGE) Then Return False
 	If Agent_GetDistanceToXY($LOST_CHO_END_X, $LOST_CHO_END_Y) < 800 Then Return True
@@ -957,6 +1062,7 @@ EndFunc
 #Region Gadgets
 ; Mission gadgets and ground loot.
 
+; Nearest gadget/signpost agent.
 Func Leveler_GetNearestGadget($a_f_Range = 400)
 	Return Leveler_GetNearestGadgetAt(Agent_GetAgentInfo(-2, "X"), Agent_GetAgentInfo(-2, "Y"), $a_f_Range)
 EndFunc
@@ -978,6 +1084,7 @@ Func Leveler_GetNearestGadgetAt($a_f_X, $a_f_Y, $a_f_Range = 400)
 	Return $l_i_Best
 EndFunc
 
+; Walk to X/Y and use the nearest gadget.
 Func Leveler_InteractGadgetAt($a_f_X, $a_f_Y, $a_b_Combat = False)
 	If Not Leveler_MoveTo($a_f_X, $a_f_Y, $a_b_Combat) Then Return False
 	Local $l_i_Gadget = Leveler_GetNearestGadget(400)
@@ -990,6 +1097,7 @@ Func Leveler_InteractGadgetAt($a_f_X, $a_f_Y, $a_b_Combat = False)
 	Return True
 EndFunc
 
+; Nearest pick-up item matching the model (0 = any).
 Func Leveler_GetGroundItemByModel($a_i_Model, $a_f_Range = 2500)
 	Local $l_i_MyID = Agent_GetMyID()
 	Local $l_i_Best = 0
@@ -1011,6 +1119,7 @@ Func Leveler_GetGroundItemByModel($a_i_Model, $a_f_Range = 2500)
 	Return $l_i_Best
 EndFunc
 
+; Pick up nearby ground items until none remain or the timeout.
 Func Leveler_LootNearby($a_i_Model = 0, $a_f_Range = 2000, $a_i_Timeout = 10000)
 	Local $l_h_Timer = TimerInit()
 	Local $l_i_Picked = 0
@@ -1036,6 +1145,7 @@ EndFunc
 #Region Spirit Rifts
 ; Zen Daijun rift interrupt while pathing.
 
+; Pathfinder callback: interrupt nearby Spirit Rift casts.
 Func Leveler_InterruptSpiritRifts()
 	If Map_GetMapID() <> $MAP_ZEN_OP Then Return
 	If $g_h_RiftCooldown <> 0 And TimerDiff($g_h_RiftCooldown) < 1000 Then Return
@@ -1060,6 +1170,7 @@ Func Leveler_InterruptSpiritRifts()
 	Next
 EndFunc
 
+; Open the first agent with this model and send a dialog.
 Func Leveler_TalkModel($a_i_Model, $a_i_Dialog)
 	Local $l_i_Npc = Leveler_GetAgentByModel($a_i_Model)
 	If $l_i_Npc = 0 Then $l_i_Npc = Leveler_GetNearestNPC(400)
@@ -1094,6 +1205,7 @@ Func Leveler_OnCinematicMap()
 EndFunc
 
 ; After the scrying pool: skip if this account already knows the video, else wait it out.
+; Wait out a cinematic, then a short extra delay.
 Func Leveler_WaitCinematic($a_i_StartTimeout = 8000, $a_i_PlayTimeout = 240000)
 	Local $l_h_Timer = TimerInit()
 	Local $l_b_Saw = False
@@ -1278,6 +1390,7 @@ Func Leveler_UseScryingPool()
 	Return True
 EndFunc
 
+; True when Keiran's Bow is in inventory or a weapon set.
 Func Leveler_HasKeiranBow()
 	If Item_FindItemByModelID($MODEL_KEIRAN_BOW) <> 0 Then Return True
 	If Item_GetInventoryInfo("WeaponSet0WeaponModelID") = $MODEL_KEIRAN_BOW Then Return True
@@ -1285,6 +1398,7 @@ Func Leveler_HasKeiranBow()
 	Return False
 EndFunc
 
+; Character level from the player agent, with a party-info fallback.
 Func Leveler_PlayerLevel()
 	Local $l_i_Level = Agent_GetAgentInfo(-2, "Level")
 	If $l_i_Level = 0 Then $l_i_Level = Party_GetPartyProfessionInfo(-2, "Level")
@@ -1295,6 +1409,7 @@ EndFunc
 #Region Map Ready
 ; Client load, disconnect, and outpost waits.
 
+; Walk a list of [X,Y] points. In KilroyMode, handle KO between points.
 Func Leveler_FollowCoords(ByRef $a_af_Path, $a_b_Combat = False)
 	Local $l_i_StartMap = Map_GetMapID()
 	Local $i
@@ -1308,6 +1423,24 @@ Func Leveler_FollowCoords(ByRef $a_af_Path, $a_b_Combat = False)
 	Return Not Leveler_IsWiped()
 EndFunc
 
+; Outpost click-move. Pathfinder on Eye of the North stops short of the Hall portal.
+Func Leveler_OutpostMove($a_f_X, $a_f_Y, $a_i_ExitMap = 0, $a_i_Timeout = 45000)
+	Local $l_i_StartMap = Map_GetMapID()
+	Local $l_h_Timer = TimerInit()
+	While TimerDiff($l_h_Timer) < $a_i_Timeout
+		If $g_b_LevelerPaused Then Return False
+		Local $l_i_Map = Map_GetMapID()
+		If $a_i_ExitMap <> 0 And $l_i_Map = $a_i_ExitMap Then Return True
+		If $l_i_Map <> $l_i_StartMap Then Return True
+		If Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE Then Return True
+		Map_Move($a_f_X, $a_f_Y, 0)
+		Sleep(250)
+	WEnd
+	If $a_i_ExitMap <> 0 And Map_GetMapID() = $a_i_ExitMap Then Return True
+	Return Agent_GetDistanceToXY($a_f_X, $a_f_Y) < $LEVELER_ARRIVE_RANGE
+EndFunc
+
+; Sleep in 250 ms slices, aborting on pause/wipe or handling a Kilroy KO.
 Func Leveler_WaitMs($a_i_Ms)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Ms
@@ -1320,11 +1453,13 @@ Func Leveler_WaitMs($a_i_Ms)
 	Return True
 EndFunc
 
+; Turn combat on and wait the given milliseconds.
 Func Leveler_CombatBurst($a_i_Ms)
 	$g_b_CombatMode = True
 	Return Leveler_WaitMs($a_i_Ms)
 EndFunc
 
+; Wait until the instance returns to an outpost (Punch-Out / training).
 Func Leveler_WaitUntilOutpost($a_i_Timeout = 180000)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < $a_i_Timeout
@@ -1338,6 +1473,7 @@ Func Leveler_WaitUntilOutpost($a_i_Timeout = 180000)
 	Return Map_GetInstanceInfo("IsOutpost")
 EndFunc
 
+; Wait until Map_GetMapID equals the target.
 Func Leveler_WaitForMap($a_i_MapID, $a_i_Timeout = 45000)
 	If Map_GetMapID() = $a_i_MapID Then Return True
 	Return Map_WaitMapLoading($a_i_MapID, -1, $a_i_Timeout)
@@ -1352,6 +1488,7 @@ Func Leveler_ClientIsReady()
 	Return True
 EndFunc
 
+; True when the map ID is gone or the player agent pointer is missing.
 Func Leveler_ClientDisconnected()
 	If Map_GetMapID() <= 0 Then Return True
 	If Agent_GetAgentPtr(-2) = 0 And Not Map_GetInstanceInfo("IsLoading") Then Return True
@@ -1374,6 +1511,7 @@ Func Leveler_ResumeFromCurrentPosition()
 	Return True
 EndFunc
 
+; Wait until the client can act, resuming from XY after a reconnect.
 Func Leveler_WaitUntilMapReady($a_i_Timeout = 45000)
 	Local $l_b_Dropped = Leveler_ClientDisconnected()
 	If $l_b_Dropped Then $g_b_ConnectionLost = True
@@ -1477,6 +1615,7 @@ Func Leveler_WaitBrawlingBar($a_i_Timeout = 8000)
 	Return Skill_GetSkillbarInfo(1, "SkillID") <> 0
 EndFunc
 
+; Equip the inventory item with this model ID.
 Func Leveler_EquipItemByModel($a_i_Model)
 	Local $l_i_Item = Item_FindItemByModelID($a_i_Model)
 	If $l_i_Item = 0 Then
@@ -1496,23 +1635,11 @@ Func Leveler_IsPunchoutDowned()
 	Return False
 EndFunc
 
-; Spam skill 8 until standing. Fronis uses this as the revive; do not resign.
+; Spam skill 8 until standing. Stay in Punch the Clown until the instance itself ends.
+; Traveling home on a knockdown hands the quest in before the clown is beaten.
 Func Leveler_HandleKilroyDeath()
 	If Not $g_b_KilroyMode And Not $g_b_FarmMode And Not Leveler_IsPunchoutMap() Then Return False
 	If Not Leveler_IsPunchoutDowned() Then Return False
-
-	If Map_GetMapID() = $MAP_KILROY And Agent_GetAgentInfo(-2, "MaxEnergy") >= 80 Then
-		Out("[Kilroy] High-energy death during Punch the Clown. Returning to Gunnar's Hold.")
-		$g_b_KilroyMode = False
-		Sleep(800)
-		If Not Leveler_Travel($MAP_GUNNAR) Then
-			Chat_SendChat("resign", "/")
-			Sleep(1200)
-			If Party_GetPartyContextInfo("IsDefeated") Then Map_ReturnToOutpost(False)
-			Map_WaitMapLoading()
-		EndIf
-		Return True
-	EndIf
 
 	Out("[Kilroy] Downed. Using skill 8 until revived.")
 	Local $l_h_Timer = TimerInit()
@@ -1535,6 +1662,7 @@ EndFunc
 #Region Recovery
 ; Resign, return to outpost, retry the current step.
 
+; Resign or travel back after a wipe. Kilroy/farm recoveries return to Gunnar's.
 Func Leveler_RecoverWipe()
 	$g_b_SpiritRiftWatch = False
 	$g_b_UAIReady = False

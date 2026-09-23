@@ -110,6 +110,9 @@ Out("Run AutoIt3 x86 with Guild Wars launched.")
 If Not IsAdmin() Then Out("Not running as admin. If the client cannot be read, start AutoIt as administrator.")
 Out("")
 
+; GwAu3 Log_Message scrolls this control with Edit APIs. That crashes AutoIt on a RichEdit.
+$g_s_Log_Callback = "Leveler_LogCallback"
+
 #Region Main Loop
 Core_AutoStart()
 
@@ -133,24 +136,26 @@ WEnd
 #EndRegion Main Loop
 
 #Region Bot
+; Attach to the Guild Wars client, reset run flags, and start StatusCheck.
 Func StartBot()
 	Local $l_s_MainCharName = GUICtrlRead($g_h_NameCombo)
+	Local $l_i_Init = 0
 	If $l_s_MainCharName = "" Then
-		If Core_Initialize(ProcessExists("gw.exe"), True) = 0 Then
-			MsgBox(0, "Error", "Guild Wars is not running.")
-			_Exit()
-		EndIf
+		$l_i_Init = Core_Initialize(ProcessExists("gw.exe"), True)
 	ElseIf $g_i_ProcessID Then
 		Local $l_i_ProcIdInt = Number($g_i_ProcessID, 2)
-		If Core_Initialize($l_i_ProcIdInt, True) = 0 Then
-			MsgBox(0, "Error", "Could not find that process ID.")
-			_Exit()
-		EndIf
+		$l_i_Init = Core_Initialize($l_i_ProcIdInt, True)
 	Else
-		If Core_Initialize($l_s_MainCharName, True) = 0 Then
-			MsgBox(0, "Error", "Could not find a Guild Wars client named '" & $l_s_MainCharName & "'")
-			_Exit()
-		EndIf
+		$l_i_Init = Core_Initialize($l_s_MainCharName, True)
+	EndIf
+	If $l_i_Init = 0 Then
+		Local $l_i_Err = @error
+		Local $l_s_Why = "Guild Wars is not running."
+		If $l_i_Err = 2 Then $l_s_Why = "Pattern scan failed. Guild Wars may have updated, or AutoIt needs to run as administrator."
+		If $l_s_MainCharName <> "" And $l_i_Err <> 2 Then $l_s_Why = "Could not find a Guild Wars client named '" & $l_s_MainCharName & "'."
+		Out("[Init] " & $l_s_Why)
+		MsgBox(16, "Error", $l_s_Why)
+		Return
 	EndIf
 
 	GUICtrlSetState($g_h_NameCombo, $GUI_DISABLE)
@@ -177,6 +182,7 @@ Func StartBot()
 	Out("Core ready. Returning to the run loop.")
 EndFunc
 
+; Pause or resume the run loop. Resume queues a fresh StatusCheck.
 Func TogglePause()
 	If Not $g_b_BotCoreInitialized Then Return
 	$g_b_LevelerPaused = Not $g_b_LevelerPaused
@@ -201,18 +207,21 @@ EndFunc
 #EndRegion Bot
 
 #Region GUI Helpers
+; Return the Progress list index the user has selected.
 Func Leveler_GetSelectedStep()
 	Local $l_s_Idx = _GUICtrlListView_GetSelectedIndices($g_h_StepList)
 	If $l_s_Idx = "" Then Return 0
 	Return Number($l_s_Idx)
 EndFunc
 
+; Grey finished steps through the current one and select it in the list.
 Func Leveler_UpdateStepCombo()
 	If $g_i_Step < 0 Then Return
 	If $g_i_Step > 0 Then Leveler_MarkStepsThrough($g_i_Step - 1)
 	Leveler_RefreshStepList($g_i_Step)
 EndFunc
 
+; Rewrite Progress list text (x prefix for done) and optionally select a row.
 Func Leveler_RefreshStepList($a_i_Select = -1)
 	For $i = 0 To $LEVELER_STEP_COUNT - 1
 		Local $l_s_Text = $g_as_StepNames[$i]
@@ -226,6 +235,7 @@ Func Leveler_RefreshStepList($a_i_Select = -1)
 	_WinAPI_RedrawWindow(GUICtrlGetHandle($g_h_StepList))
 EndFunc
 
+; Custom-draw handler: grey out completed steps in the Progress list.
 Func Leveler_WM_NOTIFY($hWnd, $iMsg, $wParam, $lParam)
 	#forceref $hWnd, $iMsg, $wParam
 	Local $tNMHDR = DllStructCreate($tagNMHDR, $lParam)
@@ -246,6 +256,7 @@ Func Leveler_WM_NOTIFY($hWnd, $iMsg, $wParam, $lParam)
 	Return $GUI_RUNDEFMSG
 EndFunc
 
+; Route Start, Pause, Refresh, On Top, Debug, and step-list clicks.
 Func GuiButtonHandler()
 	Switch @GUI_CtrlId
 		Case $g_h_StartButton
@@ -294,18 +305,42 @@ Func GuiButtonHandler()
 	EndSwitch
 EndFunc
 
+; Append a line to the log pane, clearing it if it is about to overflow.
 Func Out($a_s_Text)
-	If $g_h_EditText = 0 Then Return
-	Local $l_i_TextLen = StringLen($a_s_Text)
-	Local $l_i_ConsoleLen = _GUICtrlEdit_GetTextLen($g_h_EditText)
-	If $l_i_TextLen + $l_i_ConsoleLen > 30000 Then
-		_GUICtrlRichEdit_SetText($g_h_EditText, "")
-	EndIf
-	_GUICtrlRichEdit_SetCharColor($g_h_EditText, $COLOR_BLACK)
-	_GUICtrlEdit_AppendText($g_h_EditText, @CRLF & $a_s_Text)
-	_GUICtrlEdit_Scroll($g_h_EditText, $SB_BOTTOM)
+	Leveler_LogLine($a_s_Text, 0x000000)
 EndFunc
 
+; RichEdit only. _GUICtrlEdit_* on this control crashes AutoIt during init logging.
+Func Leveler_LogLine($a_s_Text, $a_i_Color = 0x000000)
+	If $g_h_EditText = 0 Then Return
+	If _GUICtrlRichEdit_GetTextLength($g_h_EditText) > 30000 Then _GUICtrlRichEdit_SetText($g_h_EditText, "")
+	_GUICtrlRichEdit_SetSel($g_h_EditText, -1, -1)
+	_GUICtrlRichEdit_SetCharColor($g_h_EditText, $a_i_Color)
+	_GUICtrlRichEdit_AppendText($g_h_EditText, $a_s_Text & @CRLF)
+EndFunc
+
+Func Leveler_LogCallback($a_s_Message, $a_i_MsgType, $a_s_Author)
+	Local $l_i_Color = 0x008000
+	Local $l_s_Type = "INFO"
+	Switch $a_i_MsgType
+		Case $GC_I_LOG_MSGTYPE_DEBUG
+			If Not $g_b_DebugMode Then Return
+			$l_s_Type = "DEBUG"
+			$l_i_Color = 0xFFA500
+		Case $GC_I_LOG_MSGTYPE_WARNING
+			$l_s_Type = "WARNING"
+			$l_i_Color = 0x00C8FF
+		Case $GC_I_LOG_MSGTYPE_ERROR
+			$l_s_Type = "ERROR"
+			$l_i_Color = 0x0000CC
+		Case $GC_I_LOG_MSGTYPE_CRITICAL
+			$l_s_Type = "CRITICAL"
+			$l_i_Color = 0x0000FF
+	EndSwitch
+	Leveler_LogLine("[" & $l_s_Type & "] [" & $a_s_Author & "] " & $a_s_Message, $l_i_Color)
+EndFunc
+
+; True when the checkbox is checked.
 Func GetChecked($a_h_Ctrl)
 	If BitAND(GUICtrlRead($a_h_Ctrl), $GUI_CHECKED) = $GUI_CHECKED Then
 		Return True
@@ -314,6 +349,7 @@ Func GetChecked($a_h_Ctrl)
 	EndIf
 EndFunc
 
+; Shut down Pathfinder and leave the script.
 Func _Exit()
 	Pathfinder_Shutdown()
 	Exit
