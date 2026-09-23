@@ -116,6 +116,7 @@ While 1
 	EndIf
 WEnd
 
+; Attach to the Guild Wars client, reset run flags, and start StatusCheck.
 Func StartBot()
 	Local $l_s_MainCharName = GUICtrlRead($g_h_NameCombo)
 	If $l_s_MainCharName = "" Then
@@ -158,6 +159,7 @@ Func StartBot()
 	Out("Core ready. Returning to the run loop.")
 EndFunc
 
+; Pause or resume the run loop. Resume queues a fresh StatusCheck.
 Func TogglePause()
 	If Not $g_b_BotCoreInitialized Then Return
 	$g_b_LevelerPaused = Not $g_b_LevelerPaused
@@ -177,18 +179,21 @@ Func TogglePause()
 	EndIf
 EndFunc
 
+; Return the Progress list index the user has selected.
 Func Leveler_GetSelectedStep()
 	Local $l_s_Idx = _GUICtrlListView_GetSelectedIndices($g_h_StepList)
 	If $l_s_Idx = "" Then Return 0
 	Return Number($l_s_Idx)
 EndFunc
 
+; Grey finished steps through the current one and select it in the list.
 Func Leveler_UpdateStepCombo()
 	If $g_i_Step < 0 Then Return
 	If $g_i_Step > 0 Then Leveler_MarkStepsThrough($g_i_Step - 1)
 	Leveler_RefreshStepList($g_i_Step)
 EndFunc
 
+; Rewrite Progress list text (x prefix for done) and optionally select a row.
 Func Leveler_RefreshStepList($a_i_Select = -1)
 	For $i = 0 To $LEVELER_STEP_COUNT - 1
 		Local $l_s_Text = $g_as_StepNames[$i]
@@ -202,6 +207,7 @@ Func Leveler_RefreshStepList($a_i_Select = -1)
 	_WinAPI_RedrawWindow(GUICtrlGetHandle($g_h_StepList))
 EndFunc
 
+; Custom-draw handler: grey out completed steps in the Progress list.
 Func Leveler_WM_NOTIFY($hWnd, $iMsg, $wParam, $lParam)
 	#forceref $hWnd, $iMsg, $wParam
 	Local $tNMHDR = DllStructCreate($tagNMHDR, $lParam)
@@ -222,6 +228,7 @@ Func Leveler_WM_NOTIFY($hWnd, $iMsg, $wParam, $lParam)
 	Return $GUI_RUNDEFMSG
 EndFunc
 
+; Route Start, Pause, Refresh, On Top, Debug, and step-list clicks.
 Func GuiButtonHandler()
 	Switch @GUI_CtrlId
 		Case $g_h_StartButton
@@ -268,6 +275,7 @@ Func GuiButtonHandler()
 	EndSwitch
 EndFunc
 
+; Append a line to the log pane, clearing it if it is about to overflow.
 Func Out($a_s_Text)
 	If $g_h_EditText = 0 Then Return
 	Local $l_i_TextLen = StringLen($a_s_Text)
@@ -280,6 +288,7 @@ Func Out($a_s_Text)
 	_GUICtrlEdit_Scroll($g_h_EditText, $SB_BOTTOM)
 EndFunc
 
+; True when the checkbox is checked.
 Func GetChecked($a_h_Ctrl)
 	If BitAND(GUICtrlRead($a_h_Ctrl), $GUI_CHECKED) = $GUI_CHECKED Then
 		Return True
@@ -288,6 +297,7 @@ Func GetChecked($a_h_Ctrl)
 	EndIf
 EndFunc
 
+; Shut down Pathfinder and leave the script.
 Func _Exit()
 	Pathfinder_Shutdown()
 	Exit

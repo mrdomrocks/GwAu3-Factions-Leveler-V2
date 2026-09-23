@@ -10,6 +10,7 @@ Global Const $LEVELER_BAR_INSPIRE = 2
 ; A/Me bar used from Zen Daijun. Set slot-by-slot; do not Skill_LoadSkillBar.
 Global Const $LEVELER_BAR_ZEN = 3
 
+; Return the profession skill-template code for starter, interrupt, or inspire.
 Func Leveler_ProfessionSkillBar($a_i_Kind, $a_i_Prof = 0)
 	If $a_i_Prof = 0 Then $a_i_Prof = Leveler_PrimaryProfession()
 	Switch $a_i_Kind
@@ -82,6 +83,7 @@ Func Leveler_ProfessionSkillBar($a_i_Kind, $a_i_Prof = 0)
 	Return ""
 EndFunc
 
+; Pick starter, interrupt, inspire, or Zen bar from learnt skills and level.
 Func Leveler_CurrentSkillBarKind()
 	Local $l_i_Level = Agent_GetAgentInfo(-2, "Level")
 	If Leveler_InterruptSkillsUnlocked() Then
@@ -92,6 +94,7 @@ Func Leveler_CurrentSkillBarKind()
 	Return $LEVELER_BAR_STARTER
 EndFunc
 
+; Load the profession template in an outpost. Skips the empty starter after Zhao Di.
 Func Leveler_LoadProfessionSkillBar($a_i_Kind = -1)
 	If $a_i_Kind < 0 Then $a_i_Kind = Leveler_CurrentSkillBarKind()
 	If $a_i_Kind = $LEVELER_BAR_ZEN Then Return Leveler_LoadZenSkillBar()
@@ -119,6 +122,7 @@ Func Leveler_LoadProfessionSkillBar($a_i_Kind = -1)
 	Return $l_b_Ok
 EndFunc
 
+; Set the Zen Daijun A/Me bar slot-by-slot. Do not use Skill_LoadSkillBar.
 Func Leveler_LoadZenSkillBar()
 	If Not Map_GetInstanceInfo("IsOutpost") Then
 		Out("[Party] Skill template can only be loaded in an outpost")

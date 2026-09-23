@@ -1,5 +1,6 @@
 #include-once
 
+; Gold on the character, not storage.
 Func Leveler_CharacterGold()
 	Return Item_GetInventoryInfo("GoldCharacter")
 EndFunc
@@ -11,6 +12,7 @@ Func Leveler_HasPostXunlaiProgress()
 	Return False
 EndFunc
 
+; True after Formal Introduction is accepted or later tutorial progress exists.
 Func Leveler_HasFormalOrLater()
 	If Leveler_HasQuest($QUEST_FORMAL_INTRO) Then Return True
 	If Leveler_QuestFinished($QUEST_FORMAL_INTRO) Then Return True
@@ -46,6 +48,7 @@ Func Leveler_FormalIntroductionTurnedIn()
 	Return False
 EndFunc
 
+; True when this quest is handed in (or its special-case finish check passes).
 Func Leveler_QuestFinished($a_i_QuestID)
 	If $a_i_QuestID = $QUEST_SECONDARY Then Return Leveler_SecondaryRewardTaken()
 	If $a_i_QuestID = $QUEST_FORMAL_INTRO Then Return Leveler_FormalIntroductionTurnedIn()
@@ -56,6 +59,7 @@ Func Leveler_QuestFinished($a_i_QuestID)
 	Return False
 EndFunc
 
+; Map a quest ID to its $LEVELER_Q_* flag index, or -1.
 Func Leveler_QuestFlagIndex($a_i_QuestID)
 	Switch $a_i_QuestID
 		Case $QUEST_FORMING_A_PARTY
@@ -106,6 +110,7 @@ Func Leveler_QuestFlagIndex($a_i_QuestID)
 	Return -1
 EndFunc
 
+; Map a $LEVELER_Q_* flag index back to its quest ID.
 Func Leveler_QuestIDFromFlag($a_i_Flag)
 	Switch $a_i_Flag
 		Case $LEVELER_Q_FORMING
@@ -156,12 +161,14 @@ Func Leveler_QuestIDFromFlag($a_i_Flag)
 	Return 0
 EndFunc
 
+; True when the sticky run flag (or QuestFinished) says this quest is done.
 Func Leveler_IsQuestDone($a_i_QuestID)
 	Local $l_i_Flag = Leveler_QuestFlagIndex($a_i_QuestID)
 	If $l_i_Flag < 0 Then Return Leveler_QuestFinished($a_i_QuestID)
 	Return $g_ab_QuestDone[$l_i_Flag] = True
 EndFunc
 
+; Set the sticky flag if the quest is not still in the log.
 Func Leveler_MarkQuestDone($a_i_QuestID)
 	If Leveler_HasIncompleteQuest($a_i_QuestID) Then Return
 	Local $l_i_Flag = Leveler_QuestFlagIndex($a_i_QuestID)
@@ -244,6 +251,7 @@ Func Leveler_RefreshQuestFlags($a_b_Reset = False)
 	EndIf
 EndFunc
 
+; Log a skip and return True when the named quest is already finished.
 Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
 	If Leveler_HasIncompleteQuest($a_i_QuestID) Then Return False
 	If Not Leveler_IsQuestDone($a_i_QuestID) And Not Leveler_QuestFinished($a_i_QuestID) Then Return False
@@ -252,11 +260,13 @@ Func Leveler_SkipIfQuestDone($a_i_QuestID, $a_s_Name)
 	Return True
 EndFunc
 
+; True when the character is still on Monastery Overlook (or its variants).
 Func Leveler_OnOverlook()
 	Local $l_i_Map = Map_GetMapID()
 	Return $l_i_Map = 212 Or $l_i_Map = 285 Or $l_i_Map = 416
 EndFunc
 
+; True when a Xunlai storage bag pointer is already valid.
 Func Leveler_HasStorageAccess()
 	If Item_GetBagPtr($GC_I_INVENTORY_STORAGE1) <> 0 Then Return True
 	If Item_GetInventoryInfo("Storage1Ptr") <> 0 Then Return True
@@ -288,12 +298,14 @@ Func Leveler_InterruptSkillsUnlocked()
 	Return True
 EndFunc
 
+; True when Kaineng interrupt skills (and Backfire, if Mesmer) are learnt.
 Func Leveler_Skills2Unlocked()
 	If Not Leveler_InterruptSkillsUnlocked() Then Return False
 	If Leveler_HasMesmer() And Not World_IsSkillLearnt($SKILL_BACKFIRE) Then Return False
 	Return True
 EndFunc
 
+; True when Tengu / Threat / Journey / Road is in progress.
 Func Leveler_HasLaterQuest()
 	If Leveler_HasQuest($QUEST_WARNING_TENGU) Or Leveler_HasIncompleteQuest($QUEST_WARNING_TENGU) Then Return True
 	If Leveler_HasQuest($QUEST_THREAT_GROWS) Or Leveler_HasIncompleteQuest($QUEST_THREAT_GROWS) Then Return True
@@ -325,6 +337,7 @@ Func Leveler_RoadLessTraveledDone()
 	Return False
 EndFunc
 
+; True when Lost Treasure is handed in or a later island quest is active.
 Func Leveler_LostTreasureAlreadyDone()
 	If Leveler_QuestNeedsHandIn($QUEST_LOST_TREASURE) Then Return False
 	If Quest_GetQuestInfo($QUEST_LOST_TREASURE, "IsCompleted") Then Return True
@@ -469,6 +482,7 @@ Func Leveler_StatusCheck()
 	Return $l_i_Next
 EndFunc
 
+; Print Phase 1 quests that are still in the log.
 Func Leveler_LogActiveQuests()
 	Local $l_ai_Ids[8] = [$QUEST_FORMING_A_PARTY, $QUEST_SECONDARY, $QUEST_FORMAL_INTRO, $QUEST_LOST_TREASURE, $QUEST_WARNING_TENGU, $QUEST_THREAT_GROWS, $QUEST_JOURNEY_MASTER, $QUEST_ROAD_LESS]
 	Local $l_as_Names[8] = ["Forming A Party", "Choose Secondary", "Formal Introduction", "Lost Treasure", "Warning the Tengu", "The Threat Grows", "Journey of the Master", "The Road Less Traveled"]
@@ -484,6 +498,7 @@ Func Leveler_LogActiveQuests()
 	If Not $l_b_Any Then Out("[Status] No Phase 1 quests are in the log")
 EndFunc
 
+; Lowest unfinished step index, skipping Vaettir when the profession does not need it.
 Func Leveler_FirstIncompleteStep()
 	For $i = 0 To $LEVELER_STEP_COUNT - 1
 		If $g_ab_StepDone[$i] Then ContinueLoop
@@ -493,6 +508,7 @@ Func Leveler_FirstIncompleteStep()
 	Return $LEVELER_STEP_DONE
 EndFunc
 
+; Mark every step up to $a_i_LastDone complete and refresh the list.
 Func Leveler_MarkStepsThrough($a_i_LastDone)
 	If $a_i_LastDone < 0 Then Return
 	For $i = 0 To $a_i_LastDone

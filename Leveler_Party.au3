@@ -2,12 +2,14 @@
 
 #Region Profession
 
+; Return the character primary profession ID (1-10).
 Func Leveler_PrimaryProfession()
 	Local $l_i_Prof = Agent_GetAgentInfo(-2, "Primary")
 	If $l_i_Prof >= 1 And $l_i_Prof <= 10 Then Return $l_i_Prof
 	Return Party_GetPartyProfessionInfo(-2, "Primary")
 EndFunc
 
+; Return the assigned secondary profession ID, or 0 if unset.
 Func Leveler_SecondaryProfession()
 	Local $l_i_Prof = Agent_GetAgentInfo(-2, "Secondary")
 	If $l_i_Prof >= 1 And $l_i_Prof <= 10 Then Return $l_i_Prof
@@ -22,14 +24,17 @@ Func Leveler_HasSecondaryProfession()
 	Return $l_i_Prof >= 1 And $l_i_Prof <= 10
 EndFunc
 
+; True when primary profession is Mesmer.
 Func Leveler_IsMesmer()
 	Return Leveler_PrimaryProfession() = $GC_I_PROFESSION_MESMER
 EndFunc
 
+; True when Mesmer is primary or secondary.
 Func Leveler_HasMesmer()
 	Return Leveler_PrimaryProfession() = $GC_I_PROFESSION_MESMER Or Leveler_SecondaryProfession() = $GC_I_PROFESSION_MESMER
 EndFunc
 
+; True for Assassin or Mesmer, who take the Longeye / Vaettir unlock.
 Func Leveler_NeedsVaettirPath()
 	Local $l_i_Prof = Leveler_PrimaryProfession()
 	Return $l_i_Prof = $GC_I_PROFESSION_ASSASSIN Or $l_i_Prof = $GC_I_PROFESSION_MESMER
@@ -39,6 +44,7 @@ EndFunc
 
 #Region Party
 
+; How many henchmen are in the current party.
 Func Leveler_HenchmanCount()
 	Local $l_i_Count = Party_GetPartyContextInfo("HenchmenCount")
 	If $l_i_Count > 0 Then Return $l_i_Count
@@ -48,17 +54,20 @@ Func Leveler_HenchmanCount()
 	Return 0
 EndFunc
 
+; How many heroes are in the current party.
 Func Leveler_HeroCount()
 	Local $l_i_Count = Party_GetPartyContextInfo("HeroCount")
 	If $l_i_Count > 0 Then Return $l_i_Count
 	Return Party_GetMyPartyInfo("ArrayHeroPartyMemberSize")
 EndFunc
 
+; Hench IDs 2, 5, 1 used for Forming A Party.
 Func Leveler_FormingPartyHenchIDs()
 	Local $l_ai_Hench[3] = [2, 5, 1]
 	Return $l_ai_Hench
 EndFunc
 
+; Hench ID list for the current (or given) outpost.
 Func Leveler_HenchmenForMap($a_i_Map = 0)
 	If $a_i_Map = 0 Then $a_i_Map = Map_GetMapID()
 	Local $l_i_Max = Map_GetCurrentAreaInfo("MaxPartySize")
@@ -108,6 +117,7 @@ Func Leveler_HenchmenForMap($a_i_Map = 0)
 	Return $l_ai_Small
 EndFunc
 
+; Invite each hench ID in the list.
 Func Leveler_AddHenchmanList(ByRef $a_ai_Hench)
 	Local $i
 	Local $l_s_List = ""
@@ -122,10 +132,12 @@ Func Leveler_AddHenchmanList(ByRef $a_ai_Hench)
 	Return True
 EndFunc
 
+; True when at least three henchmen are in the party.
 Func Leveler_HasFormingPartyHenchmen()
 	Return Leveler_HenchmanCount() >= 3
 EndFunc
 
+; Invite the Forming A Party henchmen if they are missing.
 Func Leveler_EnsureFormingPartyHenchmen()
 	If Leveler_HasFormingPartyHenchmen() Then
 		Out("[Party] Forming A Party henchmen are already in the party")
@@ -138,6 +150,7 @@ Func Leveler_EnsureFormingPartyHenchmen()
 	Return True
 EndFunc
 
+; Add Gwen, Vekk, Ogden, and Mox and load their bars.
 Func Leveler_AddHeroTeam()
 	Local $l_ai_Heroes[4] = [$GC_I_HERO_ID_GWEN, $GC_I_HERO_ID_VEKK, $GC_I_HERO_ID_OGDEN_STONEHEALER, $GC_I_HERO_ID_MOX]
 	Local $l_as_Bars[4] = [ _
@@ -161,6 +174,7 @@ Func Leveler_AddHeroTeam()
 	Return True
 EndFunc
 
+; Leave the group, equip the player bar, add the hero team, then optional henchmen.
 Func Leveler_PrepareHeroTeam($a_ai_Hench = 0)
 	$g_b_CombatMode = True
 	$g_b_UAIReady = False
@@ -172,6 +186,7 @@ Func Leveler_PrepareHeroTeam($a_ai_Hench = 0)
 	Return True
 EndFunc
 
+; Equip the combat bar, set normal mode, and fill the map's hench list.
 Func Leveler_PrepareForBattle()
 	$g_b_CombatMode = True
 	$g_b_UAIReady = False
@@ -193,6 +208,7 @@ Func Leveler_PrepareForBattle()
 	Return True
 EndFunc
 
+; Add mission henchmen without LeaveGroup (kick + Enter Challenge disconnects).
 Func Leveler_PrepareMissionParty()
 	$g_b_CombatMode = True
 	Local $l_ai_Want = Leveler_HenchmenForMap()
@@ -217,6 +233,7 @@ EndFunc
 
 #Region Mission
 
+; True when already inside a Cho/Zen-style mission instance.
 Func Leveler_InMissionInstance($a_i_MapID = 0)
 	If Map_GetInstanceInfo("IsLoading") Then Return False
 	If Map_GetInstanceInfo("IsOutpost") Then Return False
@@ -229,6 +246,7 @@ Func Leveler_InMissionInstance($a_i_MapID = 0)
 	Return False
 EndFunc
 
+; Wait until the mission map is explorable after Enter Challenge.
 Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 45000)
 	If Map_WaitMapLoading($a_i_StartMap, 1, $a_i_Timeout) Then Return True
 	If Map_GetInstanceInfo("IsExplorable") Then
@@ -238,6 +256,7 @@ Func Leveler_WaitMissionExplorable($a_i_MapID, $a_i_StartMap, $a_i_Timeout = 450
 	Return False
 EndFunc
 
+; Send Enter Challenge (Arborstone enter) and wait for the mission instance.
 Func Leveler_EnterMission($a_s_Name, $a_i_MapID)
 	Local $l_i_StartMap = Map_GetMapID()
 	If Leveler_InMissionInstance($a_i_MapID) Then
@@ -277,6 +296,7 @@ EndFunc
 
 #Region Combat
 
+; Cache the UtilityAI skill bar for this explorable map.
 Func Leveler_PrepareCombatAI()
 	$g_b_CombatMode = True
 	Local $l_i_Map = Map_GetMapID()
@@ -325,10 +345,12 @@ Func Leveler_CacheUtilityAIForMap($a_i_MapID)
 	Return True
 EndFunc
 
+; Alias for Leveler_PrepareCombatAI.
 Func Leveler_ConfigureAggressiveEnv()
 	Return Leveler_PrepareCombatAI()
 EndFunc
 
+; Turn combat mode off so pathing does not fight.
 Func Leveler_SetPacifist()
 	$g_b_CombatMode = False
 	Return True
@@ -338,11 +360,13 @@ EndFunc
 
 #Region Skills
 
+; True if the character or account has the skill.
 Func Leveler_SkillIsLearnt($a_i_SkillID)
 	If World_IsSkillLearnt($a_i_SkillID) Then Return True
 	Return Account_IsSkillUnlocked($a_i_SkillID)
 EndFunc
 
+; Poll until the skill is learnt or 8 seconds elapse.
 Func Leveler_WaitSkillLearnt($a_i_SkillID)
 	Local $l_h_Timer = TimerInit()
 	While TimerDiff($l_h_Timer) < 8000
@@ -361,6 +385,7 @@ Func Leveler_BarHasSkill($a_i_SkillID)
 	Return False
 EndFunc
 
+; Place a learnt skill on a skill-bar slot and wait for it to stick.
 Func Leveler_PutSkillOnBar($a_i_Slot, $a_i_SkillID)
 	If $a_i_SkillID = 0 Then Return True
 	If Skill_GetSkillbarInfo($a_i_Slot, "SkillID") = $a_i_SkillID Then Return True
@@ -385,6 +410,7 @@ Func Leveler_PutSkillOnBar($a_i_Slot, $a_i_SkillID)
 	Return False
 EndFunc
 
+; Cancel the trainer dialog by stepping off the NPC.
 Func Leveler_CloseTrainerWindow()
 	Agent_CancelAction()
 	Sleep(300)
@@ -396,6 +422,7 @@ Func Leveler_CloseTrainerWindow()
 	Sleep(200)
 EndFunc
 
+; True when the current trainer set (Zhao Di or interrupt) is on the bar.
 Func Leveler_TrainerSkillsOnBar()
 	If Leveler_InterruptSkillsUnlocked() Then
 		If Not Leveler_BarHasSkill($SKILL_CRY_OF_FRUSTRATION) Then Return False
@@ -408,6 +435,7 @@ Func Leveler_TrainerSkillsOnBar()
 	Return True
 EndFunc
 
+; Buy the skill from the open trainer if this character has not learnt it.
 Func Leveler_BuySkillIfNeeded($a_i_SkillID)
 	If World_IsSkillLearnt($a_i_SkillID) Then Return True
 	Skill_BuySkillByID($a_i_SkillID)
@@ -455,6 +483,7 @@ Func Leveler_EquipTrainerSkills($a_b_CloseTrainer = True)
 	Return False
 EndFunc
 
+; Load the current profession bar in an outpost, falling back to slot fills.
 Func Leveler_EquipSkillBar()
 	If Not Map_GetInstanceInfo("IsOutpost") Then Return True
 	If Leveler_InterruptSkillsUnlocked() Then
